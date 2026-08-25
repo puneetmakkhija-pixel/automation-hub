@@ -1,6 +1,6 @@
 # Phase 3.5E: Re-engagement Campaign Engine
 
-**Objective:** Nightly batch job (02:00 UTC) that runs after Phase 3.5d rule updates, finds users who were previously rejected but are NOW eligible under new rules, and sends personalized re-engagement via multi-channel (WhatsApp + Email). **Expected outcome:** 18-20% conversion on re-engaged users, closing the feedback loop.
+**Objective:** Nightly batch job (02:00 AM IST) that runs after Phase 3.5d rule updates, finds users who were previously rejected but are NOW eligible under new rules, and sends personalized re-engagement via multi-channel (WhatsApp + Email). **Expected outcome:** 18-20% conversion on re-engaged users, closing the feedback loop.
 
 **Closes Loop:** Phase 3.5d finds newly-eligible users → Phase 3.5e re-engages them → User restarts application (Phase 3a bot) → Approval → Feedback loop complete ✓
 
@@ -25,9 +25,9 @@
 
 ### Data Flow
 ```
-Phase 3.5d: Rule Update Complete (v1 → v2)
+Phase 3.5d: Rule Update Complete (v1 → v2) @ 01:00 AM IST
     ↓
-02:00 UTC: Reengagement Job Fires
+02:00 AM IST: Reengagement Job Fires (1 hour later)
     ↓
 Query: rejection_logs WHERE rejected_at > 24h ago AND user_engaged_again = false
     ↓
@@ -283,12 +283,12 @@ const reengagement_queue = new Queue('reengagement-campaign', {
   connection: { host: process.env.REDIS_HOST || 'localhost', port: process.env.REDIS_PORT || 6379 }
 });
 
-// Schedule nightly @ 02:00 UTC
+// Schedule nightly @ 02:00 AM IST (20:30 UTC previous day)
 reengagement_queue.add(
   'send-campaign',
   { hours: 24 },
   {
-    repeat: { cron: '0 2 * * *' },  // 02:00 UTC
+    repeat: { cron: '30 20 * * *' },  // 02:00 AM IST (20:30 UTC)
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 }
   }
@@ -518,7 +518,7 @@ curl http://localhost:3000/api/reengagement/events/919876543210?limit=20
 
 ## Slack Integration
 
-### Campaign Alert (Posted @ 02:00 UTC)
+### Campaign Alert (Posted @ 02:00 AM IST)
 
 **Channel:** `#reengagement-campaigns`
 
@@ -680,12 +680,12 @@ All campaign events logged to reengagement_events table for audit trail.
 ## Closed-Loop Feedback: Complete Picture
 
 ```
-Day 1 @ 01:00 UTC ─→ Phase 3.5d (Suppression Analysis)
-                      "1,200 rejections analyzed, CIBIL 700→650 recommended"
-                      ↓ Store recommendation
-                      ↓ Slack alert to ops
+Day 1 @ 01:00 AM IST ─→ Phase 3.5d (Suppression Analysis)
+                         "1,200 rejections analyzed, CIBIL 700→650 recommended"
+                         ↓ Store recommendation
+                         ↓ Slack alert to ops
                       
-Day 1 @ 02:00 UTC ─→ Phase 3.5e (Re-engagement Campaign)
+Day 1 @ 02:00 AM IST ─→ Phase 3.5e (Re-engagement Campaign)
                       "280 users newly eligible, sending re-engagement..."
                       ↓ Send 250 WhatsApp + 30 Email
                       ↓ 70 users click "restart" (25% response)
@@ -699,12 +699,12 @@ Day 1 @ 18:00 UTC ─→ Phase 4 (Lender Submission)
                       "14 applications submitted to lenders"
                       ↓ 10 approved (70% approval rate)
                       
-Day 2 @ 09:00 UTC ─→ Phase 3.5c (Rejection Tracking)
-                      "4 applications rejected, patterns logged"
-                      ↓ Store rejection reasons, bureau vars
-                      ↓ Alert ops to new pattern
+Day 2 @ 02:30 PM IST ─→ Phase 3.5c (Rejection Tracking)
+                        "4 applications rejected, patterns logged"
+                        ↓ Store rejection reasons, bureau vars
+                        ↓ Alert ops to new pattern
                       
-Day 2 @ 01:00 UTC ─→ LOOP REPEATS
+Day 2 @ 01:00 AM IST ─→ LOOP REPEATS
                       "Analyze new rejections, adjust rules further"
                       ↓ CIBIL 650→640? Age 65→70?
                       ↓ Continuous optimization

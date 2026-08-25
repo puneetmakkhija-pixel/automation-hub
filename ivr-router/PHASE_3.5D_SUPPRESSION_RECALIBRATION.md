@@ -1,6 +1,6 @@
 # Phase 3.5d: Suppression & Recalibration Engine
 
-**Objective:** Nightly batch job (01:00 UTC) that analyzes rejection patterns from Phase 3.5c, identifies over-suppressed eligibility rules, recommends improvements via Claude API, updates rules, and notifies ops team for approval. **Expected outcome:** Expand eligible pool by 15-25% on month 2-3.
+**Objective:** Nightly batch job (01:00 AM IST) that analyzes rejection patterns from Phase 3.5c, identifies over-suppressed eligibility rules, recommends improvements via Claude API, updates rules, and notifies ops team for approval. **Expected outcome:** Expand eligible pool by 15-25% on month 2-3.
 
 **Closes Loop:** Rejection data (Phase 3.5c) → Pattern analysis (3.5d) → Rule updates (3.5d) → Re-engagement targets (Phase 3.5e)
 
@@ -36,13 +36,13 @@ Claude API Prompt:
 rule_recommendations table (pending_review → applied/rejected)
     ↓
 eligibility_rules table (version history, audit trail)
-    ↓ Slack alert to #suppression-analysis with recommendation
+    ↓ Slack alert to #suppression-analysis with recommendation (01:00 AM IST)
     ↓ Ops team approves or rejects in Slack
     ↓ POST /api/suppression/apply-recommendation/:id (approve/reject)
     ↓
 user_eligibility_cache (INVALIDATE old rules, rebuild with new thresholds)
     ↓
-Phase 3.5e: Re-engagement queries new_eligible_users (WHERE old_eligible=false AND new_eligible=true)
+Phase 3.5e: Re-engagement queries new_eligible_users (02:00 AM IST) (WHERE old_eligible=false AND new_eligible=true)
 ```
 
 ---
@@ -298,12 +298,12 @@ const suppression_queue = new Queue('suppression-recalibration', {
   connection: { host: process.env.REDIS_HOST || 'localhost', port: process.env.REDIS_PORT || 6379 }
 });
 
-// Schedule nightly @ 01:00 UTC
+// Schedule nightly @ 01:00 AM IST (19:30 UTC previous day)
 suppression_queue.add(
   'analyze-rejections',
   { hours: 24, lender_ids: [] },
   {
-    repeat: { cron: '0 1 * * *' },  // 01:00 UTC
+    repeat: { cron: '30 19 * * *' },  // 01:00 AM IST (19:30 UTC)
     attempts: 3,
     backoff: { type: 'exponential', delay: 2000 }
   }
@@ -504,7 +504,7 @@ curl http://localhost:3000/api/suppression/current-rules
 
 ## Slack Integration
 
-### Recommendation Alert (Posted @ 01:00 UTC)
+### Recommendation Alert (Posted @ 01:00 AM IST)
 
 **Channel:** `#suppression-analysis`
 
