@@ -15,6 +15,7 @@ import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
 import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
+import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
 
 dotenv.config();
 
@@ -72,6 +73,9 @@ app.use("/api/llm", intentGenerationRoutes);
 
 // ==================== Application Push Routes (Phase 3.5b: Multi-Channel Orchestration) ====================
 app.use("/api/push", applicationPushRoutes);
+
+// ==================== Rejection Tracking Routes (Phase 3.5c: Lender Feedback) ====================
+app.use("/api/rejections", rejectionTrackingRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
