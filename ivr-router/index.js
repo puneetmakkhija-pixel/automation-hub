@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import OBDApiClient from "./lib/obdApiClient.js";
 import createObdRoutes from "./lib/obdRoutes.js";
 import { routeWebhookEvent } from "./lib/webhookHandlers.js";
+import anantaRoutes from "./lib/anantaRoutes.js";
 
 dotenv.config();
 
@@ -24,6 +25,9 @@ app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 // ==================== OBD API Routes ====================
 app.use("/api/obd", createObdRoutes(obdClient));
+
+// ==================== Ananta API Routes ====================
+app.use("/api/ananta", anantaRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
@@ -123,6 +127,33 @@ app.post("/webhooks/sms/confirmation", (req, res) => {
   } catch (error) {
     console.error("SMS confirmation webhook error:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== Ananta Webhook Handlers ====================
+// Ananta WhatsApp delivery webhook
+app.post("/webhooks/ananta", (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`\n[${new Date().toISOString()}] Ananta Webhook - Phone: ${payload.phone}, Status: ${payload.status}`);
+
+    // Parse and process Ananta webhook
+    res.json({
+      success: true,
+      message: "Ananta webhook received and processed",
+      data: {
+        phone: payload.phone,
+        status: payload.status,
+        messageId: payload.msgid,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Ananta webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
