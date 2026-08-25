@@ -1,4 +1,9 @@
 import express from "express";
+import dotenv from "dotenv";
+import OBDApiClient from "./lib/obdApiClient.js";
+import createObdRoutes from "./lib/obdRoutes.js";
+
+dotenv.config();
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -6,16 +11,63 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Railway healthcheck
+// Initialize OBD API Client
+const obdClient = new OBDApiClient(
+  process.env.OBD_BASE_URL || "https://obdapi2.ivrsms.com",
+  process.env.OBD_USERNAME,
+  process.env.OBD_PASSWORD
+);
+
+// ==================== Health Check ====================
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
+// ==================== OBD API Routes ====================
+app.use("/api/obd", createObdRoutes(obdClient));
+
+// ==================== Webhook Handlers ====================
+// OBD Webhook: Receives campaign events (hangup, etc.)
+app.post("/webhooks/obd", (req, res) => {
+  try {
+    console.log("OBD Webhook received:", req.body);
+    // Handle OBD events here
+    // Examples: campaign completion, call hangup, etc.
+    res.json({
+      success: true,
+      message: "Webhook received",
+    });
+  } catch (error) {
+    console.error("Webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// SMS Webhook: Receives SMS/WhatsApp callback events
+app.post("/webhooks/sms", (req, res) => {
+  try {
+    console.log("SMS Webhook received:", req.body);
+    // Handle SMS/WhatsApp events here
+    res.json({
+      success: true,
+      message: "SMS webhook received",
+    });
+  } catch (error) {
+    console.error("SMS webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== Twilio IVR (Legacy) ====================
 // Twilio calls this when a call comes in to your IVR number.
 // Twilio sends form-encoded params (From, To, Digits, CallSid, ...).
 app.post("/voice", (req, res) => {
   const digits = req.body.Digits;
 
-  // TODO: replace this with your real menu. Keep responses as TwiML.
-  // Docs: https://www.twilio.com/docs/voice/twiml
   if (!digits) {
     res.type("text/xml").send(`
       <Response>
@@ -33,8 +85,6 @@ app.post("/voice", (req, res) => {
   }
 
   if (digits === "1") {
-    // TODO: look up the caller's loan status (by From number) and say it,
-    // or hand off to the ElevenLabs voice agent for a conversational flow.
     res.type("text/xml").send(`
       <Response>
         <Say>Loan status lookup is not wired up yet. Goodbye.</Say>
@@ -44,8 +94,6 @@ app.post("/voice", (req, res) => {
   }
 
   if (digits === "2") {
-    // TODO: <Dial> to a real number, or <Redirect> into an ElevenLabs
-    // Agent phone number for a full conversational handoff.
     res.type("text/xml").send(`
       <Response>
         <Say>Connecting you to an agent is not wired up yet. Goodbye.</Say>
@@ -57,4 +105,7 @@ app.post("/voice", (req, res) => {
   res.type("text/xml").send(`<Response><Say>Invalid option. Goodbye.</Say></Response>`);
 });
 
-app.listen(PORT, () => console.log(`ivr-router listening on ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`IVR Router listening on ${PORT}`);
+  console.log(`OBD API configured at ${process.env.OBD_BASE_URL}`);
+});
