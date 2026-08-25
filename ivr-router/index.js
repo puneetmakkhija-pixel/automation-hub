@@ -17,6 +17,7 @@ import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
 import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js";
+import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
 
 dotenv.config();
 
@@ -80,6 +81,9 @@ app.use("/api/rejections", rejectionTrackingRoutes);
 
 // ==================== Suppression & Recalibration Routes (Phase 3.5d: Rule Optimization) ====================
 app.use("/api/suppression", suppressionAnalysisRoutes);
+
+// ==================== Re-engagement Campaign Routes (Phase 3.5e: Feedback Loop Closer) ====================
+app.use("/api/reengagement", reengagementRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
