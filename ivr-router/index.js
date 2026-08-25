@@ -4,6 +4,7 @@ import OBDApiClient from "./lib/obdApiClient.js";
 import createObdRoutes from "./lib/obdRoutes.js";
 import { routeWebhookEvent } from "./lib/webhookHandlers.js";
 import anantaRoutes from "./lib/anantaRoutes.js";
+import oriserveRoutes from "./lib/oriserveRoutes.js";
 
 dotenv.config();
 
@@ -28,6 +29,9 @@ app.use("/api/obd", createObdRoutes(obdClient));
 
 // ==================== Ananta API Routes ====================
 app.use("/api/ananta", anantaRoutes);
+
+// ==================== Oriserve Voice Agent Routes ====================
+app.use("/api/oriserve", oriserveRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
@@ -150,6 +154,35 @@ app.post("/webhooks/ananta", (req, res) => {
     });
   } catch (error) {
     console.error("Ananta webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== Oriserve Webhook Handlers ====================
+// Oriserve voice agent campaign callbacks
+app.post("/webhooks/oriserve", (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`\n[${new Date().toISOString()}] Oriserve Webhook - Campaign: ${payload.campaign_id}, Phone: ${payload.mobile}, Status: ${payload.status}`);
+
+    // Parse and process Oriserve webhook
+    res.json({
+      success: true,
+      message: "Oriserve webhook received and processed",
+      data: {
+        campaign_id: payload.campaign_id,
+        mobile: payload.mobile,
+        status: payload.status,
+        call_duration: payload.call_duration,
+        result: payload.result,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Oriserve webhook error:", error);
     res.status(500).json({
       success: false,
       error: error.message,
