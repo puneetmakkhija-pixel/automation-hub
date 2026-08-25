@@ -13,6 +13,7 @@ import poonawalaaCampaignRoutes from "./lib/poonawalaaCampaignRoutes.js";
 import crmIntegrationRoutes from "./lib/crmIntegrationRoutes.js";
 import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
 import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
+import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 
 dotenv.config();
 
@@ -64,6 +65,9 @@ app.use("/api/routing", lenderRoutingRoutes);
 
 // ==================== WhatsApp Bot Routes (Phase 3a: Conversation State Machine) ====================
 app.use("/api", whatsappBotRoutes);
+
+// ==================== Intent Generation Routes (Phase 3.5a: LLM Intelligence) ====================
+app.use("/api/llm", intentGenerationRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
