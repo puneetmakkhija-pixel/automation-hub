@@ -160,3 +160,64 @@ ALTER TABLE public.rejection_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY IF NOT EXISTS "Allow service role" ON public.rejection_logs
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
+-- Phase 3.5b: Application Push - Push Events Table
+CREATE TABLE IF NOT EXISTS public.push_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number VARCHAR(20) NOT NULL REFERENCES public.conversation_state(phone_number) ON DELETE CASCADE,
+
+  -- Channel tracking
+  channels_attempted VARCHAR[] DEFAULT '{}', -- ['whatsapp', 'email', 'slack']
+  channels_succeeded VARCHAR[] DEFAULT '{}', -- Channels that successfully sent
+
+  -- Message IDs for tracking
+  whatsapp_message_id VARCHAR(255),
+  email_message_id VARCHAR(255),
+
+  -- Intent and personalization
+  intent_used VARCHAR(50),
+  personalized_message TEXT,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT now(),
+  delivered_at TIMESTAMP,
+  read_at TIMESTAMP
+);
+
+-- Create indexes on push_events
+CREATE INDEX IF NOT EXISTS idx_push_events_phone ON public.push_events(phone_number);
+CREATE INDEX IF NOT EXISTS idx_push_events_created_at ON public.push_events(created_at);
+
+-- Enable RLS on push_events
+ALTER TABLE public.push_events ENABLE ROW LEVEL SECURITY;
+
+-- Allow service role to read/write
+CREATE POLICY IF NOT EXISTS "Allow service role" ON public.push_events
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- Phase 3.5b: Application Push - Push Engagement Events Table
+CREATE TABLE IF NOT EXISTS public.push_engagement_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number VARCHAR(20) NOT NULL REFERENCES public.conversation_state(phone_number) ON DELETE CASCADE,
+
+  -- Engagement tracking
+  event_type VARCHAR(100), -- 'whatsapp_opened', 'email_clicked', 'application_started', 'inactivity_2h', 'document_rejected'
+  metadata JSONB DEFAULT '{}'::jsonb, -- Additional context about the event
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Create indexes on push_engagement_events
+CREATE INDEX IF NOT EXISTS idx_push_engagement_phone ON public.push_engagement_events(phone_number);
+CREATE INDEX IF NOT EXISTS idx_push_engagement_event_type ON public.push_engagement_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_push_engagement_created_at ON public.push_engagement_events(created_at);
+
+-- Enable RLS on push_engagement_events
+ALTER TABLE public.push_engagement_events ENABLE ROW LEVEL SECURITY;
+
+-- Allow service role to read/write
+CREATE POLICY IF NOT EXISTS "Allow service role" ON public.push_engagement_events
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
