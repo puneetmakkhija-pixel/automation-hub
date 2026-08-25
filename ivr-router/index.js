@@ -8,6 +8,7 @@ import oriserveRoutes from "./lib/oriserveRoutes.js";
 import chatsenseRoutes from "./lib/chatsenseRoutes.js";
 import supabaseRoutes from "./lib/supabaseRoutes.js";
 import elevenLabsRoutes from "./lib/elevenLabsRoutes.js";
+import pincodeRoutes from "./lib/pincodeRoutes.js";
 
 dotenv.config();
 
@@ -44,6 +45,9 @@ app.use("/api/db", supabaseRoutes);
 
 // ==================== Eleven Labs Voice Generation Routes ====================
 app.use("/api/voice", elevenLabsRoutes);
+
+// ==================== Pincode Gating & Eligibility Routes ====================
+app.use("/api/gating", pincodeRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
