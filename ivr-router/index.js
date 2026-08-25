@@ -1,4 +1,10 @@
 import express from "express";
+import dotenv from "dotenv";
+import OBDApiClient from "./lib/obdApiClient.js";
+import createObdRoutes from "./lib/obdRoutes.js";
+import { routeWebhookEvent } from "./lib/webhookHandlers.js";
+
+dotenv.config();
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
@@ -6,16 +12,126 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// Railway healthcheck
+// Initialize OBD API Client
+const obdClient = new OBDApiClient(
+  process.env.OBD_BASE_URL || "https://obdapi2.ivrsms.com",
+  process.env.OBD_USERNAME,
+  process.env.OBD_PASSWORD
+);
+
+// ==================== Health Check ====================
 app.get("/health", (_req, res) => res.status(200).send("ok"));
 
+// ==================== OBD API Routes ====================
+app.use("/api/obd", createObdRoutes(obdClient));
+
+// ==================== Voice Webhook Handlers ====================
+// Main OBD Webhook: Processes voice call events
+app.post("/webhooks/obd", (req, res) => {
+  try {
+    const { eventType, payload } = req.body;
+    console.log(`\n[${new Date().toISOString()}] Webhook: ${eventType}`);
+
+    const result = routeWebhookEvent(eventType, payload);
+
+    res.json({
+      success: true,
+      message: "Webhook processed",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Voice webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Specific hangup endpoint
+app.post("/webhooks/obd/hangup", (req, res) => {
+  try {
+    const result = routeWebhookEvent("HANGUP", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Hangup webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Specific call connect endpoint
+app.post("/webhooks/obd/connect", (req, res) => {
+  try {
+    const result = routeWebhookEvent("CALL_CONNECT", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Call connect webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Specific completion endpoint
+app.post("/webhooks/obd/completion", (req, res) => {
+  try {
+    const result = routeWebhookEvent("CAMPAIGN_COMPLETE", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Completion webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== SMS/WhatsApp Webhook Handlers ====================
+// Main SMS Webhook: Processes SMS/WhatsApp delivery events
+app.post("/webhooks/sms", (req, res) => {
+  try {
+    const { eventType, payload } = req.body;
+    console.log(`\n[${new Date().toISOString()}] SMS Webhook: ${eventType}`);
+
+    const result = routeWebhookEvent(eventType, payload);
+
+    res.json({
+      success: true,
+      message: "SMS webhook processed",
+      data: result,
+    });
+  } catch (error) {
+    console.error("SMS webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// Specific WhatsApp endpoint
+app.post("/webhooks/sms/whatsapp", (req, res) => {
+  try {
+    const result = routeWebhookEvent("WHATSAPP_DELIVERY", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("WhatsApp webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Specific SMS confirmation endpoint
+app.post("/webhooks/sms/confirmation", (req, res) => {
+  try {
+    const result = routeWebhookEvent("SMS_DELIVERY", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("SMS confirmation webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== Twilio IVR (Legacy) ====================
 // Twilio calls this when a call comes in to your IVR number.
 // Twilio sends form-encoded params (From, To, Digits, CallSid, ...).
 app.post("/voice", (req, res) => {
   const digits = req.body.Digits;
 
-  // TODO: replace this with your real menu. Keep responses as TwiML.
-  // Docs: https://www.twilio.com/docs/voice/twiml
   if (!digits) {
     res.type("text/xml").send(`
       <Response>
@@ -33,8 +149,6 @@ app.post("/voice", (req, res) => {
   }
 
   if (digits === "1") {
-    // TODO: look up the caller's loan status (by From number) and say it,
-    // or hand off to the ElevenLabs voice agent for a conversational flow.
     res.type("text/xml").send(`
       <Response>
         <Say>Loan status lookup is not wired up yet. Goodbye.</Say>
@@ -44,8 +158,6 @@ app.post("/voice", (req, res) => {
   }
 
   if (digits === "2") {
-    // TODO: <Dial> to a real number, or <Redirect> into an ElevenLabs
-    // Agent phone number for a full conversational handoff.
     res.type("text/xml").send(`
       <Response>
         <Say>Connecting you to an agent is not wired up yet. Goodbye.</Say>
@@ -57,4 +169,7 @@ app.post("/voice", (req, res) => {
   res.type("text/xml").send(`<Response><Say>Invalid option. Goodbye.</Say></Response>`);
 });
 
-app.listen(PORT, () => console.log(`ivr-router listening on ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`IVR Router listening on ${PORT}`);
+  console.log(`OBD API configured at ${process.env.OBD_BASE_URL}`);
+});
