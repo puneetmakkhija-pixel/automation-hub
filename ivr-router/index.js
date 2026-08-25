@@ -5,6 +5,7 @@ import createObdRoutes from "./lib/obdRoutes.js";
 import { routeWebhookEvent } from "./lib/webhookHandlers.js";
 import anantaRoutes from "./lib/anantaRoutes.js";
 import oriserveRoutes from "./lib/oriserveRoutes.js";
+import chatsenseRoutes from "./lib/chatsenseRoutes.js";
 
 dotenv.config();
 
@@ -32,6 +33,9 @@ app.use("/api/ananta", anantaRoutes);
 
 // ==================== Oriserve Voice Agent Routes ====================
 app.use("/api/oriserve", oriserveRoutes);
+
+// ==================== Chatsense API Routes ====================
+app.use("/api/chatsense", chatsenseRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
@@ -183,6 +187,34 @@ app.post("/webhooks/oriserve", (req, res) => {
     });
   } catch (error) {
     console.error("Oriserve webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== Chatsense Webhook Handlers ====================
+// Chatsense message delivery webhooks
+app.post("/webhooks/chatsense", (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`\n[${new Date().toISOString()}] Chatsense Webhook - Phone: ${payload.phone}, Status: ${payload.status}`);
+
+    // Parse and process Chatsense webhook
+    res.json({
+      success: true,
+      message: "Chatsense webhook received and processed",
+      data: {
+        phone: payload.phone,
+        status: payload.status,
+        messageId: payload.messageId,
+        templateName: payload.templateName,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Chatsense webhook error:", error);
     res.status(500).json({
       success: false,
       error: error.message,
