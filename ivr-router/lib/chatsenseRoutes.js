@@ -9,6 +9,7 @@
 
 import express from 'express';
 import ChatsenseClient from './chatsenseClient.js';
+import CrmIntegrationClient from './crmIntegrationClient.js';
 
 const router = express.Router();
 
@@ -22,6 +23,9 @@ try {
 } catch (error) {
   console.warn('Chatsense client initialization warning:', error.message);
 }
+
+// Initialize CRM Integration client (Phase 1: Lead Intake)
+const crmClient = new CrmIntegrationClient();
 
 // ==================== Health Check ====================
 
@@ -306,6 +310,99 @@ router.post('/templates/bulk-send', async (req, res) => {
     });
   } catch (error) {
     console.error('Bulk send error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== Voice Disposition Webhook (Phase 1) ====================
+
+/**
+ * Handle voice disposition capture from Chatsense
+ * PHASE 1: Lead Intake Pipeline
+ * Called after: OBD voice call + DTMF capture
+ * Triggers: lead_intake_sync in CRM
+ *
+ * POST /api/chatsense/voice-disposition
+ * Payload: {
+ *   phone: "919876543210",
+ *   name: "Rajesh Kumar",
+ *   age: 32,
+ *   income: 500000,
+ *   pincode: "400001",
+ *   state: "Maharashtra",
+ *   email: "rajesh@email.com",
+ *   disposition: "interested",
+ *   callDuration: 45,
+ *   dtmfChoice: 1,
+ *   callSid: "call_12345",
+ *   campaignId: "poonawala_stpl_batch_1724095200000_1"
+ * }
+ */
+router.post('/voice-disposition', async (req, res) => {
+  try {
+    const {
+      phone, name, age, income, pincode, state, email,
+      disposition, callDuration, dtmfChoice,
+      callSid, campaignId, batchId, metadata
+    } = req.body;
+
+    // Validate required fields
+    if (!phone || !name || !disposition) {
+      return res.status(400).json({
+        success: false,
+        error: 'phone, name, and disposition are required',
+      });
+    }
+
+    console.log(`[Chatsense] Voice disposition for ${phone}: ${disposition} (call: ${callSid})`);
+
+    // PHASE 1: Call CRM lead intake
+    const crmResult = await crmClient.leadIntakeSyncFromVoice({
+      phone,
+      name,
+      age,
+      income,
+      pincode,
+      state,
+      email,
+      channel: 'obd_voice',
+      disposition,
+      callDuration,
+      dtmfChoice,
+      campaignId,
+      batchId,
+      ivrGreeting: null,
+      customMetadata: {
+        callSid,
+        ...metadata
+      }
+    });
+
+    // Log the disposition in CRM audit trail
+    if (crmResult.success && crmResult.applicationId) {
+      await crmClient.logVoiceDisposition({
+        applicationId: crmResult.applicationId,
+        disposition,
+        details: {
+          callSid,
+          callDuration,
+          dtmfChoice,
+          campaignId,
+        }
+      });
+    }
+
+    res.status(crmResult.success ? 201 : 400).json({
+      ...crmResult,
+      source: 'chatsense_voice_disposition',
+      webhook: 'voice_disposition'
+    });
+
+  } catch (error) {
+    console.error('Voice disposition webhook error:', error);
     res.status(500).json({
       success: false,
       error: error.message,

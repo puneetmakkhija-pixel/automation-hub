@@ -10,6 +10,7 @@ import supabaseRoutes from "./lib/supabaseRoutes.js";
 import elevenLabsRoutes from "./lib/elevenLabsRoutes.js";
 import pincodeRoutes from "./lib/pincodeRoutes.js";
 import poonawalaaCampaignRoutes from "./lib/poonawalaaCampaignRoutes.js";
+import crmIntegrationRoutes from "./lib/crmIntegrationRoutes.js";
 
 dotenv.config();
 
@@ -52,6 +53,9 @@ app.use("/api/gating", pincodeRoutes);
 
 // ==================== Poonawala Campaign Orchestration Routes ====================
 app.use("/api/poonawala/campaign", poonawalaaCampaignRoutes);
+
+// ==================== CRM Integration Routes (Phase 1: Lead Intake) ====================
+app.use("/api/crm", crmIntegrationRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
