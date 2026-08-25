@@ -16,6 +16,7 @@ import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
+import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js";
 
 dotenv.config();
 
@@ -76,6 +77,9 @@ app.use("/api/push", applicationPushRoutes);
 
 // ==================== Rejection Tracking Routes (Phase 3.5c: Lender Feedback) ====================
 app.use("/api/rejections", rejectionTrackingRoutes);
+
+// ==================== Suppression & Recalibration Routes (Phase 3.5d: Rule Optimization) ====================
+app.use("/api/suppression", suppressionAnalysisRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
