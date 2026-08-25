@@ -6,6 +6,8 @@ import { routeWebhookEvent } from "./lib/webhookHandlers.js";
 import anantaRoutes from "./lib/anantaRoutes.js";
 import oriserveRoutes from "./lib/oriserveRoutes.js";
 import chatsenseRoutes from "./lib/chatsenseRoutes.js";
+import supabaseRoutes from "./lib/supabaseRoutes.js";
+import elevenLabsRoutes from "./lib/elevenLabsRoutes.js";
 
 dotenv.config();
 
@@ -36,6 +38,12 @@ app.use("/api/oriserve", oriserveRoutes);
 
 // ==================== Chatsense API Routes ====================
 app.use("/api/chatsense", chatsenseRoutes);
+
+// ==================== Supabase Database Routes ====================
+app.use("/api/db", supabaseRoutes);
+
+// ==================== Eleven Labs Voice Generation Routes ====================
+app.use("/api/voice", elevenLabsRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
