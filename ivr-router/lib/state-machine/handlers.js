@@ -1,5 +1,6 @@
 import ananta from '../clients/anantaClient.js';
 import supabase from '../clients/supabaseClient.js';
+import FormHandlers from './formHandlers.js';
 
 class PhaseHandlers {
   static async handleProductSelection(state, userMessage) {
@@ -129,19 +130,12 @@ class PhaseHandlers {
   }
 
   static async handleBusinessDetails(state, userMessage) {
-    return {
-      message: 'Business details form (coming in Phase 3b)',
-      nextPhase: 'documents',
-      messageType: 'text'
-    };
+    const step = state.form_data?.business_step || 1;
+    return await FormHandlers.handleBusinessDetailsForm(state, userMessage, step);
   }
 
   static async handleDocuments(state, userMessage) {
-    return {
-      message: 'Document upload handler (coming in Phase 3c)',
-      nextPhase: 'kyc_verification',
-      messageType: 'text'
-    };
+    return await FormHandlers.handleDocumentsForm(state, userMessage);
   }
 
   static async handleKYCVerification(state, userMessage) {
