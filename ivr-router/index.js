@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import OBDApiClient from "./lib/obdApiClient.js";
 import createObdRoutes from "./lib/obdRoutes.js";
+import { routeWebhookEvent } from "./lib/webhookHandlers.js";
 
 dotenv.config();
 
@@ -24,19 +25,22 @@ app.get("/health", (_req, res) => res.status(200).send("ok"));
 // ==================== OBD API Routes ====================
 app.use("/api/obd", createObdRoutes(obdClient));
 
-// ==================== Webhook Handlers ====================
-// OBD Webhook: Receives campaign events (hangup, etc.)
+// ==================== Voice Webhook Handlers ====================
+// Main OBD Webhook: Processes voice call events
 app.post("/webhooks/obd", (req, res) => {
   try {
-    console.log("OBD Webhook received:", req.body);
-    // Handle OBD events here
-    // Examples: campaign completion, call hangup, etc.
+    const { eventType, payload } = req.body;
+    console.log(`\n[${new Date().toISOString()}] Webhook: ${eventType}`);
+
+    const result = routeWebhookEvent(eventType, payload);
+
     res.json({
       success: true,
-      message: "Webhook received",
+      message: "Webhook processed",
+      data: result,
     });
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error("Voice webhook error:", error);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -44,14 +48,52 @@ app.post("/webhooks/obd", (req, res) => {
   }
 });
 
-// SMS Webhook: Receives SMS/WhatsApp callback events
+// Specific hangup endpoint
+app.post("/webhooks/obd/hangup", (req, res) => {
+  try {
+    const result = routeWebhookEvent("HANGUP", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Hangup webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Specific call connect endpoint
+app.post("/webhooks/obd/connect", (req, res) => {
+  try {
+    const result = routeWebhookEvent("CALL_CONNECT", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Call connect webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Specific completion endpoint
+app.post("/webhooks/obd/completion", (req, res) => {
+  try {
+    const result = routeWebhookEvent("CAMPAIGN_COMPLETE", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("Completion webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== SMS/WhatsApp Webhook Handlers ====================
+// Main SMS Webhook: Processes SMS/WhatsApp delivery events
 app.post("/webhooks/sms", (req, res) => {
   try {
-    console.log("SMS Webhook received:", req.body);
-    // Handle SMS/WhatsApp events here
+    const { eventType, payload } = req.body;
+    console.log(`\n[${new Date().toISOString()}] SMS Webhook: ${eventType}`);
+
+    const result = routeWebhookEvent(eventType, payload);
+
     res.json({
       success: true,
-      message: "SMS webhook received",
+      message: "SMS webhook processed",
+      data: result,
     });
   } catch (error) {
     console.error("SMS webhook error:", error);
@@ -59,6 +101,28 @@ app.post("/webhooks/sms", (req, res) => {
       success: false,
       error: error.message,
     });
+  }
+});
+
+// Specific WhatsApp endpoint
+app.post("/webhooks/sms/whatsapp", (req, res) => {
+  try {
+    const result = routeWebhookEvent("WHATSAPP_DELIVERY", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("WhatsApp webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Specific SMS confirmation endpoint
+app.post("/webhooks/sms/confirmation", (req, res) => {
+  try {
+    const result = routeWebhookEvent("SMS_DELIVERY", req.body);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error("SMS confirmation webhook error:", error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
