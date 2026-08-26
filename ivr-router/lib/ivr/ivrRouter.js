@@ -56,20 +56,89 @@ class IVRRouter {
 
   async handleIncomingCall(phoneNumber, lenderId, dtmfInput = null) {
     try {
-      const voiceBot = this.lenderConfig.get(lenderId);
-      if (!voiceBot) {
+      const lenderConfig = this.lenderConfig.get(lenderId);
+      if (!lenderConfig) {
         return { success: false, error: `Lender configuration not found: ${lenderId}` };
       }
 
-      // If DTMF "1" is pressed, route to voice bot
+      // If DTMF "1" is pressed, route to both voice bot AND WhatsApp
       if (dtmfInput === '1') {
-        return await this.routeToVoiceBot(phoneNumber, lenderId, voiceBot);
+        return await this.routeToDualChannels(phoneNumber, lenderId, lenderConfig);
       }
 
       // Default: present main menu
-      return this.presentMainMenu(lenderId, voiceBot);
+      return this.presentMainMenu(lenderId, lenderConfig);
     } catch (error) {
       console.error('[IVRRouter] Incoming call error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async routeToDualChannels(phoneNumber, lenderId, lenderConfig) {
+    try {
+      if (lenderConfig.has_voice_bot) {
+        // Flexiloans: Route to both Ori voice bot and WhatsApp
+        const botProfile = this.voiceBots.get(lenderConfig.voice_bot_id);
+        if (!botProfile) {
+          return { success: false, error: 'Voice bot profile not found' };
+        }
+
+        return {
+          success: true,
+          route: 'dual_channels',
+          phone_number: phoneNumber,
+          lender_id: lenderId,
+          channels: [
+            {
+              channel: 'voice_bot',
+              voice_bot_id: lenderConfig.voice_bot_id,
+              voice_name: lenderConfig.voice_name,
+              welcome_prompt: botProfile.ivr_prompts.welcome,
+              tts_config: botProfile.tts_config,
+              navigation_shortcuts: botProfile.navigation_shortcuts,
+              next_action: 'play_welcome_and_listen'
+            },
+            {
+              channel: 'whatsapp_bot',
+              message: `You're connected to ${lenderConfig.lender_name}! You can speak with ${lenderConfig.voice_name} or chat with us on WhatsApp.`,
+              next_action: 'send_whatsapp_greeting'
+            }
+          ],
+          ivr_context: {
+            lender_name: lenderConfig.lender_name,
+            dual_channel: true
+          }
+        };
+      } else {
+        // Poonawala: Route to pre-qualified offer + WhatsApp with journey link
+        return {
+          success: true,
+          route: 'dual_channels',
+          phone_number: phoneNumber,
+          lender_id: lenderId,
+          channels: [
+            {
+              channel: 'ivr_offer',
+              message: `You have a pre-qualified offer from ${lenderConfig.lender_name}`,
+              next_action: 'announce_offer'
+            },
+            {
+              channel: 'whatsapp_bot',
+              journey_url: lenderConfig.journey_url,
+              fallback_url: lenderConfig.fallback_url,
+              message: `You have a pre-qualified offer! Click here to complete your application: ${lenderConfig.journey_url}`,
+              next_action: 'send_whatsapp_journey_link'
+            }
+          ],
+          ivr_context: {
+            lender_name: lenderConfig.lender_name,
+            dual_channel: true,
+            pre_qualified: true
+          }
+        };
+      }
+    } catch (error) {
+      console.error('[IVRRouter] Dual channel routing error:', error.message);
       return { success: false, error: error.message };
     }
   }
@@ -142,17 +211,12 @@ class IVRRouter {
     let options;
 
     if (lenderId === 'flexiloans') {
-      lenderGreeting = "Welcome to Flexiloans! Press 1 to start your loan application with Ori, press 2 for WhatsApp, or stay on the line to speak with our specialist.";
+      lenderGreeting = "Welcome to Flexiloans! Press 1 to connect with Ori and WhatsApp, or stay on the line to speak with our specialist.";
       options = {
         1: {
-          action: 'voice_bot',
-          description: 'Start application with Ori (AI voice assistant)',
+          action: 'dual_channels',
+          description: 'Connect with Ori voice bot and WhatsApp simultaneously',
           voice_bot_id: voiceBot.voice_bot_id
-        },
-        2: {
-          action: 'whatsapp_bot',
-          description: 'Continue on WhatsApp',
-          prompt: 'Transferring you to WhatsApp...'
         },
         0: {
           action: 'operator',
@@ -160,13 +224,13 @@ class IVRRouter {
         }
       };
     } else {
-      // Poonawala - pre-qualified offer flow, no voice bot
-      lenderGreeting = "You have a pre-qualified offer from Poonawala Fincorp for an instant personal loan. Press 1 to accept and continue on WhatsApp, or remain on the line to speak with our specialist.";
+      // Poonawala - pre-qualified offer flow with dual channels
+      lenderGreeting = "You have a pre-qualified offer from Poonawala Fincorp for an instant personal loan. Press 1 to accept and receive your offer via WhatsApp, or remain on the line to speak with our specialist.";
       options = {
         1: {
-          action: 'whatsapp_bot',
-          description: 'Accept offer and continue on WhatsApp',
-          prompt: 'Transferring you to WhatsApp...'
+          action: 'dual_channels',
+          description: 'Accept pre-qualified offer and connect via WhatsApp',
+          prompt: 'Sending you the offer details...'
         },
         0: {
           action: 'operator',
@@ -195,16 +259,11 @@ class IVRRouter {
 
       switch (dtmfKey) {
         case '1':
-          // Press 1: Route to voice bot for Flexiloans, WhatsApp for Poonawala
-          if (lenderConfig.has_voice_bot) {
-            const voiceBot = this.lenderConfig.get(lenderId);
-            return await this.routeToVoiceBot(phoneNumber, lenderId, voiceBot);
-          } else {
-            return await this.routeToWhatsAppBot(phoneNumber, lenderId);
-          }
+          // Press 1: Route to dual channels (voice bot + WhatsApp for Flexiloans, offer + WhatsApp for Poonawala)
+          return await this.routeToDualChannels(phoneNumber, lenderId, lenderConfig);
 
         case '2':
-          // Press 2: Route to WhatsApp bot (Flexiloans only)
+          // Press 2: Only valid for Flexiloans (WhatsApp only without voice bot)
           if (lenderConfig.has_voice_bot) {
             return await this.routeToWhatsAppBot(phoneNumber, lenderId);
           } else {
