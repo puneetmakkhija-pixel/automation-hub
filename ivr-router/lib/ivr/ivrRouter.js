@@ -16,7 +16,7 @@ class IVRRouter {
     try {
       const voicesDir = path.join(__dirname, '../../config/voices');
 
-      // Load voice bot profiles (Ori and VR)
+      // Load voice bot profiles (Ori for Flexiloans only)
       const botFiles = fs.readdirSync(voicesDir).filter(f =>
         f.includes('voice-bot') && f.endsWith('.json')
       );
@@ -32,10 +32,19 @@ class IVRRouter {
           this.lenderConfig.set(profile.lender_id, {
             lender_name: profile.lender_name,
             voice_bot_id: profile.voice_bot_id,
-            voice_name: profile.voice_name
+            voice_name: profile.voice_name,
+            has_voice_bot: true
           });
         }
       });
+
+      // Add Poonawala config (no voice bot)
+      if (!this.lenderConfig.has('poonawala')) {
+        this.lenderConfig.set('poonawala', {
+          lender_name: 'Poonawala Fincorp',
+          has_voice_bot: false
+        });
+      }
 
       console.log(`[IVRRouter] Initialized ${this.voiceBots.size} voice bots`);
     } catch (error) {
@@ -116,20 +125,17 @@ class IVRRouter {
   }
 
   presentMainMenu(lenderId, voiceBot) {
-    const lenderGreeting = lenderId === 'flexiloans'
-      ? "Welcome to Flexiloans! Press 1 to start your loan application, or stay on the line to speak with our specialist."
-      : "Welcome to Poonawala Fincorp. Press 1 to begin your loan inquiry, or remain on the line to speak with our advisor.";
+    const hasVoiceBot = voiceBot?.has_voice_bot || false;
 
-    return {
-      success: true,
-      route: 'main_menu',
-      lender_id: lenderId,
-      voice_name: voiceBot.voice_name,
-      menu_prompt: lenderGreeting,
-      options: {
+    let lenderGreeting;
+    let options;
+
+    if (lenderId === 'flexiloans') {
+      lenderGreeting = "Welcome to Flexiloans! Press 1 to start your loan application with Ori, press 2 for WhatsApp, or stay on the line to speak with our specialist.";
+      options = {
         1: {
           action: 'voice_bot',
-          description: 'Start application with AI voice assistant',
+          description: 'Start application with Ori (AI voice assistant)',
           voice_bot_id: voiceBot.voice_bot_id
         },
         2: {
@@ -141,7 +147,29 @@ class IVRRouter {
           action: 'operator',
           description: 'Speak with human agent'
         }
-      },
+      };
+    } else {
+      // Poonawala - no voice bot
+      lenderGreeting = "Welcome to Poonawala Fincorp. Press 1 to continue on WhatsApp, or remain on the line to speak with our advisor.";
+      options = {
+        1: {
+          action: 'whatsapp_bot',
+          description: 'Continue on WhatsApp',
+          prompt: 'Transferring you to WhatsApp...'
+        },
+        0: {
+          action: 'operator',
+          description: 'Speak with human agent'
+        }
+      };
+    }
+
+    return {
+      success: true,
+      route: 'main_menu',
+      lender_id: lenderId,
+      menu_prompt: lenderGreeting,
+      options,
       timeout_seconds: 30,
       next_action: 'wait_for_dtmf'
     };
@@ -149,37 +177,46 @@ class IVRRouter {
 
   async handleDTMFInput(phoneNumber, lenderId, dtmfKey) {
     try {
-      const voiceBot = this.lenderConfig.get(lenderId);
-      if (!voiceBot) {
+      const lenderConfig = this.lenderConfig.get(lenderId);
+      if (!lenderConfig) {
         return { success: false, error: 'Lender configuration not found' };
       }
 
-      const botProfile = this.voiceBots.get(voiceBot.voice_bot_id);
-      if (!botProfile) {
-        return { success: false, error: 'Voice bot profile not found' };
-      }
-
-      const shortcutAction = botProfile.navigation_shortcuts[dtmfKey];
-
       switch (dtmfKey) {
         case '1':
-          // Route to voice bot
-          return await this.routeToVoiceBot(phoneNumber, lenderId, voiceBot);
+          // Press 1: Route to voice bot for Flexiloans, WhatsApp for Poonawala
+          if (lenderConfig.has_voice_bot) {
+            const voiceBot = this.lenderConfig.get(lenderId);
+            return await this.routeToVoiceBot(phoneNumber, lenderId, voiceBot);
+          } else {
+            return await this.routeToWhatsAppBot(phoneNumber, lenderId);
+          }
 
         case '2':
-          // Route to WhatsApp bot
-          return await this.routeToWhatsAppBot(phoneNumber, lenderId);
+          // Press 2: Route to WhatsApp bot (Flexiloans only)
+          if (lenderConfig.has_voice_bot) {
+            return await this.routeToWhatsAppBot(phoneNumber, lenderId);
+          } else {
+            return {
+              success: false,
+              error: `Invalid input: ${dtmfKey}`,
+              retry: true,
+              message: 'Invalid option. Press 1 for WhatsApp or 0 for operator'
+            };
+          }
 
         case '0':
           // Return to main menu
-          return this.presentMainMenu(lenderId, voiceBot);
+          return this.presentMainMenu(lenderId, lenderConfig);
 
         default:
           return {
             success: false,
             error: `Invalid input: ${dtmfKey}`,
             retry: true,
-            message: 'Please press 1 for voice assistant or 2 for WhatsApp'
+            message: lenderConfig.has_voice_bot
+              ? 'Please press 1 for voice assistant or 2 for WhatsApp'
+              : 'Please press 1 for WhatsApp or 0 for operator'
           };
       }
     } catch (error) {
