@@ -322,7 +322,7 @@ class WhatsAppBotJourney {
     }
   }
 
-  async redirectToExternalJourney(phoneNumber, lenderId, journeyUrl) {
+  async redirectToExternalJourney(phoneNumber, lenderId, journeyUrl, fallbackUrl = null) {
     try {
       const { data: conversation, error: convError } = await supabase
         .from('conversation_state')
@@ -340,7 +340,12 @@ class WhatsAppBotJourney {
         .update({
           status: 'transferred_to_external',
           current_phase: 'external_journey',
-          last_active_at: new Date().toISOString()
+          last_active_at: new Date().toISOString(),
+          form_data: {
+            ...conversation.form_data,
+            primary_url: journeyUrl,
+            fallback_url: fallbackUrl
+          }
         })
         .eq('phone_number', phoneNumber);
 
@@ -351,7 +356,7 @@ class WhatsAppBotJourney {
           phone_number: phoneNumber,
           phase: conversation.current_phase,
           event_type: 'redirected_to_external_journey',
-          metadata: { lender_id: lenderId, journey_url: journeyUrl }
+          metadata: { lender_id: lenderId, journey_url: journeyUrl, fallback_url: fallbackUrl }
         });
 
       // Send WhatsApp message with journey link
@@ -364,10 +369,61 @@ class WhatsAppBotJourney {
         phone_number: phoneNumber,
         lender_id: lenderId,
         journey_url: journeyUrl,
+        fallback_url: fallbackUrl,
         whatsapp_sent: true
       };
     } catch (error) {
       console.error('[WhatsAppJourney] Redirect error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async handleRejectionWithFallback(phoneNumber, lenderId, fallbackUrl) {
+    try {
+      const { data: conversation, error: convError } = await supabase
+        .from('conversation_state')
+        .select('*')
+        .eq('phone_number', phoneNumber)
+        .single();
+
+      if (convError) {
+        return { success: false, error: convError.message };
+      }
+
+      // Update conversation state
+      await supabase
+        .from('conversation_state')
+        .update({
+          status: 'rejected',
+          current_phase: 'rejection_fallback',
+          last_active_at: new Date().toISOString()
+        })
+        .eq('phone_number', phoneNumber);
+
+      // Log rejection and fallback
+      await supabase
+        .from('conversation_events')
+        .insert({
+          phone_number: phoneNumber,
+          phase: conversation.current_phase,
+          event_type: 'rejection_with_fallback',
+          metadata: { lender_id: lenderId, fallback_url: fallbackUrl }
+        });
+
+      // Send WhatsApp message with fallback offer
+      const message = `We have another great offer for you! Click here to explore: ${fallbackUrl}`;
+      await anantaClient.sendTextMessage(phoneNumber, message);
+
+      return {
+        success: true,
+        message: 'Rejection handled with fallback offer',
+        phone_number: phoneNumber,
+        lender_id: lenderId,
+        fallback_url: fallbackUrl,
+        whatsapp_sent: true
+      };
+    } catch (error) {
+      console.error('[WhatsAppJourney] Rejection fallback error:', error.message);
       return { success: false, error: error.message };
     }
   }

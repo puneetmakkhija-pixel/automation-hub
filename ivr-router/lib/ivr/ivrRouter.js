@@ -38,12 +38,13 @@ class IVRRouter {
         }
       });
 
-      // Add Poonawala config (no voice bot)
+      // Add Poonawala config (no voice bot, with fallback)
       if (!this.lenderConfig.has('poonawala')) {
         this.lenderConfig.set('poonawala', {
           lender_name: 'Poonawala Fincorp',
           has_voice_bot: false,
-          journey_url: 'https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Partner_Name=BuddyLoan&UTM_Partner_Medium=BDLParameter&UTM_Partner_AgentCode=IVRSMS&UTM_Partner_ReferenceID=PK2002'
+          journey_url: 'https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Partner_Name=BuddyLoan&UTM_Partner_Medium=BDLParameter&UTM_Partner_AgentCode=IVRSMS&UTM_Partner_ReferenceID=PK2002',
+          fallback_url: 'https://loans.apps.herofincorp.com/en/personal-loan?af_xp=custom&source_caller=ui&pid=Buddyloan&utm_medium=588&utm_campaignid=IVRSMS&is_retargeting=true&utm_source=partnership_BDL&shortlink=qtuldaei&utm_campaign=Buddyloan&af_reengagement_window=30d&c=Buddyloan_ACQ_08052025&referrer=af_tranid=Jog5Tb-3i0OzCfrWRkQShg&utm_source=partnership_BDL&af_android_url=https://loans.apps.herofincorp.com/en/personal-loan&utm_campaign=Buddyloan&c=Buddyloan_ACQ_08052025&pid=Buddyloan&af_ios_url=https://loans.apps.herofincorp.com/en/personal-loan'
         });
       }
 
@@ -119,10 +120,11 @@ class IVRRouter {
         next_action: 'send_whatsapp_greeting'
       };
 
-      // For Poonawala, include journey URL for web redirect
-      if (lenderId === 'poonawala' && lenderConfig.journey_url) {
+      // For Poonawala, include journey URL and fallback for web redirect
+      if (lenderId === 'poonawala') {
         response.journey_url = lenderConfig.journey_url;
-        response.message = `Click or tap this link to continue your loan journey: ${lenderConfig.journey_url}`;
+        response.fallback_url = lenderConfig.fallback_url;
+        response.message = `You have a pre-qualified offer! Click or tap this link to complete your loan application: ${lenderConfig.journey_url}`;
         response.next_action = 'send_whatsapp_journey_link';
       }
 
@@ -158,17 +160,17 @@ class IVRRouter {
         }
       };
     } else {
-      // Poonawala - no voice bot
-      lenderGreeting = "Welcome to Poonawala Fincorp. Press 1 to continue on WhatsApp, or remain on the line to speak with our advisor.";
+      // Poonawala - pre-qualified offer flow, no voice bot
+      lenderGreeting = "You have a pre-qualified offer from Poonawala Fincorp for an instant personal loan. Press 1 to accept and continue on WhatsApp, or remain on the line to speak with our specialist.";
       options = {
         1: {
           action: 'whatsapp_bot',
-          description: 'Continue on WhatsApp',
+          description: 'Accept offer and continue on WhatsApp',
           prompt: 'Transferring you to WhatsApp...'
         },
         0: {
           action: 'operator',
-          description: 'Speak with human agent'
+          description: 'Speak with specialist'
         }
       };
     }
