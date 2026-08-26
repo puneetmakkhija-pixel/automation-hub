@@ -1,10 +1,7 @@
 import supabase from '../clients/supabaseClient.js';
-import axios from 'axios';
 
 class RejectionTrackingClient {
-  constructor() {
-    this.slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
-  }
+  constructor() {}
 
   // Rejection reason mappings
   static REJECTION_REASONS = {
@@ -91,9 +88,6 @@ class RejectionTrackingClient {
 
       console.log(`[RejectionTracking] Rejection captured: ${phone_number} → ${lender_id} (${rejection_reason})`);
 
-      // Alert ops team via Slack
-      await this.alertRejectionViaSlack(phone_number, lender_id, reasonData, rejected_bureau_vars, rejected_demographic_vars);
-
       return {
         success: true,
         data,
@@ -105,82 +99,7 @@ class RejectionTrackingClient {
     }
   }
 
-  async alertRejectionViaSlack(phoneNumber, lenderId, reasonData, bureauVars, demographicVars) {
-    try {
-      if (!this.slackWebhookUrl) {
-        return { success: false, error: 'Slack webhook not configured' };
-      }
-
-      const rejectionColor = this.getCategoryColor(reasonData.category);
-
-      const payload = {
-        channel: '#rejection-tracking',
-        username: 'Rejection Tracker',
-        icon_emoji: ':x:',
-        attachments: [
-          {
-            fallback: `Rejection: ${phoneNumber} by ${lenderId}`,
-            color: rejectionColor,
-            title: `❌ Application Rejected`,
-            fields: [
-              {
-                title: 'Phone',
-                value: phoneNumber,
-                short: true
-              },
-              {
-                title: 'Lender',
-                value: lenderId,
-                short: true
-              },
-              {
-                title: 'Reason',
-                value: reasonData.display,
-                short: true
-              },
-              {
-                title: 'Category',
-                value: reasonData.category.toUpperCase(),
-                short: true
-              }
-            ],
-            footer: 'Rejection Tracking Engine',
-            ts: Math.floor(Date.now() / 1000)
-          }
-        ]
-      };
-
-      // Add bureau variables if present
-      if (Object.keys(bureauVars).length > 0) {
-        payload.attachments[0].fields.push({
-          title: 'Bureau Variables',
-          value: JSON.stringify(bureauVars),
-          short: false
-        });
-      }
-
-      // Add demographic variables if present
-      if (Object.keys(demographicVars).length > 0) {
-        payload.attachments[0].fields.push({
-          title: 'Demographic Variables',
-          value: JSON.stringify(demographicVars),
-          short: false
-        });
-      }
-
-      const response = await axios.post(this.slackWebhookUrl, payload);
-
-      return {
-        success: response.status === 200,
-        message: 'Slack alert sent'
-      };
-    } catch (error) {
-      console.warn('[RejectionTracking] Slack alert failed:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async getRejectionsByLender(lenderId, hours = 24) {
+async getRejectionsByLender(lenderId, hours = 24) {
     try {
       const startTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
@@ -380,18 +299,7 @@ class RejectionTrackingClient {
     }
   }
 
-  getCategoryColor(category) {
-    const colors = {
-      'bureau': '#FF6B6B',      // Red - hard to fix
-      'demographic': '#FFA500',  // Orange - may expand later
-      'business': '#FFD700',     // Gold - medium difficulty
-      'soft': '#4CAF50',         // Green - easy to fix
-      'unknown': '#808080'       // Gray
-    };
-    return colors[category] || '#808080';
-  }
-
-  getReasonForDisplay(reason) {
+getReasonForDisplay(reason) {
     return RejectionTrackingClient.REJECTION_REASONS[reason]?.display || reason;
   }
 }
