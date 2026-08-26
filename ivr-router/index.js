@@ -18,6 +18,7 @@ import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
 import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js";
 import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
+import logger from "./lib/logging.js";
 
 dotenv.config();
 
@@ -35,7 +36,14 @@ const obdClient = new OBDApiClient(
 );
 
 // ==================== Health Check ====================
-app.get("/health", (_req, res) => res.status(200).send("ok"));
+app.get("/health", (_req, res) => {
+  logger.log('info', 'HEALTH_CHECK', 'Service health check', {
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    type: 'health',
+  });
+  res.status(200).send("ok");
+});
 
 // ==================== OBD API Routes ====================
 app.use("/api/obd", createObdRoutes(obdClient));
@@ -90,9 +98,25 @@ app.use("/api/reengagement", reengagementRoutes);
 app.post("/webhooks/obd", (req, res) => {
   try {
     const { eventType, payload } = req.body;
-    console.log(`\n[${new Date().toISOString()}] Webhook: ${eventType}`);
+    const startTime = Date.now();
 
     const result = routeWebhookEvent(eventType, payload);
+    const duration = Date.now() - startTime;
+
+    if (eventType === 'CALL_CONNECT') {
+      logger.logIncomingCall(payload.phone, payload.lenderId, payload.callSid);
+    } else if (eventType === 'DTMF') {
+      logger.logDTMFInput(payload.phone, payload.dtmfInput, payload.lenderId);
+    } else {
+      logger.log('info', `OBD_${eventType}`, `OBD webhook received`, {
+        eventType,
+        phone: payload.phone,
+        durationMs: duration,
+        type: 'webhook_event',
+      });
+    }
+
+    logger.logApiLatency(`/webhooks/obd/${eventType}`, duration);
 
     res.json({
       success: true,
@@ -100,7 +124,7 @@ app.post("/webhooks/obd", (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error("Voice webhook error:", error);
+    logger.logWebhookError('OBD', error, req.body);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -112,9 +136,11 @@ app.post("/webhooks/obd", (req, res) => {
 app.post("/webhooks/obd/hangup", (req, res) => {
   try {
     const result = routeWebhookEvent("HANGUP", req.body);
+    const { phone, callDuration, reason } = req.body;
+    logger.logCallHangup(phone, callDuration, reason || 'normal');
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error("Hangup webhook error:", error);
+    logger.logWebhookError('OBD_HANGUP', error, req.body);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -123,9 +149,11 @@ app.post("/webhooks/obd/hangup", (req, res) => {
 app.post("/webhooks/obd/connect", (req, res) => {
   try {
     const result = routeWebhookEvent("CALL_CONNECT", req.body);
+    const { phone, lenderId, callSid } = req.body;
+    logger.logIncomingCall(phone, lenderId, callSid);
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error("Call connect webhook error:", error);
+    logger.logWebhookError('OBD_CONNECT', error, req.body);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -134,9 +162,14 @@ app.post("/webhooks/obd/connect", (req, res) => {
 app.post("/webhooks/obd/completion", (req, res) => {
   try {
     const result = routeWebhookEvent("CAMPAIGN_COMPLETE", req.body);
+    logger.log('info', 'CAMPAIGN_COMPLETION', 'Campaign completed', {
+      phone: req.body.phone,
+      campaignId: req.body.campaignId,
+      type: 'campaign_event',
+    });
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error("Completion webhook error:", error);
+    logger.logWebhookError('OBD_COMPLETION', error, req.body);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -146,9 +179,24 @@ app.post("/webhooks/obd/completion", (req, res) => {
 app.post("/webhooks/sms", (req, res) => {
   try {
     const { eventType, payload } = req.body;
-    console.log(`\n[${new Date().toISOString()}] SMS Webhook: ${eventType}`);
+    const startTime = Date.now();
 
     const result = routeWebhookEvent(eventType, payload);
+    const duration = Date.now() - startTime;
+
+    if (eventType === 'WHATSAPP_SEND') {
+      logger.logWhatsAppSent(payload.phone, payload.message);
+    } else {
+      logger.log('info', `SMS_${eventType}`, 'SMS/WhatsApp event', {
+        eventType,
+        phone: payload.phone,
+        status: payload.status,
+        durationMs: duration,
+        type: 'sms_event',
+      });
+    }
+
+    logger.logApiLatency(`/webhooks/sms/${eventType}`, duration);
 
     res.json({
       success: true,
@@ -156,7 +204,7 @@ app.post("/webhooks/sms", (req, res) => {
       data: result,
     });
   } catch (error) {
-    console.error("SMS webhook error:", error);
+    logger.logWebhookError('SMS', error, req.body);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -168,9 +216,11 @@ app.post("/webhooks/sms", (req, res) => {
 app.post("/webhooks/sms/whatsapp", (req, res) => {
   try {
     const result = routeWebhookEvent("WHATSAPP_DELIVERY", req.body);
+    const { phone, messageId, status } = req.body;
+    logger.logWhatsAppSent(phone, messageId);
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error("WhatsApp webhook error:", error);
+    logger.logWebhookError('WHATSAPP', error, req.body);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -179,9 +229,14 @@ app.post("/webhooks/sms/whatsapp", (req, res) => {
 app.post("/webhooks/sms/confirmation", (req, res) => {
   try {
     const result = routeWebhookEvent("SMS_DELIVERY", req.body);
+    logger.log('info', 'SMS_CONFIRMED', 'SMS delivery confirmed', {
+      phone: req.body.phone,
+      messageId: req.body.messageId,
+      type: 'sms_delivery',
+    });
     res.json({ success: true, data: result });
   } catch (error) {
-    console.error("SMS confirmation webhook error:", error);
+    logger.logWebhookError('SMS_CONFIRMATION', error, req.body);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -191,9 +246,8 @@ app.post("/webhooks/sms/confirmation", (req, res) => {
 app.post("/webhooks/ananta", (req, res) => {
   try {
     const payload = req.body;
-    console.log(`\n[${new Date().toISOString()}] Ananta Webhook - Phone: ${payload.phone}, Status: ${payload.status}`);
+    logger.logAnantaMessage(payload.phone, payload.status, payload.msgid);
 
-    // Parse and process Ananta webhook
     res.json({
       success: true,
       message: "Ananta webhook received and processed",
@@ -205,7 +259,7 @@ app.post("/webhooks/ananta", (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Ananta webhook error:", error);
+    logger.logWebhookError('ANANTA', error, req.body);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -218,9 +272,17 @@ app.post("/webhooks/ananta", (req, res) => {
 app.post("/webhooks/oriserve", (req, res) => {
   try {
     const payload = req.body;
-    console.log(`\n[${new Date().toISOString()}] Oriserve Webhook - Campaign: ${payload.campaign_id}, Phone: ${payload.mobile}, Status: ${payload.status}`);
+    logger.logOriserveCall(payload.mobile, payload.campaign_id, payload.status);
 
-    // Parse and process Oriserve webhook
+    logger.log('info', 'ORISERVE_CALLBACK', 'Oriserve voice agent campaign callback', {
+      campaignId: payload.campaign_id,
+      phone: payload.mobile,
+      status: payload.status,
+      callDuration: payload.call_duration,
+      result: payload.result,
+      type: 'voice_provider_callback',
+    });
+
     res.json({
       success: true,
       message: "Oriserve webhook received and processed",
@@ -234,7 +296,7 @@ app.post("/webhooks/oriserve", (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Oriserve webhook error:", error);
+    logger.logWebhookError('ORISERVE', error, req.body);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -247,9 +309,14 @@ app.post("/webhooks/oriserve", (req, res) => {
 app.post("/webhooks/chatsense", (req, res) => {
   try {
     const payload = req.body;
-    console.log(`\n[${new Date().toISOString()}] Chatsense Webhook - Phone: ${payload.phone}, Status: ${payload.status}`);
+    logger.log('info', 'CHATSENSE_DELIVERY', 'Chatsense message delivery event', {
+      phone: payload.phone,
+      status: payload.status,
+      messageId: payload.messageId,
+      templateName: payload.templateName,
+      type: 'chatsense_event',
+    });
 
-    // Parse and process Chatsense webhook
     res.json({
       success: true,
       message: "Chatsense webhook received and processed",
@@ -262,7 +329,7 @@ app.post("/webhooks/chatsense", (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Chatsense webhook error:", error);
+    logger.logWebhookError('CHATSENSE', error, req.body);
     res.status(500).json({
       success: false,
       error: error.message,
@@ -313,7 +380,27 @@ app.post("/voice", (req, res) => {
   res.type("text/xml").send(`<Response><Say>Invalid option. Goodbye.</Say></Response>`);
 });
 
-app.listen(PORT, () => {
-  console.log(`IVR Router listening on ${PORT}`);
-  console.log(`OBD API configured at ${process.env.OBD_BASE_URL}`);
+const server = app.listen(PORT, () => {
+  logger.log('info', 'SERVICE_START', 'IVR Router service started', {
+    port: PORT,
+    obdApiUrl: process.env.OBD_BASE_URL,
+    nodeEnv: process.env.NODE_ENV,
+    logLevel: process.env.LOG_LEVEL,
+    type: 'service_startup',
+  });
+  console.log(`✓ IVR Router listening on ${PORT}`);
+  console.log(`✓ OBD API configured at ${process.env.OBD_BASE_URL}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.log('info', 'SHUTDOWN_SIGNAL', 'SIGTERM received, graceful shutdown initiated', {
+    type: 'shutdown',
+  });
+  server.close(() => {
+    logger.log('info', 'SERVICE_STOP', 'IVR Router service stopped', {
+      type: 'service_shutdown',
+    });
+    process.exit(0);
+  });
 });
