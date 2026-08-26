@@ -4,10 +4,5 @@ set -e
 # Navigate to the service directory
 cd ivr-router
 
-# Install dependencies if needed
-if [ ! -d "node_modules" ]; then
-  npm ci
-fi
-
-# Start the service
+# Start the service (dependencies already installed during Docker build)
 node index.js
