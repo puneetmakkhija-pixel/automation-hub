@@ -18,6 +18,8 @@ COPY --from=builder /app/package*.json ./
 # Copy application code
 COPY index.js ./
 COPY lib ./lib
+COPY ../start.sh ./
+RUN chmod +x ./start.sh
 
 # Expose port
 EXPOSE 3000
@@ -29,5 +31,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Use dumb-init to handle signals
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start application
-CMD ["node", "index.js"]
+# Start application using start.sh
+CMD ["./start.sh"]
