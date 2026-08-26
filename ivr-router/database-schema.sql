@@ -221,3 +221,117 @@ ALTER TABLE public.push_engagement_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY IF NOT EXISTS "Allow service role" ON public.push_engagement_events
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
+-- Phase 3.5d: Suppression Analysis - Eligibility Rules Table
+CREATE TABLE IF NOT EXISTS public.eligibility_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Rule version tracking
+  version INTEGER NOT NULL DEFAULT 1,
+  active BOOLEAN NOT NULL DEFAULT true,
+  recommendation_id UUID,
+
+  -- CIBIL rules
+  cibil_minimum_score INTEGER NOT NULL DEFAULT 700,
+
+  -- Age rules
+  age_minimum INTEGER NOT NULL DEFAULT 21,
+  age_maximum INTEGER NOT NULL DEFAULT 65,
+
+  -- Income rules (in INR)
+  income_minimum INTEGER NOT NULL DEFAULT 150000,
+  income_maximum INTEGER NOT NULL DEFAULT 5000000,
+
+  -- Business rules
+  business_age_minimum_months INTEGER NOT NULL DEFAULT 12,
+
+  -- Loan amount rules (in INR)
+  loan_amount_minimum INTEGER NOT NULL DEFAULT 50000,
+  loan_amount_maximum INTEGER NOT NULL DEFAULT 5000000,
+
+  -- Geographic rules
+  pincode_blocklist VARCHAR[] DEFAULT '{}',
+
+  -- Metadata
+  created_at TIMESTAMP DEFAULT now(),
+  updated_at TIMESTAMP DEFAULT now()
+);
+
+-- Create indexes on eligibility_rules
+CREATE INDEX IF NOT EXISTS idx_eligibility_rules_active ON public.eligibility_rules(active);
+CREATE INDEX IF NOT EXISTS idx_eligibility_rules_version ON public.eligibility_rules(version);
+CREATE INDEX IF NOT EXISTS idx_eligibility_rules_created_at ON public.eligibility_rules(created_at);
+
+-- Enable RLS on eligibility_rules
+ALTER TABLE public.eligibility_rules ENABLE ROW LEVEL SECURITY;
+
+-- Allow service role to read/write
+CREATE POLICY IF NOT EXISTS "Allow service role" ON public.eligibility_rules
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- Phase 3.5d: Suppression Analysis - Rule Recommendations Table
+CREATE TABLE IF NOT EXISTS public.rule_recommendations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Analysis context
+  analysis_window_hours INTEGER NOT NULL DEFAULT 24,
+  rejection_count INTEGER NOT NULL,
+  analysis_data JSONB NOT NULL,
+
+  -- Rule comparison
+  current_rules JSONB NOT NULL,
+  recommended_rules JSONB NOT NULL,
+
+  -- Recommendation metadata
+  confidence_score NUMERIC(3,2) NOT NULL,
+  estimated_reengagement_count INTEGER,
+
+  -- Status tracking
+  status VARCHAR(50) DEFAULT 'pending_review',
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT now(),
+  reviewed_at TIMESTAMP,
+  applied_at TIMESTAMP,
+
+  CONSTRAINT valid_status CHECK (status IN ('pending_review', 'approved', 'rejected', 'applied'))
+);
+
+-- Create indexes on rule_recommendations
+CREATE INDEX IF NOT EXISTS idx_rule_recommendations_status ON public.rule_recommendations(status);
+CREATE INDEX IF NOT EXISTS idx_rule_recommendations_created_at ON public.rule_recommendations(created_at);
+
+-- Enable RLS on rule_recommendations
+ALTER TABLE public.rule_recommendations ENABLE ROW LEVEL SECURITY;
+
+-- Allow service role to read/write
+CREATE POLICY IF NOT EXISTS "Allow service role" ON public.rule_recommendations
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
+
+-- Phase 3.5e: Re-engagement Campaign - Re-engagement Events Table
+CREATE TABLE IF NOT EXISTS public.reengagement_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number VARCHAR(20) NOT NULL REFERENCES public.conversation_state(phone_number) ON DELETE CASCADE,
+
+  -- Event tracking
+  event_type VARCHAR(100) NOT NULL, -- 'campaign_sent', 'email_clicked', 'whatsapp_opened', 'application_started', 'response_recorded'
+  metadata JSONB DEFAULT '{}'::jsonb,
+
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Create indexes on reengagement_events
+CREATE INDEX IF NOT EXISTS idx_reengagement_events_phone ON public.reengagement_events(phone_number);
+CREATE INDEX IF NOT EXISTS idx_reengagement_events_event_type ON public.reengagement_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_reengagement_events_created_at ON public.reengagement_events(created_at);
+
+-- Enable RLS on reengagement_events
+ALTER TABLE public.reengagement_events ENABLE ROW LEVEL SECURITY;
+
+-- Allow service role to read/write
+CREATE POLICY IF NOT EXISTS "Allow service role" ON public.reengagement_events
+  USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');
