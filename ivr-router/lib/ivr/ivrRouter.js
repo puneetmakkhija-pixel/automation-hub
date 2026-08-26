@@ -110,29 +110,19 @@ class IVRRouter {
           }
         };
       } else {
-        // Poonawala: Route to pre-qualified offer + WhatsApp with journey link
+        // Poonawala: Route to WhatsApp with pre-qualified offer link
+        // (Pre-qualified announcement is already in IVR menu greeting)
         return {
           success: true,
-          route: 'dual_channels',
+          route: 'whatsapp_bot',
           phone_number: phoneNumber,
           lender_id: lenderId,
-          channels: [
-            {
-              channel: 'ivr_offer',
-              message: `You have a pre-qualified offer from ${lenderConfig.lender_name}`,
-              next_action: 'announce_offer'
-            },
-            {
-              channel: 'whatsapp_bot',
-              journey_url: lenderConfig.journey_url,
-              fallback_url: lenderConfig.fallback_url,
-              message: `You have a pre-qualified offer! Click here to complete your application: ${lenderConfig.journey_url}`,
-              next_action: 'send_whatsapp_journey_link'
-            }
-          ],
+          journey_url: lenderConfig.journey_url,
+          fallback_url: lenderConfig.fallback_url,
+          message: `You have a pre-qualified offer! Click here to complete your application: ${lenderConfig.journey_url}`,
+          next_action: 'send_whatsapp_journey_link',
           ivr_context: {
             lender_name: lenderConfig.lender_name,
-            dual_channel: true,
             pre_qualified: true
           }
         };
@@ -224,13 +214,13 @@ class IVRRouter {
         }
       };
     } else {
-      // Poonawala - pre-qualified offer flow with dual channels
-      lenderGreeting = "You have a pre-qualified offer from Poonawala Fincorp for an instant personal loan. Press 1 to accept and receive your offer via WhatsApp, or remain on the line to speak with our specialist.";
+      // Poonawala - pre-qualified offer announcement (this is the IVR message)
+      lenderGreeting = "You have a pre-qualified offer from Poonawala Fincorp for an instant personal loan. Press 1 to view and complete your application, or remain on the line to speak with our specialist.";
       options = {
         1: {
-          action: 'dual_channels',
-          description: 'Accept pre-qualified offer and connect via WhatsApp',
-          prompt: 'Sending you the offer details...'
+          action: 'whatsapp_bot',
+          description: 'View offer and complete application via WhatsApp',
+          prompt: 'Sending you the offer link...'
         },
         0: {
           action: 'operator',
