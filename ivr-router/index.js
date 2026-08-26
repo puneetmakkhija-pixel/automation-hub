@@ -18,7 +18,9 @@ import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
 import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js";
 import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
-import ivrCampaignRoutes from "./lib/ivrCampaignRoutes.js";
+import breShortlistingRoutes from "./lib/routes/breShortlistingRoutes.js";
+import ivrCampaignRouterRoutes from "./lib/routes/ivrCampaignRouterRoutes.js";
+import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.js";
 import logger from "./lib/logging.js";
 
 dotenv.config();
@@ -94,8 +96,14 @@ app.use("/api/suppression", suppressionAnalysisRoutes);
 // ==================== Re-engagement Campaign Routes (Phase 3.5e: Feedback Loop Closer) ====================
 app.use("/api/reengagement", reengagementRoutes);
 
-// ==================== IVR Campaign Management Routes ====================
-app.use("/api/campaigns", ivrCampaignRoutes);
+// ==================== BRE Shortlisting Routes (Daily Base Filtering) ====================
+app.use("/api/bre", breShortlistingRoutes);
+
+// ==================== IVR Campaign Router Routes (Dual-Path Routing) ====================
+app.use("/api/router", ivrCampaignRouterRoutes);
+
+// ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
+app.use("/api/mis", misFeedbackCollectorRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
