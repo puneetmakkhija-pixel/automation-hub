@@ -1,0 +1,51 @@
+{
+  "lender_id": "poonawala",
+  "lender_name": "Poonawala Fincorp",
+  "voice_profile": {
+    "tone": "professional_confident",
+    "pace": "measured",
+    "energy": "composed",
+    "accent": "indian_english"
+  },
+  "tts_config": {
+    "provider": "elevenlabs",
+    "voice_id": "poonawala_professional",
+    "model": "eleven_monolingual_v1",
+    "stability": 0.6,
+    "similarity_boost": 0.8
+  },
+  "greeting_variants": [
+    "Welcome to Poonawala Fincorp. I'm here to assist you with your financial needs.",
+    "Hello, this is Poonawala Fincorp. How can I help you today?",
+    "Thank you for choosing Poonawala Fincorp. Let me guide you through your options."
+  ],
+  "product_description": "Comprehensive financial solutions including personal loans, business loans, and investment products with trusted expertise.",
+  "key_benefits": [
+    "Trusted brand with decades of experience",
+    "Competitive interest rates for eligible customers",
+    "Quick documentation and processing",
+    "Dedicated customer relationship manager",
+    "Flexible loan structures"
+  ],
+  "common_responses": {
+    "eligibility_check": "I'll evaluate your profile against our lending criteria. Please give me a moment.",
+    "approval": "Excellent! You qualify for our loan product with an approved amount of {{amount}}.",
+    "rejection": "Based on current assessment, you don't meet our lending criteria at this moment. We encourage you to reapply after {{days}} days when your profile may strengthen.",
+    "document_request": "To proceed with your application, we require the following documents: {{documents}}.",
+    "rate_inquiry": "Our competitive rates begin at {{rate}}% per annum, tailored to your risk profile and loan amount.",
+    "processing": "Your application is under review by our team. You will receive updates via SMS and email.",
+    "completion": "Thank you for your trust in Poonawala Fincorp. Your loan agreement has been finalized. Details will be sent to your registered email."
+  },
+  "error_handling": {
+    "connection_lost": "We seem to have lost connection. Reconnecting you now.",
+    "timeout": "The system is processing your request. Please wait a moment.",
+    "unclear_input": "Could you please rephrase that? I want to ensure I assist you correctly."
+  },
+  "handoff_script": "I'm transferring you to our loan specialist who will finalize the details of your application.",
+  "metadata": {
+    "created_at": "2026-08-26",
+    "version": "1.0",
+    "language": "en-IN",
+    "timezone": "IST"
+  }
+}
