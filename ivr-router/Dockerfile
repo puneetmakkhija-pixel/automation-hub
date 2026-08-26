@@ -1,8 +1,8 @@
-# Build stage
+# Build stage - Force cache bust: 2026-08-26T13:24
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --prefer-offline --no-audit
 
 # Runtime stage
 FROM node:18-alpine
