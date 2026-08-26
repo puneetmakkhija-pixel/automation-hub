@@ -1,8 +1,8 @@
-# Build stage
+# Build stage - Force cache bust: 2026-08-26T13:31
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --prefer-offline --no-audit
 
 # Runtime stage
 FROM node:18-alpine
@@ -29,5 +29,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 # Use dumb-init to handle signals
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start application
+# Start application directly with node
 CMD ["node", "index.js"]
