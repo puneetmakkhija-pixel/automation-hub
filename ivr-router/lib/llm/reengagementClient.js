@@ -1,16 +1,12 @@
 import supabase from '../clients/supabaseClient.js';
 import Anthropic from '@anthropic-ai/sdk';
 import anantaClient from '../clients/anantaClient.js';
-import axios from 'axios';
 
 const client = new Anthropic();
 
 class ReengagementClient {
   constructor() {
     this.claudeModel = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
-    this.sendgridApiKey = process.env.SENDGRID_API_KEY;
-    this.sendgridFromEmail = process.env.SENDGRID_FROM_EMAIL;
-    this.slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
   }
 
   async findNewlyEligibleUsers(timeWindowHours = 24) {
@@ -155,9 +151,7 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
         sent: 0,
         failed: 0,
         channels: {
-          whatsapp: 0,
-          email: 0,
-          slack_alert: 0
+          whatsapp: 0
         },
         details: []
       };
@@ -193,25 +187,13 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
             results.channels.whatsapp++;
           }
 
-          // Send Email (fallback)
-          const emailResult = await this.sendEmailReengagement(
-            user.phone_number,
-            userProfile,
-            personalizedMessage
-          );
-
-          if (emailResult.success) {
-            results.channels.email++;
-          }
-
           // Log campaign event
           await this.trackReengagementCampaign(
             user.phone_number,
             'campaign_sent',
             {
               message: personalizedMessage,
-              whatsapp_sent: whatsappResult.success,
-              email_sent: emailResult.success
+              whatsapp_sent: whatsappResult.success
             }
           );
 
@@ -219,7 +201,6 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
           results.details.push({
             phone_number: user.phone_number,
             whatsapp_message_id: whatsappResult.message_id,
-            email_sent: emailResult.success,
             timestamp: new Date().toISOString()
           });
         } catch (error) {
@@ -227,9 +208,6 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
           results.failed++;
         }
       }
-
-      // Send Slack alert to ops
-      await this.alertCampaignViaSlack(results);
 
       return {
         success: true,
@@ -263,69 +241,7 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
     }
   }
 
-  async sendEmailReengagement(phoneNumber, userProfile, personalizedMessage) {
-    try {
-      if (!this.sendgridApiKey || !this.sendgridFromEmail) {
-        return { success: false, error: 'SendGrid not configured' };
-      }
-
-      const emailBody = `
-        <html>
-          <body style="font-family: Arial, sans-serif; color: #333;">
-            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px;">
-              <h2>We Have Good News! 🎉</h2>
-              <p>Hi ${userProfile.name || 'there'},</p>
-
-              <p>${personalizedMessage}</p>
-
-              <div style="background-color: #007bff; color: white; padding: 12px 24px; text-align: center; border-radius: 4px; margin: 20px 0;">
-                <a href="https://wa.link/automation-hub/restart/${phoneNumber}" style="color: white; text-decoration: none; font-weight: bold;">Restart Your Application</a>
-              </div>
-
-              <p style="font-size: 12px; color: #666;">
-                Based on recent market analysis, we've updated our eligibility criteria. Your profile now qualifies for up to ₹${this.formatLoanAmount(userProfile.loan_requirement)} at ${this.getApplicableRate()}% APR.
-              </p>
-            </div>
-          </body>
-        </html>
-      `;
-
-      const payload = {
-        personalizations: [
-          {
-            to: [{ email: userProfile.email }],
-            subject: `Good News! You're Now Eligible for a Loan 💰`
-          }
-        ],
-        from: { email: this.sendgridFromEmail },
-        content: [
-          {
-            type: 'text/html',
-            value: emailBody
-          }
-        ]
-      };
-
-      const response = await axios.post('https://api.sendgrid.com/v3/mail/send', payload, {
-        headers: {
-          'Authorization': `Bearer ${this.sendgridApiKey}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.status === 202) {
-        console.log(`[Reengagement] Email sent to ${userProfile.email}`);
-        return { success: true };
-      } else {
-        return { success: false, error: `SendGrid returned ${response.status}` };
-      }
-    } catch (error) {
-      console.error('[Reengagement] Email error:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  async trackReengagementCampaign(phoneNumber, eventType, metadata) {
+async trackReengagementCampaign(phoneNumber, eventType, metadata) {
     try {
       const { error } = await supabase
         .from('reengagement_events')
@@ -370,74 +286,7 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
     }
   }
 
-  async alertCampaignViaSlack(results) {
-    try {
-      if (!this.slackWebhookUrl) {
-        return { success: false, error: 'Slack webhook not configured' };
-      }
-
-      const successRate = ((results.sent / results.total) * 100).toFixed(0);
-
-      const payload = {
-        channel: '#reengagement-campaigns',
-        username: 'Re-engagement Engine',
-        icon_emoji: ':rocket:',
-        attachments: [
-          {
-            fallback: `Re-engagement campaign: ${results.sent}/${results.total} sent`,
-            color: results.sent / results.total > 0.9 ? '#36a64f' : '#ff9900',
-            title: `🎯 Re-engagement Campaign Summary`,
-            fields: [
-              {
-                title: 'Total Users Targeted',
-                value: results.total.toString(),
-                short: true
-              },
-              {
-                title: 'Successfully Sent',
-                value: `${results.sent} (${successRate}%)`,
-                short: true
-              },
-              {
-                title: 'WhatsApp Messages',
-                value: results.channels.whatsapp.toString(),
-                short: true
-              },
-              {
-                title: 'Emails Sent',
-                value: results.channels.email.toString(),
-                short: true
-              },
-              {
-                title: 'Failed',
-                value: results.failed.toString(),
-                short: true
-              },
-              {
-                title: 'Timestamp',
-                value: new Date().toISOString(),
-                short: true
-              }
-            ],
-            footer: 'Re-engagement & Feedback Loop Closer',
-            ts: Math.floor(Date.now() / 1000)
-          }
-        ]
-      };
-
-      const response = await axios.post(this.slackWebhookUrl, payload);
-
-      return {
-        success: response.status === 200,
-        message: 'Slack alert sent'
-      };
-    } catch (error) {
-      console.warn('[Reengagement] Slack alert failed:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  formatLoanAmount(amount) {
+formatLoanAmount(amount) {
     if (!amount) return '50,000-50,00,000';
     if (amount >= 1000000) {
       return (amount / 1000000).toFixed(0) + 'L';

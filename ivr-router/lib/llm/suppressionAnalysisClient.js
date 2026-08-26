@@ -1,6 +1,5 @@
 import supabase from '../clients/supabaseClient.js';
 import Anthropic from '@anthropic-ai/sdk';
-import axios from 'axios';
 import rejectionTrackingClient from './rejectionTrackingClient.js';
 
 const client = new Anthropic();
@@ -8,7 +7,6 @@ const client = new Anthropic();
 class SuppressionAnalysisClient {
   constructor() {
     this.claudeModel = process.env.CLAUDE_MODEL || 'claude-3-5-sonnet-20241022';
-    this.slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
   }
 
   async analyzeRejectionPatternsForRecalibration(timeWindowHours = 24, lenderIds = []) {
@@ -93,9 +91,6 @@ class SuppressionAnalysisClient {
       if (storeError) {
         console.warn('[SuppressionAnalysis] Recommendation storage warning:', storeError.message);
       }
-
-      // Alert ops team via Slack
-      await this.alertRecommendationViaSlack(recommendation, analysis, impact);
 
       return {
         success: true,
@@ -367,98 +362,7 @@ RESPOND WITH ONLY valid JSON (no markdown, no code blocks):
     }
   }
 
-  async alertRecommendationViaSlack(recommendation, analysis, impact) {
-    try {
-      if (!this.slackWebhookUrl) {
-        return { success: false, error: 'Slack webhook not configured' };
-      }
-
-      const changesSummary = this.summarizeRuleChanges(recommendation);
-
-      const payload = {
-        channel: '#suppression-analysis',
-        username: 'Suppression Analyzer',
-        icon_emoji: ':bar_chart:',
-        attachments: [
-          {
-            fallback: `Rule Recommendation: ${recommendation.confidence * 100}% confidence`,
-            color: recommendation.confidence > 0.9 ? '#36a64f' : '#ff9900',
-            title: `📊 Eligibility Rule Recommendation`,
-            fields: [
-              {
-                title: 'Total Rejections Analyzed',
-                value: analysis.total_rejections.toString(),
-                short: true
-              },
-              {
-                title: 'Confidence Score',
-                value: (recommendation.confidence * 100).toFixed(0) + '%',
-                short: true
-              },
-              {
-                title: 'Estimated Newly Eligible Users',
-                value: `${impact.estimated_newly_eligible} (${impact.percentage_of_rejected})`,
-                short: true
-              },
-              {
-                title: 'Top Rejection Reason',
-                value: analysis.top_rejection_reasons[0]?.reason || 'Unknown',
-                short: true
-              },
-              {
-                title: 'Recommended Changes',
-                value: changesSummary,
-                short: false
-              },
-              {
-                title: 'Key Insights',
-                value: recommendation.key_insights.join('\n• '),
-                short: false
-              }
-            ],
-            footer: 'Suppression & Recalibration Engine',
-            ts: Math.floor(Date.now() / 1000)
-          }
-        ]
-      };
-
-      const response = await axios.post(this.slackWebhookUrl, payload);
-
-      return {
-        success: response.status === 200,
-        message: 'Slack alert sent'
-      };
-    } catch (error) {
-      console.warn('[SuppressionAnalysis] Slack alert failed:', error.message);
-      return { success: false, error: error.message };
-    }
-  }
-
-  summarizeRuleChanges(recommendation) {
-    const changes = [];
-    const suggested = recommendation.suggested_rules;
-    const rationale = recommendation.rationale;
-
-    if (suggested.cibil_minimum_score !== null) {
-      changes.push(`• CIBIL minimum: ${suggested.cibil_minimum_score} - ${rationale.cibil_minimum_score}`);
-    }
-    if (suggested.age_minimum !== null) {
-      changes.push(`• Age minimum: ${suggested.age_minimum} - ${rationale.age_minimum}`);
-    }
-    if (suggested.age_maximum !== null) {
-      changes.push(`• Age maximum: ${suggested.age_maximum} - ${rationale.age_maximum}`);
-    }
-    if (suggested.income_minimum !== null) {
-      changes.push(`• Income minimum: ₹${suggested.income_minimum} - ${rationale.income_minimum}`);
-    }
-    if (suggested.income_maximum !== null) {
-      changes.push(`• Income maximum: ₹${suggested.income_maximum} - ${rationale.income_maximum}`);
-    }
-
-    return changes.length > 0 ? changes.join('\n') : 'No rule changes recommended';
-  }
-
-  getDefaultRules() {
+getDefaultRules() {
     return {
       version: 1,
       cibil_minimum_score: 700,
