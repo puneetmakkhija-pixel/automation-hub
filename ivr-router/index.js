@@ -3,6 +3,21 @@ import dotenv from "dotenv";
 import OBDApiClient from "./lib/obdApiClient.js";
 import createObdRoutes from "./lib/obdRoutes.js";
 import { routeWebhookEvent } from "./lib/webhookHandlers.js";
+import anantaRoutes from "./lib/anantaRoutes.js";
+import oriserveRoutes from "./lib/oriserveRoutes.js";
+import chatsenseRoutes from "./lib/chatsenseRoutes.js";
+import supabaseRoutes from "./lib/supabaseRoutes.js";
+import elevenLabsRoutes from "./lib/elevenLabsRoutes.js";
+import pincodeRoutes from "./lib/pincodeRoutes.js";
+import poonawalaaCampaignRoutes from "./lib/poonawalaaCampaignRoutes.js";
+import crmIntegrationRoutes from "./lib/crmIntegrationRoutes.js";
+import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
+import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
+import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
+import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
+import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
+import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js";
+import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
 
 dotenv.config();
 
@@ -24,6 +39,51 @@ app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 // ==================== OBD API Routes ====================
 app.use("/api/obd", createObdRoutes(obdClient));
+
+// ==================== Ananta API Routes ====================
+app.use("/api/ananta", anantaRoutes);
+
+// ==================== Oriserve Voice Agent Routes ====================
+app.use("/api/oriserve", oriserveRoutes);
+
+// ==================== Chatsense API Routes ====================
+app.use("/api/chatsense", chatsenseRoutes);
+
+// ==================== Supabase Database Routes ====================
+app.use("/api/db", supabaseRoutes);
+
+// ==================== Eleven Labs Voice Generation Routes ====================
+app.use("/api/voice", elevenLabsRoutes);
+
+// ==================== Pincode Gating & Eligibility Routes ====================
+app.use("/api/gating", pincodeRoutes);
+
+// ==================== Poonawala Campaign Orchestration Routes ====================
+app.use("/api/poonawala/campaign", poonawalaaCampaignRoutes);
+
+// ==================== CRM Integration Routes (Phase 1: Lead Intake) ====================
+app.use("/api/crm", crmIntegrationRoutes);
+
+// ==================== Lender Routing Routes (Phase 2: Eligibility & Multi-Lender) ====================
+app.use("/api/routing", lenderRoutingRoutes);
+
+// ==================== WhatsApp Bot Routes (Phase 3a: Conversation State Machine) ====================
+app.use("/api", whatsappBotRoutes);
+
+// ==================== Intent Generation Routes (Phase 3.5a: LLM Intelligence) ====================
+app.use("/api/llm", intentGenerationRoutes);
+
+// ==================== Application Push Routes (Phase 3.5b: Multi-Channel Orchestration) ====================
+app.use("/api/push", applicationPushRoutes);
+
+// ==================== Rejection Tracking Routes (Phase 3.5c: Lender Feedback) ====================
+app.use("/api/rejections", rejectionTrackingRoutes);
+
+// ==================== Suppression & Recalibration Routes (Phase 3.5d: Rule Optimization) ====================
+app.use("/api/suppression", suppressionAnalysisRoutes);
+
+// ==================== Re-engagement Campaign Routes (Phase 3.5e: Feedback Loop Closer) ====================
+app.use("/api/reengagement", reengagementRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
@@ -123,6 +183,90 @@ app.post("/webhooks/sms/confirmation", (req, res) => {
   } catch (error) {
     console.error("SMS confirmation webhook error:", error);
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ==================== Ananta Webhook Handlers ====================
+// Ananta WhatsApp delivery webhook
+app.post("/webhooks/ananta", (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`\n[${new Date().toISOString()}] Ananta Webhook - Phone: ${payload.phone}, Status: ${payload.status}`);
+
+    // Parse and process Ananta webhook
+    res.json({
+      success: true,
+      message: "Ananta webhook received and processed",
+      data: {
+        phone: payload.phone,
+        status: payload.status,
+        messageId: payload.msgid,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Ananta webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== Oriserve Webhook Handlers ====================
+// Oriserve voice agent campaign callbacks
+app.post("/webhooks/oriserve", (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`\n[${new Date().toISOString()}] Oriserve Webhook - Campaign: ${payload.campaign_id}, Phone: ${payload.mobile}, Status: ${payload.status}`);
+
+    // Parse and process Oriserve webhook
+    res.json({
+      success: true,
+      message: "Oriserve webhook received and processed",
+      data: {
+        campaign_id: payload.campaign_id,
+        mobile: payload.mobile,
+        status: payload.status,
+        call_duration: payload.call_duration,
+        result: payload.result,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Oriserve webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== Chatsense Webhook Handlers ====================
+// Chatsense message delivery webhooks
+app.post("/webhooks/chatsense", (req, res) => {
+  try {
+    const payload = req.body;
+    console.log(`\n[${new Date().toISOString()}] Chatsense Webhook - Phone: ${payload.phone}, Status: ${payload.status}`);
+
+    // Parse and process Chatsense webhook
+    res.json({
+      success: true,
+      message: "Chatsense webhook received and processed",
+      data: {
+        phone: payload.phone,
+        status: payload.status,
+        messageId: payload.messageId,
+        templateName: payload.templateName,
+        timestamp: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error("Chatsense webhook error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
   }
 });
 
