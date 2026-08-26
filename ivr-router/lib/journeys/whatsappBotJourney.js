@@ -322,6 +322,56 @@ class WhatsAppBotJourney {
     }
   }
 
+  async redirectToExternalJourney(phoneNumber, lenderId, journeyUrl) {
+    try {
+      const { data: conversation, error: convError } = await supabase
+        .from('conversation_state')
+        .select('*')
+        .eq('phone_number', phoneNumber)
+        .single();
+
+      if (convError) {
+        return { success: false, error: convError.message };
+      }
+
+      // Update conversation state to mark as transferred to external journey
+      await supabase
+        .from('conversation_state')
+        .update({
+          status: 'transferred_to_external',
+          current_phase: 'external_journey',
+          last_active_at: new Date().toISOString()
+        })
+        .eq('phone_number', phoneNumber);
+
+      // Log the redirect event
+      await supabase
+        .from('conversation_events')
+        .insert({
+          phone_number: phoneNumber,
+          phase: conversation.current_phase,
+          event_type: 'redirected_to_external_journey',
+          metadata: { lender_id: lenderId, journey_url: journeyUrl }
+        });
+
+      // Send WhatsApp message with journey link
+      const message = `Complete your loan journey here: ${journeyUrl}`;
+      await anantaClient.sendTextMessage(phoneNumber, message);
+
+      return {
+        success: true,
+        message: 'User redirected to external journey',
+        phone_number: phoneNumber,
+        lender_id: lenderId,
+        journey_url: journeyUrl,
+        whatsapp_sent: true
+      };
+    } catch (error) {
+      console.error('[WhatsAppJourney] Redirect error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   async abandonJourney(phoneNumber, reason = 'user_initiated') {
     try {
       const { data, error } = await supabase

@@ -42,7 +42,8 @@ class IVRRouter {
       if (!this.lenderConfig.has('poonawala')) {
         this.lenderConfig.set('poonawala', {
           lender_name: 'Poonawala Fincorp',
-          has_voice_bot: false
+          has_voice_bot: false,
+          journey_url: 'https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Partner_Name=BuddyLoan&UTM_Partner_Medium=BDLParameter&UTM_Partner_AgentCode=IVRSMS&UTM_Partner_ReferenceID=PK2002'
         });
       }
 
@@ -104,20 +105,28 @@ class IVRRouter {
 
   async routeToWhatsAppBot(phoneNumber, lenderId) {
     try {
-      const voiceBot = this.lenderConfig.get(lenderId);
-      if (!voiceBot) {
+      const lenderConfig = this.lenderConfig.get(lenderId);
+      if (!lenderConfig) {
         return { success: false, error: 'Lender configuration not found' };
       }
 
-      return {
+      const response = {
         success: true,
         route: 'whatsapp_bot',
         phone_number: phoneNumber,
         lender_id: lenderId,
-        voice_bot_id: voiceBot.voice_bot_id,
-        message: `You're being transferred to WhatsApp. Look for a message from ${voiceBot.lender_name}!`,
+        message: `You're being transferred to WhatsApp. Look for a message from ${lenderConfig.lender_name}!`,
         next_action: 'send_whatsapp_greeting'
       };
+
+      // For Poonawala, include journey URL for web redirect
+      if (lenderId === 'poonawala' && lenderConfig.journey_url) {
+        response.journey_url = lenderConfig.journey_url;
+        response.message = `Click or tap this link to continue your loan journey: ${lenderConfig.journey_url}`;
+        response.next_action = 'send_whatsapp_journey_link';
+      }
+
+      return response;
     } catch (error) {
       console.error('[IVRRouter] WhatsApp routing error:', error.message);
       return { success: false, error: error.message };
