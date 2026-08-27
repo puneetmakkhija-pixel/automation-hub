@@ -2,7 +2,24 @@ import express from "express";
 import CrmIntegrationClient from "./crmIntegrationClient.js";
 
 const router = express.Router();
-const crmClient = new CrmIntegrationClient();
+let crmClient = null;
+
+try {
+  crmClient = new CrmIntegrationClient();
+} catch (error) {
+  console.warn("⚠️ CRM Integration Client initialization failed:", error.message);
+  console.warn("   CRM features will be unavailable until configuration is complete");
+}
+
+router.use((req, res, next) => {
+  if (!crmClient) {
+    return res.status(503).json({
+      success: false,
+      error: "CRM Integration Client not initialized - Supabase configuration required",
+    });
+  }
+  next();
+});
 
 /**
  * CRM Integration Routes
