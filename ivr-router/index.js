@@ -392,6 +392,15 @@ app.post("/voice", (req, res) => {
   res.type("text/xml").send(`<Response><Say>Invalid option. Goodbye.</Say></Response>`);
 });
 
+// ==================== Monitoring Console ====================
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+app.get('/console', (req, res) => {
+  res.sendFile('public/console.html', { root: __dirname });
+});
+
 const server = app.listen(PORT, () => {
   logger.log('info', 'SERVICE_START', 'IVR Router service started', {
     port: PORT,
