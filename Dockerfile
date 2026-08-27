@@ -7,11 +7,14 @@ RUN apk add --no-cache --virtual .build-deps python3 make g++ cairo-dev jpeg-dev
 # Set working directory
 WORKDIR /app
 
+# Clear npm cache before install (force fresh resolution)
+RUN npm cache clean --force
+
 # Copy package files
 COPY ivr-router/package.json ivr-router/package-lock.json* ./
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Install dependencies with clean cache
+RUN npm ci --omit=dev --legacy-peer-deps
 
 # Remove build dependencies to keep image small
 RUN apk del .build-deps
