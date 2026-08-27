@@ -62,8 +62,8 @@ All tables include proper indexing for efficient queries and Row Level Security 
 Two automated checks run daily (IST timezone):
 
 ```
-Morning Check:  30 0 * * *  (6:00 AM IST / 0:30 AM UTC)
-Evening Check:  30 12 * * * (6:00 PM IST / 12:30 PM UTC)
+Morning Check:   0 5 * * *  (10:30 AM IST / 5:00 AM UTC)
+Afternoon Check: 30 8 * * * (2:00 PM IST / 8:30 AM UTC)
 ```
 
 Each check:

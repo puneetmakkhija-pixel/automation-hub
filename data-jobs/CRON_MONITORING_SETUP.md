@@ -83,12 +83,12 @@ supabase db push
 
 **Morning Check**
 - Command: `npm run cron:morning`
-- Schedule: `30 0 * * *` (6:00 AM IST daily / 0:30 AM UTC)
+- Schedule: `0 5 * * *` (10:30 AM IST daily / 5:00 AM UTC)
 - Timeout: 300 seconds
 
-**Evening Check**
-- Command: `npm run cron:evening`
-- Schedule: `30 12 * * *` (6:00 PM IST daily / 12:30 PM UTC)
+**Afternoon Check**
+- Command: `npm run cron:afternoon`
+- Schedule: `30 8 * * *` (2:00 PM IST daily / 8:30 AM UTC)
 - Timeout: 300 seconds
 
 ### Option 2: Docker Cron Service
