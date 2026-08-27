@@ -1,12 +1,20 @@
 {
   "name": "data-jobs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node run.js"
+    "start": "node run.js",
+    "monitor:status": "node status-monitor.js",
+    "monitor:twice-daily": "node status-monitor.js",
+    "cron:morning": "node status-monitor.js",
+    "cron:evening": "node status-monitor.js",
+    "setup": "node setup-monitoring.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

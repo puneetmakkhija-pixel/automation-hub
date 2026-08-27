@@ -1,0 +1,18 @@
+{
+  "crons": [
+    {
+      "name": "Twice-Daily Status Check - Morning",
+      "schedule": "0 6 * * *",
+      "command": "npm --prefix data-jobs run cron:morning",
+      "timeout": 300,
+      "description": "Check status of all API pulls and cron jobs at 6 AM UTC"
+    },
+    {
+      "name": "Twice-Daily Status Check - Evening",
+      "schedule": "0 18 * * *",
+      "command": "npm --prefix data-jobs run cron:evening",
+      "timeout": 300,
+      "description": "Check status of all API pulls and cron jobs at 6 PM UTC"
+    }
+  ]
+}
