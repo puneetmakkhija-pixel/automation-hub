@@ -124,14 +124,21 @@ app.post("/webhooks/obd", (req, res) => {
     const { eventType, payload } = req.body;
     const startTime = Date.now();
 
+    if (!eventType || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'eventType and payload are required',
+      });
+    }
+
     const result = routeWebhookEvent(eventType, payload);
     const duration = Date.now() - startTime;
 
-    if (eventType === 'CALL_CONNECT') {
+    if (eventType === 'CALL_CONNECT' && payload.phone) {
       logger.logIncomingCall(payload.phone, payload.lenderId, payload.callSid);
-    } else if (eventType === 'DTMF') {
+    } else if (eventType === 'DTMF' && payload.phone) {
       logger.logDTMFInput(payload.phone, payload.dtmfInput, payload.lenderId);
-    } else {
+    } else if (payload.phone) {
       logger.log('info', `OBD_${eventType}`, `OBD webhook received`, {
         eventType,
         phone: payload.phone,
@@ -205,12 +212,19 @@ app.post("/webhooks/sms", (req, res) => {
     const { eventType, payload } = req.body;
     const startTime = Date.now();
 
+    if (!eventType || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'eventType and payload are required',
+      });
+    }
+
     const result = routeWebhookEvent(eventType, payload);
     const duration = Date.now() - startTime;
 
-    if (eventType === 'WHATSAPP_SEND') {
+    if (eventType === 'WHATSAPP_SEND' && payload.phone) {
       logger.logWhatsAppSent(payload.phone, payload.message);
-    } else {
+    } else if (payload.phone) {
       logger.log('info', `SMS_${eventType}`, 'SMS/WhatsApp event', {
         eventType,
         phone: payload.phone,
