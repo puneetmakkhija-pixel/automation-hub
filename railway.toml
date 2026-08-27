@@ -1,0 +1,7 @@
+[build]
+builder = "dockerfile"
+dockerfile = "Dockerfile"
+context = "."
+
+[deploy]
+startCommand = "node index.js"
