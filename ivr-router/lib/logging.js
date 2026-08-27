@@ -199,4 +199,11 @@ class IVRLogger {
   }
 }
 
-export default new IVRLogger();
+let instance = null;
+try {
+  instance = new IVRLogger();
+} catch (error) {
+  console.warn('⚠️ IVR Logger initialization failed:', error.message);
+}
+
+export default instance;
