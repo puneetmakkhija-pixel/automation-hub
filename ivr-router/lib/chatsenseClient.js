@@ -43,13 +43,10 @@ class ChatsenseClient {
     this.apiKey = apiKey || process.env.CHATSENSE_API_KEY;
     this.baseUrl = baseUrl || process.env.CHATSENSE_BASE_URL || 'https://api.chatsense.com/api/v1/public';
     this.timeout = timeout;
+    this.isConfigured = !!this.apiKey;
 
     if (!this.apiKey) {
-      throw new ChatsenseAPIError(
-        'Missing CHATSENSE_API_KEY environment variable',
-        null,
-        null
-      );
+      console.warn('⚠️ Chatsense client initialized without API key - messaging features unavailable');
     }
   }
 
@@ -57,6 +54,14 @@ class ChatsenseClient {
    * Make API request to Chatsense
    */
   async makeRequest(method, path, body = null) {
+    if (!this.isConfigured) {
+      throw new ChatsenseAPIError(
+        'Chatsense API key not configured',
+        null,
+        null
+      );
+    }
+
     const url = `${this.baseUrl}${path}`;
     const headers = {
       'Authorization': `Bearer ${this.apiKey}`,
