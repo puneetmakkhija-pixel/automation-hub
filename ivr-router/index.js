@@ -40,11 +40,17 @@ const obdClient = new OBDApiClient(
 
 // ==================== Health Check ====================
 app.get("/health", (_req, res) => {
-  logger.log('info', 'HEALTH_CHECK', 'Service health check', {
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    type: 'health',
-  });
+  try {
+    if (logger) {
+      logger.log('info', 'HEALTH_CHECK', 'Service health check', {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        type: 'health',
+      });
+    }
+  } catch (logError) {
+    console.warn('Health check logging failed:', logError.message);
+  }
   res.status(200).send("ok");
 });
 
