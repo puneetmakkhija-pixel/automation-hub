@@ -32,19 +32,31 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // Initialize OBD API Client
-const obdClient = new OBDApiClient(
-  process.env.OBD_BASE_URL || "https://obdapi2.ivrsms.com",
-  process.env.OBD_USERNAME,
-  process.env.OBD_PASSWORD
-);
+let obdClient = null;
+try {
+  obdClient = new OBDApiClient(
+    process.env.OBD_BASE_URL || "https://obdapi2.ivrsms.com",
+    process.env.OBD_USERNAME,
+    process.env.OBD_PASSWORD
+  );
+} catch (error) {
+  console.warn('⚠️ OBD API Client initialization failed:', error.message);
+  console.warn('   OBD voice calling features will be unavailable until configuration is complete');
+}
 
 // ==================== Health Check ====================
 app.get("/health", (_req, res) => {
-  logger.log('info', 'HEALTH_CHECK', 'Service health check', {
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    type: 'health',
-  });
+  try {
+    if (logger) {
+      logger.log('info', 'HEALTH_CHECK', 'Service health check', {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        type: 'health',
+      });
+    }
+  } catch (logError) {
+    console.warn('Health check logging failed:', logError.message);
+  }
   res.status(200).send("ok");
 });
 
@@ -112,14 +124,21 @@ app.post("/webhooks/obd", (req, res) => {
     const { eventType, payload } = req.body;
     const startTime = Date.now();
 
+    if (!eventType || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'eventType and payload are required',
+      });
+    }
+
     const result = routeWebhookEvent(eventType, payload);
     const duration = Date.now() - startTime;
 
-    if (eventType === 'CALL_CONNECT') {
+    if (eventType === 'CALL_CONNECT' && payload.phone) {
       logger.logIncomingCall(payload.phone, payload.lenderId, payload.callSid);
-    } else if (eventType === 'DTMF') {
+    } else if (eventType === 'DTMF' && payload.phone) {
       logger.logDTMFInput(payload.phone, payload.dtmfInput, payload.lenderId);
-    } else {
+    } else if (payload.phone) {
       logger.log('info', `OBD_${eventType}`, `OBD webhook received`, {
         eventType,
         phone: payload.phone,
@@ -193,12 +212,19 @@ app.post("/webhooks/sms", (req, res) => {
     const { eventType, payload } = req.body;
     const startTime = Date.now();
 
+    if (!eventType || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'eventType and payload are required',
+      });
+    }
+
     const result = routeWebhookEvent(eventType, payload);
     const duration = Date.now() - startTime;
 
-    if (eventType === 'WHATSAPP_SEND') {
+    if (eventType === 'WHATSAPP_SEND' && payload.phone) {
       logger.logWhatsAppSent(payload.phone, payload.message);
-    } else {
+    } else if (payload.phone) {
       logger.log('info', `SMS_${eventType}`, 'SMS/WhatsApp event', {
         eventType,
         phone: payload.phone,

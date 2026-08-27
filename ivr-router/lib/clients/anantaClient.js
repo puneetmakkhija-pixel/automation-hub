@@ -86,4 +86,12 @@ class AnantaClient {
   }
 }
 
-export default new AnantaClient();
+let instance = null;
+try {
+  instance = new AnantaClient();
+} catch (error) {
+  console.warn('⚠️ Ananta client initialization failed:', error.message);
+  console.warn('   Messaging features will be unavailable until configuration is complete');
+}
+
+export default instance;

@@ -8,7 +8,25 @@ import BREShortlistingEngine from '../bre_shortfiltering.js';
 import logger from '../logging.js';
 
 const router = express.Router();
-const shortlistEngine = new BREShortlistingEngine();
+let shortlistEngine = null;
+
+try {
+  shortlistEngine = new BREShortlistingEngine();
+} catch (error) {
+  console.warn('⚠️ BRE Shortlisting Engine initialization failed:', error.message);
+  console.warn('   BRE shortlisting features will be unavailable until configuration is complete');
+}
+
+// Guard: Check if engine is available
+router.use((req, res, next) => {
+  if (!shortlistEngine) {
+    return res.status(503).json({
+      success: false,
+      error: 'BRE Shortlisting Engine not initialized - Supabase configuration required',
+    });
+  }
+  next();
+});
 
 // ==================== Health Check ====================
 router.get('/health', async (_req, res) => {
