@@ -1,5 +1,5 @@
 # Multi-stage Dockerfile for IVR Router service
-FROM node:20-alpine
+FROM node:22-alpine
 
 # Install build dependencies needed for native modules
 RUN apk add --no-cache --virtual .build-deps python3 make g++ cairo-dev jpeg-dev pango-dev giflib-dev
