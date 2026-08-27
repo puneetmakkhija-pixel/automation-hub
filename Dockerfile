@@ -1,14 +1,23 @@
 # Multi-stage Dockerfile for IVR Router service
-FROM node:20-alpine AS builder
+FROM node:20-alpine
+
+# Install build dependencies needed for native modules
+RUN apk add --no-cache --virtual .build-deps python3 make g++ cairo-dev jpeg-dev pango-dev giflib-dev
 
 # Set working directory
 WORKDIR /app
 
+# Clear npm cache before install (force fresh resolution)
+RUN npm cache clean --force
+
 # Copy package files
 COPY ivr-router/package.json ivr-router/package-lock.json* ./
 
-# Install dependencies
-RUN npm ci --omit=dev
+# Install dependencies with clean cache
+RUN npm ci --omit=dev --legacy-peer-deps
+
+# Remove build dependencies to keep image small
+RUN apk del .build-deps
 
 # Copy application code
 COPY ivr-router/ ./
