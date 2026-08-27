@@ -1,7 +1,8 @@
 # Multi-stage Dockerfile for IVR Router service
 FROM node:22-alpine
 
-# Install build dependencies needed for native modules
+# Install build and runtime dependencies
+RUN apk add --no-cache curl
 RUN apk add --no-cache --virtual .build-deps python3 make g++ cairo-dev jpeg-dev pango-dev giflib-dev
 
 # Set working directory
@@ -27,7 +28,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # Start application
 CMD ["node", "index.js"]
