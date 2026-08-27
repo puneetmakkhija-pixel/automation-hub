@@ -377,4 +377,12 @@ class IVRRouter {
   }
 }
 
-export default new IVRRouter();
+let instance = null;
+try {
+  instance = new IVRRouter();
+} catch (error) {
+  console.warn('⚠️ IVR Router initialization failed:', error.message);
+  console.warn('   Voice bot configuration may be incomplete');
+}
+
+export default instance;
