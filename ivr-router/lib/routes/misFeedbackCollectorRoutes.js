@@ -8,7 +8,25 @@ import MISFeedbackCollector from '../misFeedbackCollector.js';
 import logger from '../logging.js';
 
 const router = express.Router();
-const misCollector = new MISFeedbackCollector();
+let misCollector = null;
+
+try {
+  misCollector = new MISFeedbackCollector();
+} catch (error) {
+  console.warn('⚠️ MIS Feedback Collector initialization failed:', error.message);
+  console.warn('   MIS feedback features will be unavailable until configuration is complete');
+}
+
+// Guard: Check if collector is available
+router.use((req, res, next) => {
+  if (!misCollector) {
+    return res.status(503).json({
+      success: false,
+      error: 'MIS Feedback Collector not initialized - Supabase configuration required',
+    });
+  }
+  next();
+});
 
 // ==================== Health Check ====================
 router.get('/health', async (_req, res) => {

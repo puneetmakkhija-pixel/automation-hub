@@ -25,7 +25,12 @@ try {
 }
 
 // Initialize CRM Integration client (Phase 1: Lead Intake)
-const crmClient = new CrmIntegrationClient();
+let crmClient = null;
+try {
+  crmClient = new CrmIntegrationClient();
+} catch (error) {
+  console.warn('⚠️ CRM Integration Client initialization failed in chatsenseRoutes:', error.message);
+}
 
 // ==================== Health Check ====================
 

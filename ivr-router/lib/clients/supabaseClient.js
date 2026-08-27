@@ -105,4 +105,12 @@ class SupabaseClient {
   }
 }
 
-export default new SupabaseClient();
+let instance = null;
+try {
+  instance = new SupabaseClient();
+} catch (error) {
+  console.warn('⚠️ Supabase client initialization failed:', error.message);
+  console.warn('   Database features will be unavailable until configuration is complete');
+}
+
+export default instance;

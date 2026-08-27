@@ -1,6 +1,5 @@
 import express from 'express';
 import intentGenerationClient from '../llm/intentGenerationClient.js';
-import supabase from '../clients/supabaseClient.js';
 
 const router = express.Router();
 

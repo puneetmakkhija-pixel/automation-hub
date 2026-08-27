@@ -13,11 +13,28 @@ import AnantaApiClient from './anantaApiClient.js';
 const router = express.Router();
 
 // Initialize Ananta client from environment
-const anantaClient = new AnantaApiClient(
-  process.env.ANANTA_BASE_URL || 'https://data-api.anantadot.com',
-  process.env.ANANTA_API_TOKEN,
-  process.env.ANANTA_API_SEC_KEY
-);
+let anantaClient = null;
+try {
+  anantaClient = new AnantaApiClient(
+    process.env.ANANTA_BASE_URL || 'https://data-api.anantadot.com',
+    process.env.ANANTA_API_TOKEN,
+    process.env.ANANTA_API_SEC_KEY
+  );
+} catch (error) {
+  console.warn('⚠️ Ananta API Client initialization failed:', error.message);
+  console.warn('   Ananta messaging features will be unavailable until configuration is complete');
+}
+
+// Guard: Check if Ananta client is available
+router.use((req, res, next) => {
+  if (!anantaClient) {
+    return res.status(503).json({
+      success: false,
+      error: 'Ananta API Client not initialized - configuration required',
+    });
+  }
+  next();
+});
 
 // ==================== Health Check ====================
 
