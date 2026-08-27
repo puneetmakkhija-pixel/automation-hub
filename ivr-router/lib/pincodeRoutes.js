@@ -2,7 +2,25 @@ import express from "express";
 import PincodeGatingClient from "./pincodeGatingClient.js";
 
 const router = express.Router();
-const gatingClient = new PincodeGatingClient();
+let gatingClient = null;
+
+try {
+  gatingClient = new PincodeGatingClient();
+} catch (error) {
+  console.warn('⚠️ Pincode Gating Client initialization failed:', error.message);
+  console.warn('   Pincode validation features will be unavailable until Supabase is configured');
+}
+
+// Guard: Check if gating client is available
+router.use((req, res, next) => {
+  if (!gatingClient) {
+    return res.status(503).json({
+      success: false,
+      error: 'Pincode Gating Client not initialized - Supabase configuration required',
+    });
+  }
+  next();
+});
 
 router.get("/health", async (_req, res) => {
   try {
