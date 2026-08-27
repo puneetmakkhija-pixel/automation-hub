@@ -8,7 +8,14 @@ import IVRCampaignRouter from '../ivrCampaignRouter.js';
 import logger from '../logging.js';
 
 const router = express.Router();
-const campaignRouter = new IVRCampaignRouter();
+let campaignRouter = null;
+
+try {
+  campaignRouter = new IVRCampaignRouter();
+} catch (error) {
+  console.warn('⚠️ IVR Campaign Router initialization failed:', error.message);
+  console.warn('   IVR routing features will be unavailable until configuration is complete');
+}
 
 // ==================== Health Check ====================
 router.get('/health', async (_req, res) => {
@@ -43,6 +50,13 @@ router.get('/health', async (_req, res) => {
  */
 router.post('/voice-disposition', async (req, res) => {
   try {
+    if (!campaignRouter) {
+      return res.status(503).json({
+        success: false,
+        error: 'IVR Campaign Router not initialized - Supabase configuration required',
+      });
+    }
+
     const { phone, name, callSid, dtmf, campaignId, campaignType, lenderId } = req.body;
 
     if (!phone || !callSid || !dtmf || !campaignId || !campaignType) {
@@ -92,6 +106,13 @@ router.post('/voice-disposition', async (req, res) => {
  */
 router.post('/document-journey', async (req, res) => {
   try {
+    if (!campaignRouter) {
+      return res.status(503).json({
+        success: false,
+        error: 'IVR Campaign Router not initialized - Supabase configuration required',
+      });
+    }
+
     const { phone, name, campaignId, lenderId, callSid } = req.body;
 
     if (!phone || !campaignId || !lenderId) {
@@ -142,6 +163,13 @@ router.post('/document-journey', async (req, res) => {
  */
 router.post('/diy-journey', async (req, res) => {
   try {
+    if (!campaignRouter) {
+      return res.status(503).json({
+        success: false,
+        error: 'IVR Campaign Router not initialized - Supabase configuration required',
+      });
+    }
+
     const { phone, name, campaignId, lenderId, callSid } = req.body;
 
     if (!phone || !campaignId || !lenderId) {
@@ -193,6 +221,13 @@ router.post('/diy-journey', async (req, res) => {
  */
 router.post('/lender-rejection', async (req, res) => {
   try {
+    if (!campaignRouter) {
+      return res.status(503).json({
+        success: false,
+        error: 'IVR Campaign Router not initialized - Supabase configuration required',
+      });
+    }
+
     const { phone, campaignId, rejectedLender, rejectionCode, rejectionReason } = req.body;
 
     if (!phone || !campaignId || !rejectedLender) {
@@ -232,6 +267,13 @@ router.post('/lender-rejection', async (req, res) => {
  */
 router.get('/config', (_req, res) => {
   try {
+    if (!campaignRouter) {
+      return res.status(503).json({
+        success: false,
+        error: 'IVR Campaign Router not initialized - Supabase configuration required',
+      });
+    }
+
     res.json({
       success: true,
       campaignConfig: campaignRouter.campaignConfig,
