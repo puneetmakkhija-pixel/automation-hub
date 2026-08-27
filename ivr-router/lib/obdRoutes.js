@@ -10,6 +10,17 @@ import * as templates from './campaignTemplates.js';
 export function createObdRoutes(obdClient) {
   const router = express.Router();
 
+  // Guard: Check if OBD client is available
+  router.use((req, res, next) => {
+    if (!obdClient) {
+      return res.status(503).json({
+        success: false,
+        error: 'OBD API Client not initialized - configuration required',
+      });
+    }
+    next();
+  });
+
   // ==================== Authentication ====================
   router.post('/auth/login', async (req, res) => {
     try {
