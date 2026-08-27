@@ -2,7 +2,25 @@ import express from "express";
 import PoonawalaaCampaignOrchestrator from "./poonawalaaCampaignOrchestrator.js";
 
 const router = express.Router();
-const orchestrator = new PoonawalaaCampaignOrchestrator();
+let orchestrator = null;
+
+try {
+  orchestrator = new PoonawalaaCampaignOrchestrator();
+} catch (error) {
+  console.warn('⚠️ Poonawala Campaign Orchestrator initialization failed:', error.message);
+  console.warn('   Poonawala campaign features will be unavailable until configuration is complete');
+}
+
+// Guard: Check if orchestrator is available
+router.use((req, res, next) => {
+  if (!orchestrator) {
+    return res.status(503).json({
+      success: false,
+      error: 'Poonawala Campaign Orchestrator not initialized - Supabase configuration required',
+    });
+  }
+  next();
+});
 
 router.get("/health", async (_req, res) => {
   try {

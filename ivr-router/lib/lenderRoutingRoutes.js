@@ -3,8 +3,32 @@ import LenderRoutingClient from "./lenderRoutingClient.js";
 import PincodeGatingClient from "./pincodeGatingClient.js";
 
 const router = express.Router();
-const lenderClient = new LenderRoutingClient();
-const gatingClient = new PincodeGatingClient();
+let lenderClient = null;
+let gatingClient = null;
+
+try {
+  lenderClient = new LenderRoutingClient();
+} catch (error) {
+  console.warn('⚠️ Lender Routing Client initialization failed:', error.message);
+  console.warn('   Lender routing features will be unavailable until configuration is complete');
+}
+
+try {
+  gatingClient = new PincodeGatingClient();
+} catch (error) {
+  console.warn('⚠️ Pincode Gating Client initialization failed:', error.message);
+}
+
+// Guard: Check if clients are available
+router.use((req, res, next) => {
+  if (!lenderClient || !gatingClient) {
+    return res.status(503).json({
+      success: false,
+      error: 'Lender Routing dependencies not initialized - Supabase configuration required',
+    });
+  }
+  next();
+});
 
 /**
  * Lender Routing Routes
