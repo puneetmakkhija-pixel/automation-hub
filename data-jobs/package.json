@@ -8,7 +8,7 @@
     "monitor:status": "node status-monitor.js",
     "monitor:twice-daily": "node status-monitor.js",
     "cron:morning": "node status-monitor.js",
-    "cron:evening": "node status-monitor.js",
+    "cron:afternoon": "node status-monitor.js",
     "setup": "node setup-monitoring.js"
   },
   "dependencies": {
