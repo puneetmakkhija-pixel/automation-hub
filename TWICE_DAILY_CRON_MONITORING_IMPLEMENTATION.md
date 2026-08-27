@@ -59,11 +59,11 @@ All tables include proper indexing for efficient queries and Row Level Security 
 
 ## Cron Schedule
 
-Two automated checks run daily:
+Two automated checks run daily (IST timezone):
 
 ```
-Morning Check:  0 6 * * *  (6:00 AM UTC)
-Evening Check:  0 18 * * * (6:00 PM UTC)
+Morning Check:  30 0 * * *  (6:00 AM IST / 0:30 AM UTC)
+Evening Check:  30 12 * * * (6:00 PM IST / 12:30 PM UTC)
 ```
 
 Each check:

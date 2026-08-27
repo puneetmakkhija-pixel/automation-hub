@@ -3,16 +3,16 @@
 
 cron_jobs:
   - name: "Morning Cron Status Check"
-    schedule: "0 6 * * *" # 6 AM UTC daily
+    schedule: "30 0 * * *" # 6:00 AM IST daily (0:30 AM UTC)
     job: "status-monitor"
     timeout: 300
-    description: "Check status of all API pulls and cron jobs at 6 AM"
+    description: "Check status of all API pulls and cron jobs at 6:00 AM IST"
 
   - name: "Evening Cron Status Check"
-    schedule: "0 18 * * *" # 6 PM UTC daily
+    schedule: "30 12 * * *" # 6:00 PM IST daily (12:30 PM UTC)
     job: "status-monitor"
     timeout: 300
-    description: "Check status of all API pulls and cron jobs at 6 PM"
+    description: "Check status of all API pulls and cron jobs at 6:00 PM IST"
 
 monitored_jobs:
   api_pulls:
