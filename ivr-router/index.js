@@ -32,11 +32,17 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 
 // Initialize OBD API Client
-const obdClient = new OBDApiClient(
-  process.env.OBD_BASE_URL || "https://obdapi2.ivrsms.com",
-  process.env.OBD_USERNAME,
-  process.env.OBD_PASSWORD
-);
+let obdClient = null;
+try {
+  obdClient = new OBDApiClient(
+    process.env.OBD_BASE_URL || "https://obdapi2.ivrsms.com",
+    process.env.OBD_USERNAME,
+    process.env.OBD_PASSWORD
+  );
+} catch (error) {
+  console.warn('⚠️ OBD API Client initialization failed:', error.message);
+  console.warn('   OBD voice calling features will be unavailable until configuration is complete');
+}
 
 // ==================== Health Check ====================
 app.get("/health", (_req, res) => {
