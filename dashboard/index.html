@@ -514,6 +514,7 @@
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
             <button class="nav-tab" onclick="switchTab('campaigns')">🎯 Campaigns</button>
+            <button class="nav-tab" onclick="switchTab('ivr-campaigns')">☎️ IVR Campaigns</button>
             <button class="nav-tab" onclick="switchTab('leads')">👥 Leads</button>
             <button class="nav-tab" onclick="switchTab('lenders')">🏦 Lenders</button>
             <button class="nav-tab" onclick="switchTab('analytics')">📈 Analytics</button>
@@ -627,6 +628,35 @@
                     <tbody id="campaigns-body">
                         <tr>
                             <td colspan="8" style="text-align: center; color: #6b7280;">No campaigns yet</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- IVR CAMPAIGNS TAB -->
+        <section id="ivr-campaigns" class="section">
+            <div class="flex-between mb-20">
+                <h2 style="font-size: 20px;">IVR Campaign Management</h2>
+                <button class="btn btn-primary" onclick="openIVRCampaignModal()">+ New IVR Campaign</button>
+            </div>
+
+            <div class="card">
+                <table class="table" id="ivr-campaigns-table">
+                    <thead>
+                        <tr>
+                            <th>Campaign Name</th>
+                            <th>DTMF Options</th>
+                            <th>Leads</th>
+                            <th>Voice Bot</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ivr-campaigns-body">
+                        <tr>
+                            <td colspan="7" style="text-align: center; color: #6b7280;">No IVR campaigns yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -975,6 +1005,102 @@
         </div>
     </div>
 
+    <!-- IVR CAMPAIGN MODAL -->
+    <div id="ivr-campaign-modal" class="modal">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <span>Create New IVR Campaign (DTMF-Triggered)</span>
+                <button class="modal-close" onclick="closeIVRCampaignModal()">×</button>
+            </div>
+            <form onsubmit="submitIVRCampaign(event)">
+                <div class="form-group">
+                    <label>Campaign Name *</label>
+                    <input type="text" id="ivr-campaign-name" placeholder="e.g., Bureau Eligibility Campaign - Phase 1" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Number of Leads *</label>
+                    <input type="number" id="ivr-campaign-leads" placeholder="1000" min="1" required>
+                </div>
+
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
+                <h3 style="margin-bottom: 15px; font-size: 14px; font-weight: 600;">🔊 IVR Voice Flow</h3>
+
+                <div class="form-group">
+                    <label>IVR Greeting Message (Voice)</label>
+                    <textarea id="ivr-greeting-message" rows="2" required placeholder="Welcome! Press 1 if you're interested in availing a loan. Press 2 if you'd prefer we don't call."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Max Call Duration (seconds)</label>
+                    <input type="number" id="ivr-max-duration" placeholder="120" min="30" max="600" value="120">
+                </div>
+
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
+                <h3 style="margin-bottom: 15px; font-size: 14px; font-weight: 600;">DTMF Press 1: "Interested" → Bureau-Based Loan Check</h3>
+
+                <div class="form-group">
+                    <label>Primary Lender (Bureau Check) *</label>
+                    <select id="ivr-dtmf1-primary" required>
+                        <option value="">Select Primary Lender</option>
+                        <option value="poonawala">Poonawala Finance</option>
+                        <option value="hero_fincorp">Hero FinCorp</option>
+                        <option value="hdfc_jumbo">HDFC Bank - Jumbo</option>
+                        <option value="bajaj_finserv">Bajaj Finserv</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Fallback Lender (if Primary Rejects)</label>
+                    <select id="ivr-dtmf1-fallback">
+                        <option value="">None - No Fallback</option>
+                        <option value="poonawala">Poonawala Finance</option>
+                        <option value="hero_fincorp">Hero FinCorp</option>
+                        <option value="hdfc_jumbo">HDFC Bank - Jumbo</option>
+                        <option value="bajaj_finserv">Bajaj Finserv</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>WhatsApp Message (After Press 1)</label>
+                    <textarea id="ivr-dtmf1-template" rows="3" placeholder="Hi {name}! Your eligibility check with {lender} is in progress. Click below to continue or call us."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Enable Banking/Docs Collection (via WhatsApp + Ori Voice Bot)</label>
+                    <div style="display: flex; gap: 15px; margin-top: 8px;">
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="radio" name="ivr-enable-ori" value="yes"> Yes, Enable
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px;">
+                            <input type="radio" name="ivr-enable-ori" value="no" checked> No, Skip Docs Collection
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-group" id="ori-config-group" style="display: none;">
+                    <label>Ori Voice Bot ID</label>
+                    <input type="text" id="ivr-ori-voice-id" placeholder="e.g., ori-banking-docs" value="ori-banking-docs">
+                </div>
+
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
+                <h3 style="margin-bottom: 15px; font-size: 14px; font-weight: 600;">DTMF Press 2: "Not Interested" → Do Not Disturb (DND)</h3>
+
+                <div class="form-group" style="background: #fef2f2; padding: 12px; border-radius: 6px; border-left: 4px solid #ef4444;">
+                    <label style="color: #dc2626; font-weight: 600;">DND Action</label>
+                    <p style="color: #6b7280; font-size: 13px; margin-top: 8px;">✓ Contact marked as Do Not Disturb<br>✓ No further WhatsApp or voice calls<br>✓ Logged in audit trail</p>
+                </div>
+
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #e5e7eb;">
+
+                <div class="flex">
+                    <button type="submit" class="btn btn-primary btn-block">Create & Launch IVR Campaign</button>
+                    <button type="button" class="btn btn-secondary btn-block" onclick="closeIVRCampaignModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         // ============================================
         // API SERVICE LAYER
@@ -1035,6 +1161,28 @@
                 return this.request(`/api/campaigns/${campaignId}/launch`, {
                     method: 'POST',
                 });
+            }
+
+            // IVR Campaigns
+            async getIVRCampaigns() {
+                return this.request('/api/ivr-campaigns');
+            }
+
+            async createIVRCampaign(data) {
+                return this.request('/api/ivr-campaigns', {
+                    method: 'POST',
+                    body: data,
+                });
+            }
+
+            async launchIVRCampaign(campaignId) {
+                return this.request(`/api/ivr-campaigns/${campaignId}/launch`, {
+                    method: 'POST',
+                });
+            }
+
+            async getIVRCampaignStatus(campaignId) {
+                return this.request(`/api/ivr-campaigns/${campaignId}/status`);
             }
 
             // Leads
@@ -1138,6 +1286,7 @@
             // Load data for each tab
             if (tab === 'dashboard') loadDashboard();
             if (tab === 'campaigns') loadCampaigns();
+            if (tab === 'ivr-campaigns') loadIVRCampaigns();
             if (tab === 'leads') loadLeads();
             if (tab === 'lenders') loadLenders();
             if (tab === 'analytics') loadAnalytics();
@@ -1171,6 +1320,29 @@
         function closeAddLenderModal() {
             document.getElementById('add-lender-modal').classList.remove('active');
             document.getElementById('add-lender-modal').querySelector('form').reset();
+        }
+
+        function openIVRCampaignModal() {
+            document.getElementById('ivr-campaign-modal').classList.add('active');
+
+            // Setup Ori voice bot toggle
+            const oriRadios = document.querySelectorAll('input[name="ivr-enable-ori"]');
+            const oriConfigGroup = document.getElementById('ori-config-group');
+
+            oriRadios.forEach(radio => {
+                radio.addEventListener('change', function() {
+                    if (this.value === 'yes') {
+                        oriConfigGroup.style.display = 'block';
+                    } else {
+                        oriConfigGroup.style.display = 'none';
+                    }
+                });
+            });
+        }
+
+        function closeIVRCampaignModal() {
+            document.getElementById('ivr-campaign-modal').classList.remove('active');
+            document.getElementById('ivr-campaign-modal').querySelector('form').reset();
         }
 
         // ============================================
@@ -1314,6 +1486,117 @@
                 loadLenders();
             } catch (error) {
                 console.error('Lender creation error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        async function submitIVRCampaign(event) {
+            event.preventDefault();
+
+            const campaignName = document.getElementById('ivr-campaign-name').value;
+            const campaignLeads = document.getElementById('ivr-campaign-leads').value;
+            const greetingMessage = document.getElementById('ivr-greeting-message').value;
+            const maxDuration = document.getElementById('ivr-max-duration').value;
+
+            // DTMF Press 1 (Interested)
+            const dtmf1Primary = document.getElementById('ivr-dtmf1-primary').value;
+            const dtmf1Fallback = document.getElementById('ivr-dtmf1-fallback').value;
+            const dtmf1Template = document.getElementById('ivr-dtmf1-template').value;
+
+            // Ori Voice Bot
+            const enableOri = document.querySelector('input[name="ivr-enable-ori"]:checked').value;
+            const oriVoiceId = enableOri === 'yes' ? document.getElementById('ivr-ori-voice-id').value : null;
+
+            try {
+                showAlert('Creating IVR Campaign...', 'info');
+
+                const ivrCampaignData = {
+                    name: campaignName,
+                    leadCount: parseInt(campaignLeads),
+                    ivrConfig: {
+                        greetingMessage,
+                        maxDuration: parseInt(maxDuration),
+                    },
+                    dtmfOptions: {
+                        press1: {
+                            name: 'Interested',
+                            action: 'route_to_lender',
+                            primaryLender: dtmf1Primary,
+                            fallbackLender: dtmf1Fallback || null,
+                            whatsappTemplate: dtmf1Template,
+                            channel: 'whatsapp',
+                            nextStep: enableOri === 'yes' ? 'banking_docs_collection' : null,
+                        },
+                        press2: {
+                            name: 'Not Interested',
+                            action: 'mark_dnd',
+                            description: 'Do Not Disturb',
+                        },
+                    },
+                    oriVoiceBot: enableOri === 'yes' ? {
+                        enabled: true,
+                        voiceId: oriVoiceId,
+                        purpose: 'banking_docs_collection',
+                    } : null,
+                    status: 'draft',
+                };
+
+                const result = await api.createIVRCampaign(ivrCampaignData);
+
+                if (result.success) {
+                    showAlert(`IVR Campaign "${campaignName}" created successfully! Ready to launch.`, 'success');
+                    closeIVRCampaignModal();
+                    loadIVRCampaigns();
+                } else {
+                    showAlert(`Error: ${result.error || 'Failed to create campaign'}`, 'danger');
+                }
+            } catch (error) {
+                console.error('IVR Campaign creation error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        async function loadIVRCampaigns() {
+            try {
+                const result = await api.getIVRCampaigns();
+                if (result.success && result.data) {
+                    renderIVRCampaignsTable(result.data);
+                } else {
+                    console.log('No IVR campaigns yet');
+                }
+            } catch (error) {
+                console.error('IVR Campaigns load error:', error);
+                showAlert('Failed to load IVR campaigns: ' + error.message, 'danger');
+            }
+        }
+
+        function renderIVRCampaignsTable(campaigns) {
+            const tbody = document.querySelector('#ivr-campaigns-table tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = campaigns.map(c => `
+                <tr>
+                    <td>${c.name}</td>
+                    <td>Press 1: Interested<br>Press 2: DND</td>
+                    <td>${formatNumber(c.leadCount)}</td>
+                    <td>${c.oriVoiceBot?.enabled ? '✓ Enabled' : '✗ Disabled'}</td>
+                    <td><span class="badge badge-${c.status === 'active' ? 'success' : 'warning'}">${c.status}</span></td>
+                    <td>${new Date(c.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td>
+                        ${c.status === 'draft' ? `<button onclick="launchIVRCampaignHandler('${c.id}')" style="padding: 5px 10px; font-size: 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">Launch</button>` : '-'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function launchIVRCampaignHandler(campaignId) {
+            try {
+                showAlert('Launching IVR Campaign...', 'info');
+                await api.launchIVRCampaign(campaignId);
+                showAlert('IVR Campaign launched successfully! 🚀', 'success');
+                loadIVRCampaigns();
+            } catch (error) {
+                console.error('Launch error:', error);
                 showAlert(`Error: ${error.message}`, 'danger');
             }
         }

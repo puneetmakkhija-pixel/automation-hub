@@ -1,0 +1,50 @@
+{
+  "lender_id": "flexiloans",
+  "lender_name": "Flexiloans",
+  "voice_profile": {
+    "tone": "friendly_professional",
+    "pace": "moderate",
+    "energy": "upbeat",
+    "accent": "indian_english"
+  },
+  "tts_config": {
+    "provider": "elevenlabs",
+    "voice_id": "flexiloans_professional",
+    "model": "eleven_monolingual_v1",
+    "stability": 0.5,
+    "similarity_boost": 0.75
+  },
+  "greeting_variants": [
+    "Welcome to Flexiloans! I'm here to help you find the perfect loan solution.",
+    "Hi there! Thanks for choosing Flexiloans. Let me assist you today.",
+    "Hello! Welcome to Flexiloans, your trusted lending partner."
+  ],
+  "product_description": "Flexible personal and business loans with quick approval and competitive rates.",
+  "key_benefits": [
+    "Same-day approval",
+    "Flexible repayment terms",
+    "Transparent pricing with no hidden charges",
+    "24/7 customer support"
+  ],
+  "common_responses": {
+    "eligibility_check": "Let me check your eligibility based on your profile. This should take just a moment.",
+    "approval": "Great news! You're approved for a loan up to {{amount}}.",
+    "rejection": "I understand you don't meet our current criteria. However, Flexiloans regularly reviews applications. You're welcome to reapply after {{days}} days.",
+    "document_request": "To proceed, we'll need a few documents from you: {{documents}}.",
+    "rate_inquiry": "Our rates start from {{rate}}% per annum, depending on your profile and loan amount.",
+    "processing": "Your application is being processed. We'll notify you of the status shortly.",
+    "completion": "Thank you for choosing Flexiloans! Your loan is on the way. Check your email for details."
+  },
+  "error_handling": {
+    "connection_lost": "I lost the connection briefly. Let me reconnect you.",
+    "timeout": "We're taking a bit longer than usual. Please stay with me.",
+    "unclear_input": "I didn't quite catch that. Could you please repeat?"
+  },
+  "handoff_script": "I'm connecting you with our loan specialist to finalize your application.",
+  "metadata": {
+    "created_at": "2026-08-26",
+    "version": "1.0",
+    "language": "en-IN",
+    "timezone": "IST"
+  }
+}

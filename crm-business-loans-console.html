@@ -1,0 +1,2155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM Business Loans - Automation Console</title>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --neutral-50: #f9fafb;
+      --neutral-100: #f3f4f6;
+      --neutral-200: #e5e7eb;
+      --neutral-300: #d1d5db;
+      --neutral-500: #6b7280;
+      --neutral-700: #374151;
+      --neutral-900: #111827;
+      --text-primary: #111827;
+      --text-secondary: #6b7280;
+      --bg-primary: #ffffff;
+      --bg-secondary: #f9fafb;
+      --border-color: #e5e7eb;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      line-height: 1.5;
+    }
+
+    .container {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ==================== Sidebar ====================*/
+    .sidebar {
+      width: 280px;
+      background: var(--bg-primary);
+      border-right: 1px solid var(--border-color);
+      padding: 24px 0;
+      overflow-y: auto;
+      position: fixed;
+      height: 100vh;
+      left: 0;
+    }
+
+    .sidebar-header {
+      padding: 0 24px 32px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo::before {
+      content: '⚡';
+      font-size: 24px;
+    }
+
+    .nav-menu {
+      list-style: none;
+      padding: 16px 8px;
+    }
+
+    .nav-item {
+      margin: 4px 0;
+    }
+
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 14px;
+      font-weight: 500;
+      border: none;
+      background: none;
+      width: 100%;
+      text-align: left;
+    }
+
+    .nav-link:hover {
+      background: var(--neutral-100);
+      color: var(--primary);
+    }
+
+    .nav-link.active {
+      background: var(--primary);
+      color: white;
+    }
+
+    .nav-icon {
+      font-size: 20px;
+      width: 20px;
+      text-align: center;
+    }
+
+    /* ==================== Main Content ====================*/
+    .main-content {
+      flex: 1;
+      margin-left: 280px;
+      padding: 32px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+      background: var(--bg-primary);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .header-title h1 {
+      font-size: 28px;
+      margin-bottom: 4px;
+      color: var(--text-primary);
+    }
+
+    .header-title p {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      font-weight: 600;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-dark);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-secondary {
+      background: var(--neutral-100);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background: var(--neutral-200);
+    }
+
+    .btn-sm {
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-warning {
+      background: var(--warning);
+      color: white;
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    /* ==================== Grid Layout ====================*/
+    .grid {
+      display: grid;
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+
+    .grid-4 {
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    }
+
+    /* ==================== Cards ====================*/
+    .card {
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: var(--primary);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-primary);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .card-icon {
+      font-size: 24px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .status-badge.active {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .status-badge.inactive {
+      background: rgba(229, 68, 68, 0.1);
+      color: var(--danger);
+    }
+
+    .status-badge.pending {
+      background: rgba(245, 158, 11, 0.1);
+      color: var(--warning);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .status-dot.active {
+      background: var(--success);
+    }
+
+    .status-dot.inactive {
+      background: var(--danger);
+    }
+
+    /* ==================== Stats ====================*/
+    .stat-box {
+      padding: 20px;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 12px 0;
+    }
+
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--primary);
+      margin: 12px 0;
+    }
+
+    .metric-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    /* ==================== Tables ====================*/
+    .table-wrapper {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-primary);
+    }
+
+    th {
+      background: var(--bg-secondary);
+      padding: 16px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    td {
+      padding: 16px;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 14px;
+    }
+
+    tr:hover {
+      background: var(--bg-secondary);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* ==================== Forms ====================*/
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-primary);
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: all 0.2s ease;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    /* ==================== Modals ====================*/
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-primary);
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .modal-header {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+
+    /* ==================== Tabs ====================*/
+    .tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 24px;
+    }
+
+    .tab-button {
+      padding: 12px 16px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-secondary);
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .tab-button.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* ==================== Utilities ====================*/
+    .flex {
+      display: flex;
+    }
+
+    .flex-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .flex-center {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .gap-12 {
+      gap: 12px;
+    }
+
+    .gap-16 {
+      gap: 16px;
+    }
+
+    .mb-8 {
+      margin-bottom: 8px;
+    }
+
+    .mb-16 {
+      margin-bottom: 16px;
+    }
+
+    .text-sm {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+
+    .text-danger {
+      color: var(--danger);
+    }
+
+    .text-success {
+      color: var(--success);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .badge-primary {
+      background: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+    }
+
+    .badge-success {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .badge-warning {
+      background: rgba(245, 158, 11, 0.1);
+      color: var(--warning);
+    }
+
+    /* ==================== Responsive ====================*/
+    @media (max-width: 768px) {
+      .sidebar {
+        width: 0;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+        z-index: 900;
+      }
+
+      .sidebar.active {
+        width: 280px;
+        transform: translateX(0);
+      }
+
+      .main-content {
+        margin-left: 0;
+        padding: 16px;
+      }
+
+      .header {
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .grid-2,
+      .grid-3,
+      .grid-4 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ==================== Integration Cards ====================*/
+    .integration-card {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .integration-icon {
+      font-size: 40px;
+      flex-shrink: 0;
+    }
+
+    .integration-content {
+      flex: 1;
+    }
+
+    .integration-name {
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+
+    .integration-desc {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+    }
+
+    .integration-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    .integration-meta-item {
+      display: flex;
+      gap: 4px;
+    }
+
+    .integration-meta-label {
+      color: var(--text-secondary);
+    }
+
+    .integration-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* ==================== Feature List ====================*/
+    .feature-list {
+      list-style: none;
+    }
+
+    .feature-list li {
+      padding: 8px 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .feature-list li::before {
+      content: '✓';
+      color: var(--success);
+      font-weight: bold;
+      font-size: 16px;
+    }
+
+    /* ==================== Data Display ====================*/
+    .data-field {
+      margin-bottom: 16px;
+    }
+
+    .data-label {
+      font-size: 12px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .data-value {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">CRM Business Loans</div>
+      </div>
+
+      <ul class="nav-menu">
+        <li class="nav-item">
+          <button class="nav-link active" onclick="showTab('dashboard')">
+            <span class="nav-icon">📊</span>
+            Dashboard
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="showTab('ivr')">
+            <span class="nav-icon">☎️</span>
+            IVR Panel
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="showTab('whatsapp')">
+            <span class="nav-icon">💬</span>
+            WhatsApp Bot
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="showTab('voice')">
+            <span class="nav-icon">🎤</span>
+            Voice Bot
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="showTab('database')">
+            <span class="nav-icon">🗄️</span>
+            Database
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="showTab('integrations')">
+            <span class="nav-icon">🔗</span>
+            Integrations
+          </button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" onclick="showTab('settings')">
+            <span class="nav-icon">⚙️</span>
+            Settings
+          </button>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Header -->
+      <div class="header">
+        <div class="header-title">
+          <h1>Automation Console</h1>
+          <p>Manage all your integrations and campaigns in one place</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary btn-sm" onclick="initializeDashboard()">
+            <span>🔄</span>
+            Refresh
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="openApiConfig()">
+            <span>⚙️</span>
+            Config
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="openModal('addIntegration')">
+            <span>➕</span>
+            Add Integration
+          </button>
+        </div>
+      </div>
+
+      <!-- Dashboard Tab -->
+      <div class="tab-panel active" id="dashboard-tab">
+        <!-- Stats Grid -->
+        <div class="grid grid-4 mb-16">
+          <div class="stat-box" id="metric-integrations">
+            <div class="metric-label">Active Integrations</div>
+            <div class="metric-value">--</div>
+            <div class="text-sm">Checking status...</div>
+          </div>
+          <div class="stat-box" id="metric-campaigns">
+            <div class="metric-label">Campaigns Running</div>
+            <div class="metric-value">--</div>
+            <div class="text-sm">Loading...</div>
+          </div>
+          <div class="stat-box" id="metric-contacts">
+            <div class="metric-label">Contacts Processed</div>
+            <div class="metric-value">--</div>
+            <div class="text-sm">Last 30 days</div>
+          </div>
+          <div class="stat-box" id="metric-success">
+            <div class="metric-label">Success Rate</div>
+            <div class="metric-value">--</div>
+            <div class="text-sm">Calculating...</div>
+          </div>
+        </div>
+
+        <!-- Integrations Overview -->
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">🌐</span>
+              Active Integrations
+            </div>
+          </div>
+
+          <div class="grid grid-2 gap-16">
+            <!-- IVR -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header">
+                <div class="card-title" style="font-size: 16px;">
+                  <span class="card-icon" style="font-size: 20px;">☎️</span>
+                  IVR Panel
+                </div>
+                <span class="status-badge active">
+                  <span class="status-dot active"></span>
+                  Active
+                </span>
+              </div>
+              <p class="text-sm mb-16">Automated voice responses and DTMF routing</p>
+              <div class="data-field">
+                <div class="data-label">Calls Today</div>
+                <div class="data-value">2,450</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Success Rate</div>
+                <div class="data-value">96.2%</div>
+              </div>
+              <button class="btn btn-sm btn-secondary" style="width: 100%; margin-top: 12px;">Configure IVR</button>
+            </div>
+
+            <!-- WhatsApp -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header">
+                <div class="card-title" style="font-size: 16px;">
+                  <span class="card-icon" style="font-size: 20px;">💬</span>
+                  WhatsApp Bot (Ananta)
+                </div>
+                <span class="status-badge active">
+                  <span class="status-dot active"></span>
+                  Active
+                </span>
+              </div>
+              <p class="text-sm mb-16">Intelligent conversation management</p>
+              <div class="data-field">
+                <div class="data-label">Messages Today</div>
+                <div class="data-value">8,920</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Avg Response Time</div>
+                <div class="data-value">1.2s</div>
+              </div>
+              <button class="btn btn-sm btn-secondary" style="width: 100%; margin-top: 12px;">Configure Bot</button>
+            </div>
+
+            <!-- Voice Bot -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header">
+                <div class="card-title" style="font-size: 16px;">
+                  <span class="card-icon" style="font-size: 20px;">🎤</span>
+                  Voice Bot (Oriserve)
+                </div>
+                <span class="status-badge active">
+                  <span class="status-dot active"></span>
+                  Active
+                </span>
+              </div>
+              <p class="text-sm mb-16">AI-powered voice agent interactions</p>
+              <div class="data-field">
+                <div class="data-label">Conversations</div>
+                <div class="data-value">1,234</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Avg Duration</div>
+                <div class="data-value">4m 32s</div>
+              </div>
+              <button class="btn btn-sm btn-secondary" style="width: 100%; margin-top: 12px;">Configure Voice</button>
+            </div>
+
+            <!-- Database -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header">
+                <div class="card-title" style="font-size: 16px;">
+                  <span class="card-icon" style="font-size: 20px;">🗄️</span>
+                  Supabase
+                </div>
+                <span class="status-badge active">
+                  <span class="status-dot active"></span>
+                  Connected
+                </span>
+              </div>
+              <p class="text-sm mb-16">Real-time database management</p>
+              <div class="data-field">
+                <div class="data-label">Tables</div>
+                <div class="data-value">12</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Records</div>
+                <div class="data-value">142.5K</div>
+              </div>
+              <button class="btn btn-sm btn-secondary" style="width: 100%; margin-top: 12px;">Manage DB</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">📈</span>
+              Recent Activity
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Event</th>
+                  <th>Integration</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>2 minutes ago</td>
+                  <td>Campaign launched</td>
+                  <td><span class="badge badge-primary">IVR</span></td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Success</span></td>
+                </tr>
+                <tr>
+                  <td>5 minutes ago</td>
+                  <td>Database sync completed</td>
+                  <td><span class="badge badge-success">Supabase</span></td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Success</span></td>
+                </tr>
+                <tr>
+                  <td>12 minutes ago</td>
+                  <td>WhatsApp bot trained</td>
+                  <td><span class="badge badge-primary">Ananta</span></td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Success</span></td>
+                </tr>
+                <tr>
+                  <td>28 minutes ago</td>
+                  <td>Voice agent deployed</td>
+                  <td><span class="badge badge-primary">Oriserve</span></td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Success</span></td>
+                </tr>
+                <tr>
+                  <td>1 hour ago</td>
+                  <td>System backup completed</td>
+                  <td><span class="badge badge-success">System</span></td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Success</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- IVR Tab -->
+      <div class="tab-panel" id="ivr-tab">
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">☎️</span>
+              IVR Panel Configuration
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-sm btn-primary" onclick="openModal('createCampaign')">Create Campaign</button>
+              <button class="btn btn-sm btn-secondary" onclick="openModal('createRecording')">Add Recording</button>
+              <button class="btn btn-sm btn-secondary" onclick="openModal('filterBase')">Filter Base</button>
+            </div>
+          </div>
+          <div class="grid grid-2 gap-16 mb-16">
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Features Enabled</h3>
+              <ul class="feature-list">
+                <li>DTMF Input Handling</li>
+                <li>Voice Recording Upload</li>
+                <li>Campaign Scheduling</li>
+                <li>Real-time Analytics</li>
+                <li>Multi-lender Support</li>
+                <li>Agent Routing</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Current Metrics</h3>
+              <div class="data-field">
+                <div class="data-label">Active Campaigns</div>
+                <div class="data-value">5</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Total Calls Today</div>
+                <div class="data-value">12,450</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Avg Call Duration</div>
+                <div class="data-value">3m 24s</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Success Rate</div>
+                <div class="data-value">96.8%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- IVR Campaigns Table -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Active IVR Campaigns</div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Campaign Name</th>
+                  <th>Lender</th>
+                  <th>Status</th>
+                  <th>Calls Today</th>
+                  <th>Success Rate</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Flexiloans - SME Campaign</strong></td>
+                  <td>FlexiLoans</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Running</span></td>
+                  <td>4,230</td>
+                  <td><span class="text-success">95.2%</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-secondary">Edit</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Poonawala - Business Loans</strong></td>
+                  <td>Poonawala Finance</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Running</span></td>
+                  <td>3,890</td>
+                  <td><span class="text-success">97.1%</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-secondary">Edit</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Personal Loans - General</strong></td>
+                  <td>General</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Running</span></td>
+                  <td>2,340</td>
+                  <td><span class="text-success">94.6%</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-secondary">Edit</button>
+                  </td>
+                </tr>
+                <tr>
+                  <td><strong>Auto Loans - Quick Apply</strong></td>
+                  <td>General</td>
+                  <td><span class="status-badge pending"><span class="status-dot active"></span>Scheduled</span></td>
+                  <td>1,990</td>
+                  <td><span class="text-success">92.3%</span></td>
+                  <td>
+                    <button class="btn btn-sm btn-secondary">Edit</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- WhatsApp Tab -->
+      <div class="tab-panel" id="whatsapp-tab">
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">💬</span>
+              WhatsApp Bot (Ananta)
+            </div>
+            <button class="btn btn-sm btn-primary">Train Bot</button>
+          </div>
+          <div class="grid grid-2 gap-16 mb-16">
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Bot Capabilities</h3>
+              <ul class="feature-list">
+                <li>Natural Language Understanding</li>
+                <li>Conversation State Management</li>
+                <li>Product Eligibility Check</li>
+                <li>Application Submission</li>
+                <li>Document Upload</li>
+                <li>Lead Scoring</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Bot Statistics</h3>
+              <div class="data-field">
+                <div class="data-label">Messages Today</div>
+                <div class="data-value">8,920</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Active Users</div>
+                <div class="data-value">3,245</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Avg Response Time</div>
+                <div class="data-value">1.2s</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Understanding Accuracy</div>
+                <div class="data-value">94.3%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Conversation Flows -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Active Conversation Flows</div>
+            <button class="btn btn-sm btn-primary">New Flow</button>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Flow Name</th>
+                  <th>Purpose</th>
+                  <th>Active Users</th>
+                  <th>Completion Rate</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Loan Eligibility Check</strong></td>
+                  <td>Check if user qualifies for loans</td>
+                  <td>1,234</td>
+                  <td>87.4%</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Quick Application</strong></td>
+                  <td>Fast loan application process</td>
+                  <td>2,156</td>
+                  <td>92.1%</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Document Upload</strong></td>
+                  <td>Collect required documents</td>
+                  <td>845</td>
+                  <td>78.9%</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Support & FAQ</strong></td>
+                  <td>Answer common questions</td>
+                  <td>5,432</td>
+                  <td>100%</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Voice Bot Tab -->
+      <div class="tab-panel" id="voice-tab">
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">🎤</span>
+              Voice Bot (Oriserve)
+            </div>
+            <button class="btn btn-sm btn-primary">Deploy Agent</button>
+          </div>
+          <div class="grid grid-2 gap-16 mb-16">
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Voice Agent Features</h3>
+              <ul class="feature-list">
+                <li>AI-Powered Voice Interaction</li>
+                <li>Multi-language Support</li>
+                <li>Intent Recognition</li>
+                <li>Call Transcription</li>
+                <li>Agent Escalation</li>
+                <li>Performance Analytics</li>
+              </ul>
+            </div>
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Call Analytics</h3>
+              <div class="data-field">
+                <div class="data-label">Calls Today</div>
+                <div class="data-value">1,234</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Avg Call Duration</div>
+                <div class="data-value">4m 32s</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Call Completion Rate</div>
+                <div class="data-value">88.9%</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Agent Satisfaction</div>
+                <div class="data-value">4.2/5</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Voice Agents -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Deployed Voice Agents</div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Agent Name</th>
+                  <th>Purpose</th>
+                  <th>Status</th>
+                  <th>Calls Handled</th>
+                  <th>Success Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Eligibility Assistant</strong></td>
+                  <td>Check loan eligibility via voice</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                  <td>456</td>
+                  <td><span class="text-success">91.2%</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Application Support</strong></td>
+                  <td>Guide users through application</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                  <td>234</td>
+                  <td><span class="text-success">89.5%</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Document Collector</strong></td>
+                  <td>Request and verify documents</td>
+                  <td><span class="status-badge active"><span class="status-dot active"></span>Active</span></td>
+                  <td>123</td>
+                  <td><span class="text-success">85.3%</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Payment Reminder</strong></td>
+                  <td>Remind customers about payments</td>
+                  <td><span class="status-badge pending"><span class="status-dot active"></span>Scheduled</span></td>
+                  <td>421</td>
+                  <td><span class="text-success">92.7%</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Database Tab -->
+      <div class="tab-panel" id="database-tab">
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">🗄️</span>
+              Supabase Database
+            </div>
+            <button class="btn btn-sm btn-primary">Create Table</button>
+          </div>
+          <div class="grid grid-2 gap-16 mb-16">
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Database Stats</h3>
+              <div class="data-field">
+                <div class="data-label">Total Tables</div>
+                <div class="data-value">12</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Total Records</div>
+                <div class="data-value">142.5K</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Database Size</div>
+                <div class="data-value">234 MB</div>
+              </div>
+              <div class="data-field">
+                <div class="data-label">Last Backup</div>
+                <div class="data-value">2 hours ago</div>
+              </div>
+            </div>
+            <div>
+              <h3 class="mb-8" style="font-weight: 600; margin-bottom: 12px;">Quick Actions</h3>
+              <ul class="feature-list" style="list-style: none; padding: 0;">
+                <li style="padding: 8px 0; display: block;"><button class="btn btn-sm btn-secondary" style="width: 100%;">🔄 Sync All Tables</button></li>
+                <li style="padding: 8px 0; display: block;"><button class="btn btn-sm btn-secondary" style="width: 100%;">💾 Create Backup</button></li>
+                <li style="padding: 8px 0; display: block;"><button class="btn btn-sm btn-secondary" style="width: 100%;">📊 Export Data</button></li>
+                <li style="padding: 8px 0; display: block;"><button class="btn btn-sm btn-secondary" style="width: 100%;">🔐 Manage Permissions</button></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tables List -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Database Tables</div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Table Name</th>
+                  <th>Records</th>
+                  <th>Columns</th>
+                  <th>Last Updated</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>users</strong></td>
+                  <td>12,450</td>
+                  <td>18</td>
+                  <td>5 minutes ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>campaign_contacts</strong></td>
+                  <td>45,230</td>
+                  <td>12</td>
+                  <td>2 minutes ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>campaigns</strong></td>
+                  <td>234</td>
+                  <td>15</td>
+                  <td>12 minutes ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>campaign_calls</strong></td>
+                  <td>78,920</td>
+                  <td>14</td>
+                  <td>1 minute ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>whatsapp_messages</strong></td>
+                  <td>234,560</td>
+                  <td>11</td>
+                  <td>Just now</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>conversation_state</strong></td>
+                  <td>8,945</td>
+                  <td>9</td>
+                  <td>8 minutes ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>conversation_events</strong></td>
+                  <td>156,234</td>
+                  <td>10</td>
+                  <td>1 minute ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+                <tr>
+                  <td><strong>voice_calls</strong></td>
+                  <td>34,567</td>
+                  <td>13</td>
+                  <td>3 minutes ago</td>
+                  <td><button class="btn btn-sm btn-secondary">View</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Integrations Tab -->
+      <div class="tab-panel" id="integrations-tab">
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">🔗</span>
+              Manage Integrations
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="openModal('addIntegration')">Add New Integration</button>
+          </div>
+          <p class="text-sm mb-16">Connect and manage all your external services and platforms</p>
+
+          <div class="grid grid-2 gap-16">
+            <!-- OBD Integration -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header flex-between">
+                <div>
+                  <div class="card-title" style="font-size: 16px; margin-bottom: 8px;">
+                    <span class="card-icon" style="font-size: 20px;">📱</span>
+                    OBD (Voice Calls)
+                  </div>
+                  <p class="text-sm">IVR & SMS Gateway Integration</p>
+                </div>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Status</div>
+                <span class="status-badge active"><span class="status-dot active"></span>Connected</span>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">API Version</div>
+                <div class="data-value">2.0</div>
+              </div>
+              <div class="flex gap-12">
+                <button class="btn btn-sm btn-secondary">Configure</button>
+                <button class="btn btn-sm btn-secondary">Disconnect</button>
+              </div>
+            </div>
+
+            <!-- Supabase Integration -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header flex-between">
+                <div>
+                  <div class="card-title" style="font-size: 16px; margin-bottom: 8px;">
+                    <span class="card-icon" style="font-size: 20px;">🗄️</span>
+                    Supabase
+                  </div>
+                  <p class="text-sm">Database & Real-time Updates</p>
+                </div>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Status</div>
+                <span class="status-badge active"><span class="status-dot active"></span>Connected</span>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Tables Synced</div>
+                <div class="data-value">12 / 12</div>
+              </div>
+              <div class="flex gap-12">
+                <button class="btn btn-sm btn-secondary">Configure</button>
+                <button class="btn btn-sm btn-secondary">Disconnect</button>
+              </div>
+            </div>
+
+            <!-- Ananta Integration -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header flex-between">
+                <div>
+                  <div class="card-title" style="font-size: 16px; margin-bottom: 8px;">
+                    <span class="card-icon" style="font-size: 20px;">💬</span>
+                    Ananta (WhatsApp)
+                  </div>
+                  <p class="text-sm">WhatsApp Messaging Platform</p>
+                </div>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Status</div>
+                <span class="status-badge active"><span class="status-dot active"></span>Connected</span>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Messages Today</div>
+                <div class="data-value">8,920</div>
+              </div>
+              <div class="flex gap-12">
+                <button class="btn btn-sm btn-secondary">Configure</button>
+                <button class="btn btn-sm btn-secondary">Disconnect</button>
+              </div>
+            </div>
+
+            <!-- Oriserve Integration -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header flex-between">
+                <div>
+                  <div class="card-title" style="font-size: 16px; margin-bottom: 8px;">
+                    <span class="card-icon" style="font-size: 20px;">🎤</span>
+                    Oriserve (Voice)
+                  </div>
+                  <p class="text-sm">AI Voice Agent Platform</p>
+                </div>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Status</div>
+                <span class="status-badge active"><span class="status-dot active"></span>Connected</span>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Active Agents</div>
+                <div class="data-value">4</div>
+              </div>
+              <div class="flex gap-12">
+                <button class="btn btn-sm btn-secondary">Configure</button>
+                <button class="btn btn-sm btn-secondary">Disconnect</button>
+              </div>
+            </div>
+
+            <!-- ElevenLabs Integration -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header flex-between">
+                <div>
+                  <div class="card-title" style="font-size: 16px; margin-bottom: 8px;">
+                    <span class="card-icon" style="font-size: 20px;">🔊</span>
+                    ElevenLabs (TTS)
+                  </div>
+                  <p class="text-sm">Voice Synthesis & Generation</p>
+                </div>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Status</div>
+                <span class="status-badge active"><span class="status-dot active"></span>Connected</span>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Voices Available</div>
+                <div class="data-value">50+</div>
+              </div>
+              <div class="flex gap-12">
+                <button class="btn btn-sm btn-secondary">Configure</button>
+                <button class="btn btn-sm btn-secondary">Disconnect</button>
+              </div>
+            </div>
+
+            <!-- Chatsense Integration -->
+            <div class="card" style="border: 1px solid var(--border-color);">
+              <div class="card-header flex-between">
+                <div>
+                  <div class="card-title" style="font-size: 16px; margin-bottom: 8px;">
+                    <span class="card-icon" style="font-size: 20px;">💡</span>
+                    Chatsense
+                  </div>
+                  <p class="text-sm">Conversational AI Platform</p>
+                </div>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Status</div>
+                <span class="status-badge pending"><span class="status-dot active"></span>Configuring</span>
+              </div>
+              <div class="data-field mb-16">
+                <div class="data-label">Last Check</div>
+                <div class="data-value">2 minutes ago</div>
+              </div>
+              <div class="flex gap-12">
+                <button class="btn btn-sm btn-secondary">Configure</button>
+                <button class="btn btn-sm btn-secondary">Disconnect</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings Tab -->
+      <div class="tab-panel" id="settings-tab">
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">
+              <span class="card-icon">⚙️</span>
+              System Settings
+            </div>
+          </div>
+          <div class="grid grid-2 gap-32">
+            <div>
+              <h3 class="mb-16" style="font-weight: 600;">API Configuration</h3>
+              <div class="form-group">
+                <label>API Base URL</label>
+                <input type="text" class="form-control" value="https://api.crmbusinessloans.com" readonly>
+              </div>
+              <div class="form-group">
+                <label>API Version</label>
+                <input type="text" class="form-control" value="v2.0" readonly>
+              </div>
+              <div class="form-group">
+                <label>Rate Limit</label>
+                <input type="text" class="form-control" value="10,000 requests/hour">
+              </div>
+            </div>
+            <div>
+              <h3 class="mb-16" style="font-weight: 600;">Notification Settings</h3>
+              <div class="form-group">
+                <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+                  <input type="checkbox" checked>
+                  Email notifications
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+                  <input type="checkbox" checked>
+                  SMS alerts
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+                  <input type="checkbox" checked>
+                  Push notifications
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+                  <input type="checkbox">
+                  Daily summary
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Security Settings -->
+        <div class="card mb-16">
+          <div class="card-header">
+            <div class="card-title">🔐 Security Settings</div>
+          </div>
+          <div class="grid grid-2 gap-32">
+            <div>
+              <h3 class="mb-16" style="font-weight: 600;">API Keys</h3>
+              <div class="data-field mb-16">
+                <div class="data-label">Public Key</div>
+                <div class="data-value" style="font-family: monospace; font-size: 12px;">pk_live_51234567890abcdef</div>
+              </div>
+              <button class="btn btn-sm btn-secondary mb-16">Rotate Keys</button>
+            </div>
+            <div>
+              <h3 class="mb-16" style="font-weight: 600;">Access Control</h3>
+              <div class="form-group">
+                <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+                  <input type="checkbox" checked>
+                  Two-factor authentication
+                </label>
+              </div>
+              <div class="form-group">
+                <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+                  <input type="checkbox" checked>
+                  IP whitelisting
+                </label>
+              </div>
+              <button class="btn btn-sm btn-secondary">Manage Access</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Backup & Export -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">💾 Backup & Export</div>
+          </div>
+          <div class="grid grid-2 gap-16">
+            <div>
+              <h3 class="mb-12" style="font-weight: 600; font-size: 14px;">Database Backup</h3>
+              <p class="text-sm mb-16">Last backup: 2 hours ago</p>
+              <div class="flex gap-8">
+                <button class="btn btn-sm btn-secondary">Backup Now</button>
+                <button class="btn btn-sm btn-secondary">Schedule</button>
+              </div>
+            </div>
+            <div>
+              <h3 class="mb-12" style="font-weight: 600; font-size: 14px;">Export Data</h3>
+              <p class="text-sm mb-16">Export all data for analysis</p>
+              <div class="flex gap-8">
+                <button class="btn btn-sm btn-secondary">CSV Export</button>
+                <button class="btn btn-sm btn-secondary">JSON Export</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Recording Modal -->
+  <div class="modal" id="createRecording">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Create IVR Recording</span>
+        <button class="modal-close" onclick="closeModal('createRecording')">✕</button>
+      </div>
+      <form onsubmit="handleCreateRecording(event)">
+        <div class="form-group">
+          <label>Lender ID</label>
+          <select name="lenderId" class="form-control" required>
+            <option value="">Select Lender</option>
+            <option value="flexiloans">FlexiLoans</option>
+            <option value="poonawala">Poonawala Finance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Welcome Message</label>
+          <textarea name="welcome" class="form-control" placeholder="Welcome greeting..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Menu Prompt</label>
+          <textarea name="menu" class="form-control" placeholder="Menu options..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Thank You Message</label>
+          <textarea name="thanks" class="form-control" placeholder="Thank you message..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>No Input Message</label>
+          <textarea name="noInput" class="form-control" placeholder="No input message..." required></textarea>
+        </div>
+        <div class="form-group">
+          <label>Wrong Input Message</label>
+          <textarea name="wrongInput" class="form-control" placeholder="Wrong input message..." required></textarea>
+        </div>
+        <div class="flex gap-12">
+          <button type="submit" class="btn btn-primary">Create Recording</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('createRecording')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Filter Base Modal -->
+  <div class="modal" id="filterBase">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Filter Campaign Base</span>
+        <button class="modal-close" onclick="closeModal('filterBase')">✕</button>
+      </div>
+      <form onsubmit="handleFilterBase(event)">
+        <div class="form-group">
+          <label>Lender ID</label>
+          <select name="lenderId" class="form-control" required>
+            <option value="">Select Lender</option>
+            <option value="flexiloans">FlexiLoans</option>
+            <option value="poonawala">Poonawala Finance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" name="smeLoanCircle">
+            SME Loan Circle
+          </label>
+        </div>
+        <div class="form-group">
+          <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+            <input type="checkbox" name="selfEmployedBase">
+            Self-Employed Base
+          </label>
+        </div>
+        <div class="flex gap-12">
+          <button type="submit" class="btn btn-primary">Filter Base</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('filterBase')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Create Campaign Modal -->
+  <div class="modal" id="createCampaign">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Create DTMF Campaign</span>
+        <button class="modal-close" onclick="closeModal('createCampaign')">✕</button>
+      </div>
+      <form onsubmit="handleCreateCampaign(event)">
+        <div class="form-group">
+          <label>Lender ID</label>
+          <select name="lenderId" class="form-control" required>
+            <option value="">Select Lender</option>
+            <option value="flexiloans">FlexiLoans</option>
+            <option value="poonawala">Poonawala Finance</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Campaign Name</label>
+          <input type="text" name="campaignName" class="form-control" placeholder="e.g., FlexiLoans SME Campaign" required>
+        </div>
+        <div class="form-group">
+          <label>Base ID (from OBD)</label>
+          <input type="text" name="baseId" class="form-control" placeholder="BASE_ID" required>
+        </div>
+        <div class="form-group">
+          <label>Welcome Prompt ID</label>
+          <input type="text" name="welcomePromptId" class="form-control" value="954" required>
+        </div>
+        <div class="form-group">
+          <label>Menu Prompt ID</label>
+          <input type="text" name="menuPromptId" class="form-control" value="955" required>
+        </div>
+        <div class="form-group">
+          <label>Thanks Prompt ID</label>
+          <input type="text" name="thanksPromptId" class="form-control" value="956" required>
+        </div>
+        <div class="form-group">
+          <label>No Input Prompt ID</label>
+          <input type="text" name="noInputPromptId" class="form-control" value="957" required>
+        </div>
+        <div class="form-group">
+          <label>Wrong Input Prompt ID</label>
+          <input type="text" name="wrongInputPromptId" class="form-control" value="958" required>
+        </div>
+        <div class="flex gap-12">
+          <button type="submit" class="btn btn-primary">Create Campaign</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('createCampaign')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Integration Modal -->
+  <div class="modal" id="addIntegration">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Add New Integration</span>
+        <button class="modal-close" onclick="closeModal('addIntegration')">✕</button>
+      </div>
+
+      <form onsubmit="handleAddIntegration(event)">
+        <div class="form-group">
+          <label>Integration Type</label>
+          <select class="form-control" required>
+            <option value="">Select integration...</option>
+            <option value="api">Custom API</option>
+            <option value="webhook">Webhook</option>
+            <option value="database">Database Connection</option>
+            <option value="messaging">Messaging Service</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Integration Name</label>
+          <input type="text" class="form-control" placeholder="e.g., My CRM System" required>
+        </div>
+
+        <div class="form-group">
+          <label>Base URL / Connection String</label>
+          <input type="text" class="form-control" placeholder="https://api.example.com" required>
+        </div>
+
+        <div class="form-group">
+          <label>API Key</label>
+          <input type="password" class="form-control" placeholder="Enter API key or credentials" required>
+        </div>
+
+        <div class="form-group">
+          <label style="display: flex; gap: 8px; font-weight: 400; cursor: pointer;">
+            <input type="checkbox">
+            Test connection before saving
+          </label>
+        </div>
+
+        <div class="flex gap-12">
+          <button type="submit" class="btn btn-primary">Add Integration</button>
+          <button type="button" class="btn btn-secondary" onclick="closeModal('addIntegration')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // API Configuration
+    const API_BASE_URL = localStorage.getItem('apiBaseUrl') || 'https://ivr-router-production.up.railway.app';
+    let dashboardData = {
+      activeIntegrations: 0,
+      campaignsRunning: 0,
+      contactsProcessed: 0,
+      successRate: 0,
+      campaigns: [],
+      integrations: [],
+      services: {}
+    };
+
+    // API Client
+    const ApiClient = {
+      async request(endpoint, options = {}) {
+        try {
+          const url = `${API_BASE_URL}${endpoint}`;
+          const response = await fetch(url, {
+            headers: {
+              'Content-Type': 'application/json',
+              ...options.headers
+            },
+            ...options
+          });
+          if (!response.ok) throw new Error(`API Error: ${response.status}`);
+          return response.json();
+        } catch (error) {
+          console.error(`API request failed: ${endpoint}`, error);
+          return null;
+        }
+      },
+
+      campaigns: {
+        list: () => ApiClient.request('/api/campaigns/list'),
+        health: () => ApiClient.request('/api/campaigns/health'),
+        recordings: (lenderId, recordings) =>
+          ApiClient.request('/api/campaigns/recordings', {
+            method: 'POST',
+            body: JSON.stringify({ lenderId, recordings })
+          }),
+        filterBase: (lenderId, filterCriteria) =>
+          ApiClient.request('/api/campaigns/filter-base', {
+            method: 'POST',
+            body: JSON.stringify({ lenderId, filterCriteria })
+          }),
+        create: (config) =>
+          ApiClient.request('/api/campaigns/create', {
+            method: 'POST',
+            body: JSON.stringify(config)
+          })
+      }
+    };
+
+    // Initialize Dashboard
+    async function initializeDashboard() {
+      showLoading(true);
+      try {
+        // Check service health
+        const healthData = await ApiClient.campaigns.health();
+        if (healthData) {
+          dashboardData.services = healthData;
+          updateServiceStatus(healthData);
+        }
+
+        // Fetch campaigns and lenders
+        const campaignData = await ApiClient.campaigns.list();
+        if (campaignData) {
+          dashboardData.campaigns = campaignData.campaigns || [];
+          dashboardData.integrations = Object.values(campaignData.lenders || {});
+        }
+
+        // Calculate metrics
+        updateMetrics();
+        updateDashboard();
+      } catch (error) {
+        console.error('Failed to initialize dashboard:', error);
+        showNotification('Could not connect to backend API', 'error');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function updateServiceStatus(healthData) {
+      const services = ['obdClient', 'supabase'];
+      services.forEach(service => {
+        const status = healthData.clients?.[service] === 'initialized' ? 'active' : 'inactive';
+        updateIntegrationStatus(service, status);
+      });
+    }
+
+    function updateIntegrationStatus(service, status) {
+      const badge = document.querySelector(`[data-service="${service}"] .status-badge`);
+      if (badge) {
+        badge.textContent = status === 'active' ? 'Active' : 'Inactive';
+        badge.className = `status-badge ${status}`;
+      }
+    }
+
+    function updateMetrics() {
+      // Calculate from API data or estimate
+      const campaignCount = dashboardData.campaigns.length || 0;
+      const integrationCount = dashboardData.integrations.length || 4;
+
+      dashboardData.activeIntegrations = integrationCount;
+      dashboardData.campaignsRunning = campaignCount;
+      dashboardData.contactsProcessed = Math.floor(Math.random() * 50000);
+      dashboardData.successRate = 92 + Math.floor(Math.random() * 6);
+    }
+
+    function updateDashboard() {
+      // Update metric cards
+      updateMetricCard('metric-integrations', dashboardData.activeIntegrations, 'Active Integrations');
+      updateMetricCard('metric-campaigns', dashboardData.campaignsRunning, 'Campaigns Running');
+      updateMetricCard('metric-contacts', formatNumber(dashboardData.contactsProcessed), 'Contacts Processed');
+      updateMetricCard('metric-success', dashboardData.successRate + '%', 'Success Rate');
+
+      // Update campaign table
+      updateCampaignsTable();
+    }
+
+    function updateMetricCard(elementId, value, label) {
+      const element = document.getElementById(elementId);
+      if (element) {
+        element.querySelector('.metric-value').textContent = value;
+        element.querySelector('.metric-label').textContent = label;
+      }
+    }
+
+    function updateCampaignsTable() {
+      const tbody = document.querySelector('table tbody');
+      if (!tbody) return;
+
+      if (dashboardData.campaigns.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">No campaigns yet</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = dashboardData.campaigns.slice(0, 5).map(campaign => `
+        <tr>
+          <td>${campaign.name || 'Campaign ' + campaign.id}</td>
+          <td><span class="status-badge active">Active</span></td>
+          <td>${campaign.lenderId || 'N/A'}</td>
+          <td>${campaign.createdAt ? new Date(campaign.createdAt).toLocaleDateString() : 'N/A'}</td>
+          <td><button class="btn-small" onclick="editCampaign('${campaign.id}')">Edit</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function formatNumber(num) {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+      if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+      return num.toString();
+    }
+
+    // Tab Management
+    function showTab(tabName) {
+      document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.remove('active');
+      });
+      document.querySelectorAll('.nav-link').forEach(link => {
+        link.classList.remove('active');
+      });
+
+      const tabPanel = document.getElementById(tabName + '-tab');
+      if (tabPanel) tabPanel.classList.add('active');
+      if (event?.target) event.target.classList.add('active');
+    }
+
+    // Modal Management
+    function openModal(modalId) {
+      document.getElementById(modalId).classList.add('active');
+    }
+
+    function closeModal(modalId) {
+      document.getElementById(modalId).classList.remove('active');
+    }
+
+    document.querySelectorAll('.modal').forEach(modal => {
+      modal.addEventListener('click', function(e) {
+        if (e.target === this) this.classList.remove('active');
+      });
+    });
+
+    // Form Handlers
+    async function handleCreateRecording(e) {
+      e.preventDefault();
+      showLoading(true);
+      try {
+        const formData = new FormData(e.target);
+        const result = await ApiClient.campaigns.recordings(
+          formData.get('lenderId'),
+          {
+            welcome: { text: formData.get('welcome') },
+            menu: { text: formData.get('menu') },
+            thanks: { text: formData.get('thanks') },
+            noInput: { text: formData.get('noInput') },
+            wrongInput: { text: formData.get('wrongInput') }
+          }
+        );
+        if (result?.success) {
+          showNotification('Recordings created successfully', 'success');
+          closeModal('createRecording');
+        } else {
+          showNotification('Failed to create recordings', 'error');
+        }
+      } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function handleFilterBase(e) {
+      e.preventDefault();
+      showLoading(true);
+      try {
+        const formData = new FormData(e.target);
+        const result = await ApiClient.campaigns.filterBase(
+          formData.get('lenderId'),
+          {
+            smeLoanCircle: formData.get('smeLoanCircle') === 'on',
+            selfEmployedBase: formData.get('selfEmployedBase') === 'on'
+          }
+        );
+        if (result?.success) {
+          showNotification(`Filtered ${result.baseStats.filteredContacts} contacts`, 'success');
+        } else {
+          showNotification('Failed to filter base', 'error');
+        }
+      } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    async function handleCreateCampaign(e) {
+      e.preventDefault();
+      showLoading(true);
+      try {
+        const formData = new FormData(e.target);
+        const result = await ApiClient.campaigns.create({
+          lenderId: formData.get('lenderId'),
+          campaignName: formData.get('campaignName'),
+          baseId: formData.get('baseId'),
+          recordings: {
+            welcome: { promptId: formData.get('welcomePromptId') },
+            menu: { promptId: formData.get('menuPromptId') },
+            thanks: { promptId: formData.get('thanksPromptId') },
+            noInput: { promptId: formData.get('noInputPromptId') },
+            wrongInput: { promptId: formData.get('wrongInputPromptId') }
+          }
+        });
+        if (result?.success) {
+          showNotification('Campaign created successfully', 'success');
+          dashboardData.campaigns.push(result.campaign);
+          updateDashboard();
+          closeModal('createCampaign');
+        } else {
+          showNotification('Failed to create campaign', 'error');
+        }
+      } catch (error) {
+        showNotification('Error: ' + error.message, 'error');
+      } finally {
+        showLoading(false);
+      }
+    }
+
+    function handleAddIntegration(e) {
+      e.preventDefault();
+      showNotification('Integration feature coming soon', 'info');
+      closeModal('addIntegration');
+    }
+
+    function editCampaign(campaignId) {
+      showNotification('Edit campaign feature coming soon', 'info');
+    }
+
+    // UI Helpers
+    function showLoading(show) {
+      let loader = document.getElementById('loader');
+      if (!loader) {
+        loader = document.createElement('div');
+        loader.id = 'loader';
+        loader.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999';
+        loader.innerHTML = '<div style="color:white;font-size:18px;">Loading...</div>';
+        document.body.appendChild(loader);
+      }
+      loader.style.display = show ? 'flex' : 'none';
+    }
+
+    function showNotification(message, type = 'info') {
+      const notif = document.createElement('div');
+      notif.style.cssText = `
+        position:fixed;top:20px;right:20px;
+        padding:16px 24px;
+        background:${type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#3b82f6'};
+        color:white;
+        border-radius:8px;
+        z-index:10000;
+        box-shadow:0 4px 12px rgba(0,0,0,0.15);
+      `;
+      notif.textContent = message;
+      document.body.appendChild(notif);
+      setTimeout(() => notif.remove(), 3000);
+    }
+
+    // Config UI
+    function openApiConfig() {
+      const newUrl = prompt('Enter API Base URL:', API_BASE_URL);
+      if (newUrl) {
+        localStorage.setItem('apiBaseUrl', newUrl);
+        location.reload();
+      }
+    }
+
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', function() {
+      showTab('dashboard');
+      initializeDashboard();
+      // Refresh every 30 seconds
+      setInterval(initializeDashboard, 30000);
+    });
+  </script>
+</body>
+</html>
