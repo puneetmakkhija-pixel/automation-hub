@@ -41,7 +41,8 @@ CREATE INDEX IF NOT EXISTS idx_ivr_campaigns_launched_at ON public.ivr_campaigns
 ALTER TABLE public.ivr_campaigns ENABLE ROW LEVEL SECURITY;
 
 -- Allow service role to read/write
-CREATE POLICY IF NOT EXISTS "Allow service role" ON public.ivr_campaigns
+DROP POLICY IF EXISTS "Allow service role" ON public.ivr_campaigns;
+CREATE POLICY "Allow service role" ON public.ivr_campaigns
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
@@ -83,7 +84,8 @@ CREATE INDEX IF NOT EXISTS idx_ivr_campaign_metrics_created_at ON public.ivr_cam
 ALTER TABLE public.ivr_campaign_metrics ENABLE ROW LEVEL SECURITY;
 
 -- Allow service role to read/write
-CREATE POLICY IF NOT EXISTS "Allow service role" ON public.ivr_campaign_metrics
+DROP POLICY IF EXISTS "Allow service role" ON public.ivr_campaign_metrics;
+CREATE POLICY "Allow service role" ON public.ivr_campaign_metrics
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
 
@@ -119,6 +121,7 @@ CREATE INDEX IF NOT EXISTS idx_ivr_campaign_events_created_at ON public.ivr_camp
 ALTER TABLE public.ivr_campaign_events ENABLE ROW LEVEL SECURITY;
 
 -- Allow service role to read/write
-CREATE POLICY IF NOT EXISTS "Allow service role" ON public.ivr_campaign_events
+DROP POLICY IF EXISTS "Allow service role" ON public.ivr_campaign_events;
+CREATE POLICY "Allow service role" ON public.ivr_campaign_events
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
