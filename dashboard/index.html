@@ -937,7 +937,7 @@
                 <span>Create New Campaign</span>
                 <button class="modal-close" onclick="closeCampaignModal()">×</button>
             </div>
-            <form onsubmit="createCampaign(event)">
+            <form id="campaign-form" onsubmit="createCampaign(event)">
                 <div class="form-group">
                     <label>Campaign Name</label>
                     <input type="text" id="campaign-name" required placeholder="e.g., Test Campaign - Day 1">
@@ -993,95 +993,120 @@
     </div>
 
     <script>
-        // Tab Switching
-        function switchTab(tab) {
-            // Hide all sections
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+        // ============================================
+        // API SERVICE LAYER
+        // ============================================
+        class ApiService {
+            constructor() {
+                this.baseUrl = 'https://ivr-voice-bot-system-production.up.railway.app';
+                this.timeout = 10000;
+            }
 
-            // Show selected section
-            document.getElementById(tab).classList.add('active');
-            event.target.classList.add('active');
+            async request(endpoint, options = {}) {
+                const url = `${this.baseUrl}${endpoint}`;
+                const fetchOptions = {
+                    method: options.method || 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers,
+                    },
+                    timeout: this.timeout,
+                };
 
-            // Load data if needed
-            if (tab === 'dashboard') loadDashboard();
-            if (tab === 'campaigns') loadCampaigns();
-            if (tab === 'leads') loadLeads();
-        }
+                if (options.body) {
+                    fetchOptions.body = JSON.stringify(options.body);
+                }
 
-        // Modal Functions
-        function openCampaignModal() {
-            document.getElementById('campaign-modal').classList.add('active');
-        }
+                try {
+                    const response = await fetch(url, fetchOptions);
 
-        function closeCampaignModal() {
-            document.getElementById('campaign-modal').classList.remove('active');
-        }
+                    if (!response.ok) {
+                        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    }
 
-        function openUploadModal() {
-            document.getElementById('upload-modal').classList.add('active');
-        }
+                    return await response.json();
+                } catch (error) {
+                    console.error('API Request Error:', error);
+                    throw error;
+                }
+            }
 
-        function closeUploadModal() {
-            document.getElementById('upload-modal').classList.remove('active');
-        }
+            // Metrics
+            async getMetrics() {
+                return this.request('/api/analytics/metrics');
+            }
 
-        // Campaign Functions
-        function createCampaign(event) {
-            event.preventDefault();
-            const name = document.getElementById('campaign-name').value;
-            const leads = document.getElementById('campaign-leads').value;
+            // Campaigns
+            async getCampaigns() {
+                return this.request('/api/campaigns');
+            }
 
-            showAlert(`Campaign "${name}" created with ${leads} leads!`, 'success');
-            closeCampaignModal();
-            loadCampaigns();
-        }
+            async createCampaign(data) {
+                return this.request('/api/campaigns', {
+                    method: 'POST',
+                    body: data,
+                });
+            }
 
-        // Lead Functions
-        function uploadLeads(event) {
-            event.preventDefault();
-            const file = document.getElementById('lead-file');
-            if (file.files.length > 0) {
-                showAlert(`Uploaded ${file.files[0].name} successfully!`, 'success');
-                closeUploadModal();
-                loadLeads();
+            async launchCampaign(campaignId) {
+                return this.request(`/api/campaigns/${campaignId}/launch`, {
+                    method: 'POST',
+                });
+            }
+
+            // Leads
+            async getLeads(page = 1, limit = 50) {
+                return this.request(`/api/leads?page=${page}&limit=${limit}`);
+            }
+
+            async searchLeads(phone) {
+                return this.request(`/api/leads/search?phone=${phone}`);
+            }
+
+            async uploadLeads(csvContent) {
+                return this.request('/api/leads/bulk', {
+                    method: 'POST',
+                    body: { data: csvContent },
+                });
+            }
+
+            // Lenders
+            async getLenderStatus() {
+                return this.request('/api/lenders/status');
+            }
+
+            async getLenderStats(lenderId) {
+                return this.request(`/api/lenders/${lenderId}/stats`);
+            }
+
+            async getMisReports() {
+                return this.request('/api/mis/reports');
+            }
+
+            // Analytics
+            async getConversionFunnel() {
+                return this.request('/api/analytics/conversion');
+            }
+
+            async getRejectionBreakdown() {
+                return this.request('/api/analytics/rejections');
+            }
+
+            // Health
+            async getHealth() {
+                return this.request('/api/health');
+            }
+
+            async getDatabaseStatus() {
+                return this.request('/api/database/status');
             }
         }
 
-        function searchLeads() {
-            // Search implementation
-            const query = document.getElementById('lead-search').value;
-            if (query.length > 0) {
-                console.log('Searching for:', query);
-            }
-        }
+        const api = new ApiService();
 
-        // Data Loading Functions
-        function loadDashboard() {
-            // Simulate loading data
-            updateMetrics();
-        }
-
-        function loadCampaigns() {
-            // Load campaigns from backend
-            console.log('Loading campaigns...');
-        }
-
-        function loadLeads() {
-            // Load leads from backend
-            console.log('Loading leads...');
-        }
-
-        function updateMetrics() {
-            document.getElementById('metric-leads').textContent = '2,450';
-            document.getElementById('metric-whatsapp').textContent = '85%';
-            document.getElementById('metric-calls').textContent = '70%';
-            document.getElementById('metric-dtmf').textContent = '60%';
-            document.getElementById('metric-interested').textContent = '850';
-            document.getElementById('metric-not-interested').textContent = '980';
-        }
-
-        // Alert Functions
+        // ============================================
+        // UI UTILITIES
+        // ============================================
         function showAlert(message, type = 'success') {
             const alertContainer = document.getElementById('alert-container');
             const alertDiv = document.createElement('div');
@@ -1094,21 +1119,388 @@
             }, 5000);
         }
 
-        // Lender Details
-        function showLenderDetails(lender) {
-            showAlert(`Showing details for ${lender}`, 'success');
+        function showLoading(elementId) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.innerHTML = '<div style="text-align: center; padding: 20px; color: #6b7280;">Loading...</div>';
+            }
         }
 
-        // Clock Update
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-IN').format(num);
+        }
+
         function updateTime() {
             const now = new Date();
             document.getElementById('current-time').textContent = now.toLocaleTimeString('en-IN');
         }
 
+        // ============================================
+        // TAB SWITCHING
+        // ============================================
+        function switchTab(tab) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+
+            document.getElementById(tab).classList.add('active');
+            event.target.classList.add('active');
+
+            // Load data for each tab
+            if (tab === 'dashboard') loadDashboard();
+            if (tab === 'campaigns') loadCampaigns();
+            if (tab === 'leads') loadLeads();
+            if (tab === 'lenders') loadLenders();
+            if (tab === 'analytics') loadAnalytics();
+        }
+
+        // ============================================
+        // MODAL FUNCTIONS
+        // ============================================
+        function openCampaignModal() {
+            document.getElementById('campaign-modal').classList.add('active');
+        }
+
+        function closeCampaignModal() {
+            document.getElementById('campaign-modal').classList.remove('active');
+            document.getElementById('campaign-form').reset();
+        }
+
+        function openUploadModal() {
+            document.getElementById('upload-modal').classList.add('active');
+        }
+
+        function closeUploadModal() {
+            document.getElementById('upload-modal').classList.remove('active');
+            document.getElementById('lead-file').value = '';
+        }
+
+        // ============================================
+        // CAMPAIGN FUNCTIONS
+        // ============================================
+        async function createCampaign(event) {
+            event.preventDefault();
+
+            const name = document.getElementById('campaign-name').value;
+            const leads = document.getElementById('campaign-leads').value;
+            const message = document.getElementById('campaign-message').value;
+
+            const lenders = Array.from(document.querySelectorAll('input[name="lender"]:checked'))
+                .map(el => el.value);
+
+            if (lenders.length === 0) {
+                showAlert('Please select at least one lender', 'warning');
+                return;
+            }
+
+            try {
+                showAlert('Creating campaign...', 'info');
+
+                const result = await api.createCampaign({
+                    name,
+                    leadsCount: parseInt(leads),
+                    template: message,
+                    lenders,
+                    status: 'created',
+                });
+
+                showAlert(`Campaign "${name}" created successfully!`, 'success');
+                closeCampaignModal();
+                loadCampaigns();
+            } catch (error) {
+                console.error('Campaign creation error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        async function launchCampaignHandler(campaignId) {
+            try {
+                showAlert('Launching campaign...', 'info');
+
+                await api.launchCampaign(campaignId);
+
+                showAlert('Campaign launched successfully!', 'success');
+                loadCampaigns();
+            } catch (error) {
+                console.error('Campaign launch error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        // ============================================
+        // LEAD FUNCTIONS
+        // ============================================
+        async function uploadLeads(event) {
+            event.preventDefault();
+
+            const fileInput = document.getElementById('lead-file');
+            if (!fileInput.files.length) {
+                showAlert('Please select a file', 'warning');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async (e) => {
+                try {
+                    showAlert('Uploading leads...', 'info');
+
+                    await api.uploadLeads(e.target.result);
+
+                    showAlert(`${file.name} uploaded successfully!`, 'success');
+                    closeUploadModal();
+                    loadLeads();
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    showAlert(`Error: ${error.message}`, 'danger');
+                }
+            };
+
+            reader.readAsText(file);
+        }
+
+        async function searchLeads() {
+            const query = document.getElementById('lead-search').value;
+
+            if (!query || query.length < 10) {
+                showAlert('Enter a valid phone number', 'warning');
+                return;
+            }
+
+            try {
+                showLoading('leads-table');
+                const result = await api.searchLeads(query);
+
+                if (result.success && result.data.length > 0) {
+                    renderLeadsTable(result.data);
+                } else {
+                    showAlert('No leads found', 'warning');
+                    loadLeads();
+                }
+            } catch (error) {
+                console.error('Search error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+                loadLeads();
+            }
+        }
+
+        // ============================================
+        // DATA LOADING FUNCTIONS
+        // ============================================
+        async function loadDashboard() {
+            try {
+                showLoading('metrics-container');
+
+                const metricsResult = await api.getMetrics();
+
+                if (metricsResult.success) {
+                    const m = metricsResult.data;
+                    document.getElementById('metric-leads').textContent = formatNumber(m.leadsProcessed || 0);
+                    document.getElementById('metric-whatsapp').textContent = `${m.whatsappDelivery || 0}%`;
+                    document.getElementById('metric-calls').textContent = `${m.callsConnected || 0}%`;
+                    document.getElementById('metric-dtmf').textContent = `${m.dtmfCaptured || 0}%`;
+                    document.getElementById('metric-interested').textContent = formatNumber(m.interested || 0);
+                    document.getElementById('metric-not-interested').textContent = formatNumber(m.notInterested || 0);
+                }
+            } catch (error) {
+                console.error('Dashboard load error:', error);
+                showAlert('Failed to load metrics: ' + error.message, 'danger');
+            }
+        }
+
+        async function loadCampaigns() {
+            try {
+                showLoading('campaigns-table');
+
+                const result = await api.getCampaigns();
+
+                if (result.success && result.data) {
+                    renderCampaignsTable(result.data);
+                } else {
+                    document.getElementById('campaigns-table').innerHTML =
+                        '<div style="padding: 20px; text-align: center; color: #6b7280;">No campaigns yet. Create one to get started!</div>';
+                }
+            } catch (error) {
+                console.error('Campaigns load error:', error);
+                showAlert('Failed to load campaigns: ' + error.message, 'danger');
+            }
+        }
+
+        async function loadLeads() {
+            try {
+                showLoading('leads-table');
+
+                const result = await api.getLeads();
+
+                if (result.success && result.data) {
+                    renderLeadsTable(result.data);
+                } else {
+                    document.getElementById('leads-table').innerHTML =
+                        '<div style="padding: 20px; text-align: center; color: #6b7280;">No leads yet. Upload a CSV to get started!</div>';
+                }
+            } catch (error) {
+                console.error('Leads load error:', error);
+                showAlert('Failed to load leads: ' + error.message, 'danger');
+            }
+        }
+
+        async function loadLenders() {
+            try {
+                const statusResult = await api.getLenderStatus();
+                const reportsResult = await api.getMisReports();
+
+                if (statusResult.success) {
+                    renderLenderStatus(statusResult.data);
+                }
+
+                if (reportsResult.success && reportsResult.data) {
+                    renderMisReports(reportsResult.data);
+                }
+            } catch (error) {
+                console.error('Lenders load error:', error);
+                showAlert('Failed to load lender data: ' + error.message, 'danger');
+            }
+        }
+
+        async function loadAnalytics() {
+            try {
+                const funnelResult = await api.getConversionFunnel();
+                const rejectionResult = await api.getRejectionBreakdown();
+
+                if (funnelResult.success) {
+                    renderConversionFunnel(funnelResult.data);
+                }
+
+                if (rejectionResult.success && rejectionResult.data) {
+                    renderRejectionBreakdown(rejectionResult.data);
+                }
+            } catch (error) {
+                console.error('Analytics load error:', error);
+                showAlert('Failed to load analytics: ' + error.message, 'danger');
+            }
+        }
+
+        // ============================================
+        // TABLE RENDERING FUNCTIONS
+        // ============================================
+        function renderCampaignsTable(campaigns) {
+            const tbody = document.querySelector('#campaigns-table tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = campaigns.map(c => `
+                <tr>
+                    <td>${c.name}</td>
+                    <td>${formatNumber(c.leadsCount)}</td>
+                    <td>${formatNumber(c.delivered || 0)}</td>
+                    <td>${formatNumber(c.connected || 0)}</td>
+                    <td>${formatNumber(c.interested || 0)}</td>
+                    <td>${new Date(c.createdAt).toLocaleDateString('en-IN')}</td>
+                    <td><span class="badge badge-${c.status === 'active' ? 'success' : 'warning'}">${c.status}</span></td>
+                    <td>
+                        ${c.status === 'created' ? `<button onclick="launchCampaignHandler('${c.id}')" style="padding: 5px 10px; font-size: 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">Launch</button>` : '-'}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderLeadsTable(leads) {
+            const tbody = document.querySelector('#leads-table tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = leads.map(l => `
+                <tr>
+                    <td>${l.phone}</td>
+                    <td>${l.name}</td>
+                    <td>₹${formatNumber(l.income || 0)}</td>
+                    <td>₹${formatNumber(l.loanAmount || 0)}</td>
+                    <td>${l.lenderId}</td>
+                    <td><span class="badge badge-${l.disposition === 'interested' ? 'success' : l.disposition === 'not_interested' ? 'danger' : 'warning'}">${l.disposition || 'pending'}</span></td>
+                    <td>${l.lastContact ? new Date(l.lastContact).toLocaleDateString('en-IN') : '-'}</td>
+                    <td>
+                        <button onclick="showAlert('Lead details: ${l.phone}')" style="padding: 5px 10px; font-size: 12px; background: #6366f1; color: white; border: none; border-radius: 4px; cursor: pointer;">View</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderConversionFunnel(data) {
+            const container = document.querySelector('[style*="Conversion"]').closest('.card');
+            if (!container) return;
+
+            const steps = [
+                { label: 'Leads Sent', value: data.leadsSent || 0, percent: 100 },
+                { label: 'WhatsApp Delivered', value: data.whatsappDelivered || 0, percent: ((data.whatsappDelivered || 0) / (data.leadsSent || 1) * 100).toFixed(0) },
+                { label: 'Calls Connected', value: data.callsConnected || 0, percent: ((data.callsConnected || 0) / (data.leadsSent || 1) * 100).toFixed(0) },
+                { label: 'Interested', value: data.interested || 0, percent: ((data.interested || 0) / (data.leadsSent || 1) * 100).toFixed(0) },
+            ];
+
+            const html = steps.map(step => `
+                <div style="margin-bottom: 15px;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                        <span>${step.label}</span>
+                        <span>${step.value}</span>
+                    </div>
+                    <div style="background: #e5e7eb; border-radius: 8px; height: 8px; overflow: hidden;">
+                        <div style="background: #10b981; height: 100%; width: ${step.percent}%;"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            container.innerHTML = '<h3 style="margin-bottom: 15px;">Conversion Funnel (Today)</h3>' + html;
+        }
+
+        function renderRejectionBreakdown(data) {
+            const tbody = document.querySelector('[style*="Rejection"]').closest('.card').querySelector('tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = data.map(r => `
+                <tr>
+                    <td>${r.reason}</td>
+                    <td>${formatNumber(r.count)}</td>
+                    <td><span class="badge badge-warning">${r.percentage}%</span></td>
+                    <td>${r.trend}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderLenderStatus(data) {
+            // Update lender status badges
+            document.querySelectorAll('.badge-success').forEach((badge, i) => {
+                if (data[i]) {
+                    badge.textContent = data[i].status === 'connected' ? 'Connected' : 'Disconnected';
+                }
+            });
+        }
+
+        function renderMisReports(reports) {
+            const tbody = document.querySelector('[style*="MIS"]').closest('.card').querySelector('tbody');
+            if (!tbody) return;
+
+            tbody.innerHTML = reports.map(r => `
+                <tr>
+                    <td>${r.campaignId}</td>
+                    <td>${r.lenderId}</td>
+                    <td>${formatNumber(r.applicationCount)}</td>
+                    <td>${r.approvalRate}%</td>
+                    <td>${r.rejectionRate}%</td>
+                </tr>
+            `).join('');
+        }
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
         setInterval(updateTime, 1000);
         updateTime();
 
-        // Initial Load
+        // Auto-refresh metrics every 30 seconds
+        setInterval(() => {
+            if (document.getElementById('dashboard').classList.contains('active')) {
+                loadDashboard();
+            }
+        }, 30000);
+
+        // Initial load
         loadDashboard();
     </script>
 </body>
