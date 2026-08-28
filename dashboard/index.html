@@ -693,28 +693,12 @@
                             <th>Approved</th>
                             <th>Rejected</th>
                             <th>Pending</th>
+                            <th>Fallback</th>
                             <th>Status</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td>Poonawala Finance</td>
-                            <td>Aug 28, 2026</td>
-                            <td>2,450</td>
-                            <td><span class="badge badge-success">1,200 (48.9%)</span></td>
-                            <td><span class="badge badge-danger">980 (40%)</span></td>
-                            <td><span class="badge badge-warning">270 (11%)</span></td>
-                            <td><span class="badge badge-success">Processed</span></td>
-                        </tr>
-                        <tr>
-                            <td>Hero FinCorp</td>
-                            <td>Aug 28, 2026</td>
-                            <td>1,850</td>
-                            <td><span class="badge badge-success">779 (42.1%)</span></td>
-                            <td><span class="badge badge-danger">740 (40%)</span></td>
-                            <td><span class="badge badge-warning">331 (17.9%)</span></td>
-                            <td><span class="badge badge-success">Processed</span></td>
-                        </tr>
+                    <tbody id="mis-reports-body">
+                        <!-- MIS reports will be populated here -->
                     </tbody>
                 </table>
             </div>
@@ -974,6 +958,14 @@
                 <div class="form-group">
                     <label>Approval Rate Target (%)</label>
                     <input type="number" id="lender-target" placeholder="50" min="0" max="100" value="50">
+                </div>
+                <div class="form-group">
+                    <label>Fallback Lender (if rejected)</label>
+                    <select id="lender-fallback">
+                        <option value="">None - No fallback</option>
+                        <option value="poonawala">Poonawala Finance</option>
+                        <option value="hero_fincorp">Hero FinCorp</option>
+                    </select>
                 </div>
                 <div class="flex">
                     <button type="submit" class="btn btn-primary btn-block">Add Lender</button>
@@ -1304,6 +1296,7 @@
             const webhook = document.getElementById('lender-webhook').value;
             const token = document.getElementById('lender-token').value;
             const target = document.getElementById('lender-target').value;
+            const fallback = document.getElementById('lender-fallback').value;
 
             try {
                 showAlert('Adding lender...', 'info');
@@ -1313,6 +1306,7 @@
                     webhookUrl: webhook,
                     apiToken: token,
                     targetApprovalRate: parseInt(target),
+                    fallbackLenderId: fallback || null,
                 });
 
                 showAlert(`Lender "${name}" added successfully!`, 'success');
@@ -1344,6 +1338,21 @@
                             <div class="progress-bar success" style="width: ${lender.approvalRate || 0}%"></div>
                         </div>
                     </div>
+                    ${lender.fallbackLenderId ? `
+                    <div class="form-group">
+                        <label>Fallback Lender</label>
+                        <div style="padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 14px; color: #374151;">
+                            → Routes to ${lender.fallbackLenderName || lender.fallbackLenderId} if rejected
+                        </div>
+                    </div>
+                    ` : `
+                    <div class="form-group">
+                        <label>Fallback Lender</label>
+                        <div style="padding: 8px; background: #f3f4f6; border-radius: 6px; font-size: 14px; color: #6b7280;">
+                            No fallback configured
+                        </div>
+                    </div>
+                    `}
                     <button class="btn btn-secondary btn-block" onclick="showLenderDetails('${lender.lenderId}')">View Details</button>
                 </div>
             `).join('');
@@ -1530,16 +1539,19 @@
         }
 
         function renderMisReports(reports) {
-            const tbody = document.querySelector('[style*="MIS"]').closest('.card').querySelector('tbody');
+            const tbody = document.getElementById('mis-reports-body');
             if (!tbody) return;
 
             tbody.innerHTML = reports.map(r => `
                 <tr>
-                    <td>${r.campaignId}</td>
-                    <td>${r.lenderId}</td>
-                    <td>${formatNumber(r.applicationCount)}</td>
-                    <td>${r.approvalRate}%</td>
-                    <td>${r.rejectionRate}%</td>
+                    <td>${r.lenderName || r.lenderId}</td>
+                    <td>${r.date || new Date().toLocaleDateString('en-IN')}</td>
+                    <td>${formatNumber(r.applicationCount || 0)}</td>
+                    <td><span class="badge badge-success">${formatNumber(r.approved || 0)} (${r.approvalRate || 0}%)</span></td>
+                    <td><span class="badge badge-danger">${formatNumber(r.rejected || 0)} (${r.rejectionRate || 0}%)</span></td>
+                    <td><span class="badge badge-warning">${formatNumber(r.pending || 0)}</span></td>
+                    <td>${r.fallbackLenderName ? `→ ${r.fallbackLenderName}` : 'None'}</td>
+                    <td><span class="badge badge-success">Processed</span></td>
                 </tr>
             `).join('');
         }
