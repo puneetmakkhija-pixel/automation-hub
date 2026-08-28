@@ -61,12 +61,24 @@ ALTER TABLE public.cron_job_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cron_status_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cron_job_executions ENABLE ROW LEVEL SECURITY;
 
--- Create policies for public read access (can be restricted as needed)
-CREATE POLICY "Allow read access to cron_job_status" ON public.cron_job_status
-  FOR SELECT USING (true);
+-- Create policies for service role read/write access (can be restricted as needed)
+CREATE POLICY "Allow service role read access to cron_job_status" ON public.cron_job_status
+  FOR SELECT TO service_role USING (true);
 
-CREATE POLICY "Allow read access to cron_status_reports" ON public.cron_status_reports
-  FOR SELECT USING (true);
+CREATE POLICY "Allow service role insert access to cron_job_status" ON public.cron_job_status
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow service role update access to cron_job_status" ON public.cron_job_status
+  FOR UPDATE USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow service role read access to cron_status_reports" ON public.cron_status_reports
+  FOR SELECT TO service_role USING (true);
+
+CREATE POLICY "Allow service role insert access to cron_status_reports" ON public.cron_status_reports
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Allow service role update access to cron_status_reports" ON public.cron_status_reports
+  FOR UPDATE USING (true) WITH CHECK (true);
 
 CREATE POLICY "Allow read access to cron_job_executions" ON public.cron_job_executions
   FOR SELECT USING (true);
