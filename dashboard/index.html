@@ -672,54 +672,13 @@
 
         <!-- LENDERS TAB -->
         <section id="lenders" class="section">
-            <h2 style="font-size: 20px; margin-bottom: 20px;">Lender Integration</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="font-size: 20px; margin: 0;">Lender Integration</h2>
+                <button class="btn btn-primary" onclick="openAddLenderModal()">+ Add Lender</button>
+            </div>
 
-            <div class="grid grid-2">
-                <!-- Poonawala -->
-                <div class="card">
-                    <h3 style="margin-bottom: 15px;">Poonawala Finance</h3>
-                    <div class="form-group">
-                        <label>Webhook Status</label>
-                        <div style="padding: 10px; background: #f0fdf4; border-radius: 6px; color: #10b981; font-weight: 500;">
-                            ✓ Connected
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>API Token</label>
-                        <input type="password" placeholder="••••••••" value="poonawala_token_****">
-                    </div>
-                    <div class="form-group">
-                        <label>Approval Rate (Today)</label>
-                        <div style="font-size: 24px; font-weight: bold; margin-top: 10px;">48.9%</div>
-                        <div class="progress">
-                            <div class="progress-bar success" style="width: 48.9%"></div>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary btn-block" onclick="showLenderDetails('poonawala')">View Details</button>
-                </div>
-
-                <!-- Hero FinCorp -->
-                <div class="card">
-                    <h3 style="margin-bottom: 15px;">Hero FinCorp</h3>
-                    <div class="form-group">
-                        <label>Webhook Status</label>
-                        <div style="padding: 10px; background: #f0fdf4; border-radius: 6px; color: #10b981; font-weight: 500;">
-                            ✓ Connected
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label>API Token</label>
-                        <input type="password" placeholder="••••••••" value="hero_token_****">
-                    </div>
-                    <div class="form-group">
-                        <label>Approval Rate (Today)</label>
-                        <div style="font-size: 24px; font-weight: bold; margin-top: 10px;">42.1%</div>
-                        <div class="progress">
-                            <div class="progress-bar success" style="width: 42.1%"></div>
-                        </div>
-                    </div>
-                    <button class="btn btn-secondary btn-block" onclick="showLenderDetails('hero')">View Details</button>
-                </div>
+            <div class="grid grid-2" id="lenders-container">
+                <!-- Lenders will be rendered here dynamically -->
             </div>
 
             <!-- MIS Reports -->
@@ -992,6 +951,38 @@
         </div>
     </div>
 
+    <!-- Add Lender Modal -->
+    <div id="add-lender-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Add New Lender</span>
+                <button class="modal-close" onclick="closeAddLenderModal()">×</button>
+            </div>
+            <form onsubmit="submitAddLender(event)">
+                <div class="form-group">
+                    <label>Lender Name *</label>
+                    <input type="text" id="lender-name" placeholder="e.g., HDFC Bank" required>
+                </div>
+                <div class="form-group">
+                    <label>Webhook URL *</label>
+                    <input type="url" id="lender-webhook" placeholder="https://webhook.example.com" required>
+                </div>
+                <div class="form-group">
+                    <label>API Token *</label>
+                    <input type="password" id="lender-token" placeholder="Your API token" required>
+                </div>
+                <div class="form-group">
+                    <label>Approval Rate Target (%)</label>
+                    <input type="number" id="lender-target" placeholder="50" min="0" max="100" value="50">
+                </div>
+                <div class="flex">
+                    <button type="submit" class="btn btn-primary btn-block">Add Lender</button>
+                    <button type="button" class="btn btn-secondary btn-block" onclick="closeAddLenderModal()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         // ============================================
         // API SERVICE LAYER
@@ -1077,6 +1068,13 @@
 
             async getLenderStats(lenderId) {
                 return this.request(`/api/lenders/${lenderId}/stats`);
+            }
+
+            async createLender(data) {
+                return this.request('/api/lenders', {
+                    method: 'POST',
+                    body: data,
+                });
             }
 
             async getMisReports() {
@@ -1172,6 +1170,15 @@
         function closeUploadModal() {
             document.getElementById('upload-modal').classList.remove('active');
             document.getElementById('lead-file').value = '';
+        }
+
+        function openAddLenderModal() {
+            document.getElementById('add-lender-modal').classList.add('active');
+        }
+
+        function closeAddLenderModal() {
+            document.getElementById('add-lender-modal').classList.remove('active');
+            document.getElementById('add-lender-modal').querySelector('form').reset();
         }
 
         // ============================================
@@ -1287,6 +1294,61 @@
         // ============================================
         // DATA LOADING FUNCTIONS
         // ============================================
+        // ============================================
+        // LENDER FUNCTIONS
+        // ============================================
+        async function submitAddLender(event) {
+            event.preventDefault();
+
+            const name = document.getElementById('lender-name').value;
+            const webhook = document.getElementById('lender-webhook').value;
+            const token = document.getElementById('lender-token').value;
+            const target = document.getElementById('lender-target').value;
+
+            try {
+                showAlert('Adding lender...', 'info');
+
+                const result = await api.createLender({
+                    name,
+                    webhookUrl: webhook,
+                    apiToken: token,
+                    targetApprovalRate: parseInt(target),
+                });
+
+                showAlert(`Lender "${name}" added successfully!`, 'success');
+                closeAddLenderModal();
+                loadLenders();
+            } catch (error) {
+                console.error('Lender creation error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        function renderLenderCards(lenders) {
+            const container = document.getElementById('lenders-container');
+            if (!container) return;
+
+            container.innerHTML = lenders.map(lender => `
+                <div class="card">
+                    <h3 style="margin-bottom: 15px;">${lender.name || lender.lenderId}</h3>
+                    <div class="form-group">
+                        <label>Webhook Status</label>
+                        <div style="padding: 10px; background: ${lender.status === 'connected' ? '#f0fdf4' : '#fef2f2'}; border-radius: 6px; color: ${lender.status === 'connected' ? '#10b981' : '#dc2626'}; font-weight: 500;">
+                            ${lender.status === 'connected' ? '✓ Connected' : '✗ Disconnected'}
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Approval Rate</label>
+                        <div style="font-size: 24px; font-weight: bold; margin-top: 10px;">${lender.approvalRate || '0'}%</div>
+                        <div class="progress">
+                            <div class="progress-bar success" style="width: ${lender.approvalRate || 0}%"></div>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary btn-block" onclick="showLenderDetails('${lender.lenderId}')">View Details</button>
+                </div>
+            `).join('');
+        }
+
         async function loadDashboard() {
             try {
                 showLoading('metrics-container');
@@ -1464,12 +1526,7 @@
         }
 
         function renderLenderStatus(data) {
-            // Update lender status badges
-            document.querySelectorAll('.badge-success').forEach((badge, i) => {
-                if (data[i]) {
-                    badge.textContent = data[i].status === 'connected' ? 'Connected' : 'Disconnected';
-                }
-            });
+            renderLenderCards(data);
         }
 
         function renderMisReports(reports) {
