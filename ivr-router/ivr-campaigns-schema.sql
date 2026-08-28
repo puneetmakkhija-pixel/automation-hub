@@ -1,8 +1,13 @@
 -- IVR Campaigns Management Schema
 -- Run this SQL in your Supabase project
 
+-- Drop existing tables (if any) to ensure clean schema
+DROP TABLE IF EXISTS public.ivr_campaign_events CASCADE;
+DROP TABLE IF EXISTS public.ivr_campaign_metrics CASCADE;
+DROP TABLE IF EXISTS public.ivr_campaigns CASCADE;
+
 -- Create IVR Campaigns table
-CREATE TABLE IF NOT EXISTS public.ivr_campaigns (
+CREATE TABLE public.ivr_campaigns (
   id VARCHAR(255) PRIMARY KEY,
 
   -- Campaign metadata
@@ -47,7 +52,7 @@ CREATE POLICY "Allow service role" ON public.ivr_campaigns
   WITH CHECK (auth.role() = 'service_role');
 
 -- Create IVR Campaign Metrics table (for tracking campaign performance)
-CREATE TABLE IF NOT EXISTS public.ivr_campaign_metrics (
+CREATE TABLE public.ivr_campaign_metrics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   campaign_id VARCHAR(255) NOT NULL REFERENCES public.ivr_campaigns(id) ON DELETE CASCADE,
 
@@ -90,7 +95,7 @@ CREATE POLICY "Allow service role" ON public.ivr_campaign_metrics
   WITH CHECK (auth.role() = 'service_role');
 
 -- Create IVR Campaign Events table (for audit trail)
-CREATE TABLE IF NOT EXISTS public.ivr_campaign_events (
+CREATE TABLE public.ivr_campaign_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   campaign_id VARCHAR(255) NOT NULL REFERENCES public.ivr_campaigns(id) ON DELETE CASCADE,
   phone_number VARCHAR(20) NOT NULL,
