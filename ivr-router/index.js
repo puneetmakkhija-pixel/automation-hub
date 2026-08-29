@@ -21,6 +21,7 @@ import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
 import breShortlistingRoutes from "./lib/routes/breShortlistingRoutes.js";
 import ivrCampaignRouterRoutes from "./lib/routes/ivrCampaignRouterRoutes.js";
 import ivrCampaignsRoutes from "./lib/routes/ivrCampaignsRoutes.js";
+import lendersRoutes from "./lib/routes/lendersRoutes.js";
 import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.js";
 import logger from "./lib/logging.js";
 
@@ -117,6 +118,9 @@ app.use("/api/router", ivrCampaignRouterRoutes);
 
 // ==================== IVR Campaigns Management Routes (Campaign CRUD) ====================
 app.use("/api/ivr-campaigns", ivrCampaignsRoutes);
+
+// ==================== Lenders Management Routes ====================
+app.use("/api/lenders", lendersRoutes);
 
 // ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
 app.use("/api/mis", misFeedbackCollectorRoutes);

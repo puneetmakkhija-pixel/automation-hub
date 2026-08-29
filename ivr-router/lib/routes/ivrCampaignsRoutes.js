@@ -7,6 +7,7 @@
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import logger from '../logging.js';
+import AnantaWhatsAppService from '../services/anantaWhatsAppService.js';
 
 const router = express.Router();
 
@@ -388,6 +389,174 @@ router.delete('/:campaignId', async (req, res) => {
     logger.log('error', 'IVR_CAMPAIGN_DELETE_ERROR', `Failed to delete IVR campaign: ${error.message}`, {
       error: error.message,
       type: 'campaign_error',
+    });
+    return res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// ==================== POST: Handle DTMF Press Event ====================
+router.post('/:campaignId/dtmf', async (req, res) => {
+  try {
+    if (!supabase) {
+      return res.status(503).json({
+        success: false,
+        error: 'Supabase not configured',
+      });
+    }
+
+    const { campaignId } = req.params;
+    const { phone, name, leadId, dtmfPress } = req.body;
+
+    if (!phone || !dtmfPress) {
+      return res.status(400).json({
+        success: false,
+        error: 'phone and dtmfPress are required',
+      });
+    }
+
+    // Get campaign
+    const { data: campaign, error: getError } = await supabase
+      .from('ivr_campaigns')
+      .select('*')
+      .eq('id', campaignId)
+      .single();
+
+    if (getError || !campaign) {
+      return res.status(404).json({
+        success: false,
+        error: 'Campaign not found',
+      });
+    }
+
+    const dtmfOptions = campaign.dtmf_options;
+    let eventType = null;
+    let whatsappResult = null;
+
+    // Handle DTMF Press 1 - Interested in product/lender
+    if (dtmfPress === '1' && dtmfOptions?.press1) {
+      eventType = 'dtmf_press_1';
+
+      // Send WhatsApp if configured
+      if (dtmfOptions.press1.whatsapp_provider === 'ananta') {
+        const message = dtmfOptions.press1.whatsapp_message ||
+          AnantaWhatsAppService.formatFlexiLoansMessage({ phone, name: name || 'User' }, campaignId);
+
+        whatsappResult = await AnantaWhatsAppService.sendMessage({
+          phone,
+          message,
+          campaignId,
+          leadId: leadId || `lead_${campaignId}_${phone}`,
+        });
+
+        logger.log('info', 'DTMF_PRESS_1_WHATSAPP_SENT', `WhatsApp sent for DTMF Press 1`, {
+          campaignId,
+          phone: phone.slice(-4),
+          whatsappProvider: 'ananta',
+          success: whatsappResult.success,
+          type: 'dtmf_event',
+        });
+      }
+
+      // Update metrics (get current value, increment, and update)
+      const { data: metricsData } = await supabase
+        .from('ivr_campaign_metrics')
+        .select('dtmf_press_1_count, whatsapp_sent_count')
+        .eq('campaign_id', campaignId)
+        .single();
+
+      if (metricsData) {
+        await supabase
+          .from('ivr_campaign_metrics')
+          .update({ dtmf_press_1_count: (metricsData.dtmf_press_1_count || 0) + 1 })
+          .eq('campaign_id', campaignId);
+
+        if (whatsappResult?.success) {
+          await supabase
+            .from('ivr_campaign_metrics')
+            .update({ whatsapp_sent_count: (metricsData.whatsapp_sent_count || 0) + 1 })
+            .eq('campaign_id', campaignId);
+        }
+      }
+    }
+    // Handle DTMF Press 2 - Not Interested / Do Not Disturb
+    else if (dtmfPress === '2' && dtmfOptions?.press2) {
+      eventType = 'dtmf_press_2';
+
+      // Update metrics
+      const { data: metricsData } = await supabase
+        .from('ivr_campaign_metrics')
+        .select('dtmf_press_2_count')
+        .eq('campaign_id', campaignId)
+        .single();
+
+      if (metricsData) {
+        await supabase
+          .from('ivr_campaign_metrics')
+          .update({ dtmf_press_2_count: (metricsData.dtmf_press_2_count || 0) + 1 })
+          .eq('campaign_id', campaignId);
+      }
+
+      if (dtmfOptions.press2.action === 'mark_dnd') {
+        logger.log('info', 'DTMF_PRESS_2_MARK_DND', `Lead marked as DND`, {
+          campaignId,
+          phone: phone.slice(-4),
+          type: 'dtmf_event',
+        });
+      }
+    }
+    // No response
+    else {
+      eventType = 'dtmf_no_response';
+      const { data: metricsData } = await supabase
+        .from('ivr_campaign_metrics')
+        .select('dtmf_no_response_count')
+        .eq('campaign_id', campaignId)
+        .single();
+
+      if (metricsData) {
+        await supabase
+          .from('ivr_campaign_metrics')
+          .update({ dtmf_no_response_count: (metricsData.dtmf_no_response_count || 0) + 1 })
+          .eq('campaign_id', campaignId);
+      }
+    }
+
+    // Log event
+    await supabase
+      .from('ivr_campaign_events')
+      .insert({
+        campaign_id: campaignId,
+        phone_number: phone,
+        event_type: eventType,
+        dtmf_input: dtmfPress,
+        metadata: {
+          leadId: leadId || `lead_${campaignId}_${phone}`,
+          leadName: name,
+          whatsappResult,
+        },
+      });
+
+    logger.log('info', 'DTMF_EVENT_LOGGED', `DTMF event logged: ${eventType}`, {
+      campaignId,
+      eventType,
+      phone: phone.slice(-4),
+      type: 'dtmf_event',
+    });
+
+    return res.json({
+      success: true,
+      eventType,
+      whatsappResult,
+      message: `DTMF Press ${dtmfPress} handled successfully`,
+    });
+  } catch (error) {
+    logger.log('error', 'DTMF_EVENT_ERROR', `Failed to handle DTMF event: ${error.message}`, {
+      error: error.message,
+      campaignId: req.params.campaignId,
+      type: 'dtmf_error',
     });
     return res.status(500).json({
       success: false,
