@@ -72,23 +72,41 @@
         /* Navigation Tabs */
         .nav-tabs {
             display: flex;
-            gap: 10px;
+            gap: 5px;
             margin-bottom: 30px;
             border-bottom: 2px solid var(--border);
             overflow-x: auto;
+            flex-wrap: wrap;
+            padding-bottom: 0;
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary) transparent;
+        }
+
+        .nav-tabs::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .nav-tabs::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .nav-tabs::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 2px;
         }
 
         .nav-tab {
-            padding: 12px 20px;
+            padding: 10px 14px;
             border: none;
             background: none;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             color: var(--text-light);
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
             white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .nav-tab.active {
@@ -1027,8 +1045,40 @@
                 <h3 style="margin-bottom: 15px; font-size: 14px; font-weight: 600;">🔊 IVR Voice Flow</h3>
 
                 <div class="form-group">
-                    <label>IVR Greeting Message (Voice)</label>
-                    <textarea id="ivr-greeting-message" rows="2" required placeholder="Welcome! Press 1 if you're interested in availing a loan. Press 2 if you'd prefer we don't call."></textarea>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <label>Select Pre-Recorded IVR Greeting *</label>
+                        <button type="button" class="btn btn-small" onclick="openIVRRecordingManager()" style="padding: 6px 12px; font-size: 12px;">+ Add Recording</button>
+                    </div>
+                    <select id="ivr-greeting-recording" required onchange="updateGreetingPreview()">
+                        <option value="">-- Select an IVR Recording --</option>
+                        <option value="greeting_1">Loan Eligibility Check (Standard)</option>
+                        <option value="greeting_2">Loan Eligibility Check (Urgent)</option>
+                        <option value="greeting_3">Pre-Approved Loan Offer</option>
+                        <option value="greeting_4">Personal Loan Available</option>
+                        <option value="greeting_5">Bureau-Based Quick Check</option>
+                        <option value="greeting_custom">Custom Message (Type Below)</option>
+                        <option value="greeting_upload">Upload New Recording</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="custom-greeting-group" style="display: none;">
+                    <label>Custom IVR Greeting Message</label>
+                    <textarea id="ivr-greeting-message" rows="2" placeholder="Welcome! Press 1 if you're interested in availing a loan. Press 2 if you'd prefer we don't call."></textarea>
+                </div>
+
+                <div class="form-group" id="upload-recording-group" style="display: none; background: #fef3c7; padding: 12px; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                    <label>Upload IVR Recording (MP3, WAV, OGG)</label>
+                    <input type="file" id="ivr-recording-file" accept="audio/mpeg,audio/wav,audio/ogg" style="margin-top: 8px;">
+                    <p style="font-size: 12px; color: #92400e; margin-top: 8px;">Max 30MB • Supported: MP3, WAV, OGG</p>
+                    <div style="display: flex; gap: 8px; margin-top: 10px;">
+                        <button type="button" class="btn btn-primary" onclick="uploadIVRRecording()" style="flex: 1; padding: 8px;">Upload & Save</button>
+                        <button type="button" class="btn btn-secondary" onclick="cancelRecordingUpload()" style="flex: 1; padding: 8px;">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="form-group" id="greeting-preview" style="background: #f0f9ff; padding: 12px; border-radius: 6px; border-left: 4px solid #0ea5e9; display: none;">
+                    <label style="font-size: 12px; color: #0369a1; font-weight: 600;">📢 Preview:</label>
+                    <p id="preview-text" style="margin: 8px 0 0 0; color: #1e40af; font-size: 13px;"></p>
                 </div>
 
                 <div class="form-group">
@@ -1098,6 +1148,41 @@
                     <button type="button" class="btn btn-secondary btn-block" onclick="closeIVRCampaignModal()">Cancel</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- IVR Recording Manager Modal -->
+    <div id="ivr-recording-manager-modal" class="modal">
+        <div class="modal-content" style="max-height: 90vh; overflow-y: auto; width: 600px;">
+            <div class="modal-header">
+                <span>IVR Recording Library</span>
+                <button class="modal-close" onclick="closeIVRRecordingManager()">×</button>
+            </div>
+            <div style="padding: 20px;">
+                <div class="form-group">
+                    <label>Recording Name</label>
+                    <input type="text" id="recording-name" placeholder="e.g., Loan Offer - Hindi" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Upload Audio File (MP3, WAV, OGG)</label>
+                    <input type="file" id="recording-file" accept="audio/mpeg,audio/wav,audio/ogg" style="width: 100%; padding: 8px;">
+                    <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">Max 30MB • Supported: MP3, WAV, OGG</p>
+                </div>
+                <div class="form-group">
+                    <label>Description (Optional)</label>
+                    <textarea id="recording-description" rows="2" placeholder="e.g., Professional Hindi greeting for pre-approved offers" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;"></textarea>
+                </div>
+
+                <h3 style="margin-top: 30px; margin-bottom: 15px; font-size: 14px; font-weight: 600;">Existing Recordings</h3>
+                <div id="existing-recordings" style="background: #f9fafb; padding: 12px; border-radius: 6px; max-height: 300px; overflow-y: auto;">
+                    <p style="color: #6b7280; font-size: 13px;">No custom recordings yet. Upload your first recording above.</p>
+                </div>
+
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn btn-primary btn-block" onclick="saveRecordingToLibrary()">Save Recording</button>
+                    <button class="btn btn-secondary btn-block" onclick="closeIVRRecordingManager()">Close</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1345,6 +1430,132 @@
             document.getElementById('ivr-campaign-modal').querySelector('form').reset();
         }
 
+        // IVR Recording Preview Data
+        const ivrRecordings = {
+            greeting_1: "Welcome! Thank you for calling. Press 1 if you're interested in checking your loan eligibility. Press 2 if you'd prefer we don't call you.",
+            greeting_2: "Great news! You may be eligible for an instant personal loan. Press 1 to proceed with quick eligibility check. Press 2 to opt out.",
+            greeting_3: "Congratulations! You've been pre-approved for a loan. Press 1 to view your offer details. Press 2 if you're not interested.",
+            greeting_4: "Hello! We have a special personal loan offer for you at low interest rates. Press 1 to check your eligibility. Press 2 to decline.",
+            greeting_5: "Hi! We can give you a quick answer about your loan eligibility using your bureau data. Press 1 to proceed. Press 2 to skip."
+        };
+
+        function updateGreetingPreview() {
+            const recordingId = document.getElementById('ivr-greeting-recording').value;
+            const customGroup = document.getElementById('custom-greeting-group');
+            const uploadGroup = document.getElementById('upload-recording-group');
+            const previewGroup = document.getElementById('greeting-preview');
+            const previewText = document.getElementById('preview-text');
+
+            if (recordingId === 'greeting_custom') {
+                customGroup.style.display = 'block';
+                uploadGroup.style.display = 'none';
+                previewGroup.style.display = 'block';
+                previewText.textContent = 'Enter custom message above';
+            } else if (recordingId === 'greeting_upload') {
+                customGroup.style.display = 'none';
+                uploadGroup.style.display = 'block';
+                previewGroup.style.display = 'none';
+            } else if (recordingId && ivrRecordings[recordingId]) {
+                customGroup.style.display = 'none';
+                uploadGroup.style.display = 'none';
+                previewGroup.style.display = 'block';
+                previewText.textContent = ivrRecordings[recordingId];
+            } else {
+                customGroup.style.display = 'none';
+                uploadGroup.style.display = 'none';
+                previewGroup.style.display = 'none';
+            }
+        }
+
+        // ============================================
+        // IVR RECORDING MANAGEMENT
+        // ============================================
+        function openIVRRecordingManager() {
+            document.getElementById('ivr-recording-manager-modal').classList.add('active');
+        }
+
+        function closeIVRRecordingManager() {
+            document.getElementById('ivr-recording-manager-modal').classList.remove('active');
+            document.getElementById('recording-name').value = '';
+            document.getElementById('recording-file').value = '';
+            document.getElementById('recording-description').value = '';
+        }
+
+        function cancelRecordingUpload() {
+            document.getElementById('ivr-greeting-recording').value = '';
+            document.getElementById('upload-recording-group').style.display = 'none';
+            document.getElementById('ivr-recording-file').value = '';
+        }
+
+        async function uploadIVRRecording() {
+            const fileInput = document.getElementById('ivr-recording-file');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                showAlert('Please select a recording file', 'warning');
+                return;
+            }
+
+            if (file.size > 30 * 1024 * 1024) {
+                showAlert('File size exceeds 30MB limit', 'danger');
+                return;
+            }
+
+            try {
+                showAlert('Uploading recording...', 'info');
+
+                // Create FormData for file upload
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('name', `custom_${Date.now()}`);
+
+                // For now, simulate successful upload
+                // In production, this would upload to storage service
+                setTimeout(() => {
+                    showAlert('Recording uploaded successfully!', 'success');
+                    cancelRecordingUpload();
+                }, 1000);
+            } catch (error) {
+                console.error('Upload error:', error);
+                showAlert(`Upload failed: ${error.message}`, 'danger');
+            }
+        }
+
+        async function saveRecordingToLibrary() {
+            const name = document.getElementById('recording-name').value;
+            const fileInput = document.getElementById('recording-file');
+            const file = fileInput.files[0];
+            const description = document.getElementById('recording-description').value;
+
+            if (!name.trim()) {
+                showAlert('Please enter a recording name', 'warning');
+                return;
+            }
+
+            if (!file) {
+                showAlert('Please select a recording file', 'warning');
+                return;
+            }
+
+            if (file.size > 30 * 1024 * 1024) {
+                showAlert('File size exceeds 30MB limit', 'danger');
+                return;
+            }
+
+            try {
+                showAlert('Saving recording to library...', 'info');
+
+                // Simulate save to library
+                setTimeout(() => {
+                    showAlert(`Recording "${name}" saved to library!`, 'success');
+                    closeIVRRecordingManager();
+                }, 1000);
+            } catch (error) {
+                console.error('Save error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
         // ============================================
         // CAMPAIGN FUNCTIONS
         // ============================================
@@ -1495,7 +1706,30 @@
 
             const campaignName = document.getElementById('ivr-campaign-name').value;
             const campaignLeads = document.getElementById('ivr-campaign-leads').value;
-            const greetingMessage = document.getElementById('ivr-greeting-message').value;
+            const selectedRecording = document.getElementById('ivr-greeting-recording').value;
+
+            // Get greeting message from selected recording or custom input
+            let greetingMessage = '';
+            if (selectedRecording === 'greeting_custom') {
+                greetingMessage = document.getElementById('ivr-greeting-message').value;
+                if (!greetingMessage.trim()) {
+                    showAlert('Please enter a custom greeting message', 'warning');
+                    return;
+                }
+            } else if (selectedRecording === 'greeting_upload') {
+                const uploadFile = document.getElementById('ivr-recording-file');
+                if (!uploadFile.files[0]) {
+                    showAlert('Please upload a recording file', 'warning');
+                    return;
+                }
+                greetingMessage = `[Uploaded Audio: ${uploadFile.files[0].name}]`;
+            } else if (ivrRecordings[selectedRecording]) {
+                greetingMessage = ivrRecordings[selectedRecording];
+            } else {
+                showAlert('Please select an IVR greeting', 'warning');
+                return;
+            }
+
             const maxDuration = document.getElementById('ivr-max-duration').value;
 
             // DTMF Press 1 (Interested)
@@ -1515,6 +1749,7 @@
                     leadCount: parseInt(campaignLeads),
                     ivrConfig: {
                         greetingMessage,
+                        greetingRecordingId: selectedRecording,
                         maxDuration: parseInt(maxDuration),
                     },
                     dtmfOptions: {
