@@ -536,6 +536,9 @@
             <button class="nav-tab" onclick="switchTab('leads')">👥 Leads</button>
             <button class="nav-tab" onclick="switchTab('lenders')">🏦 Lenders</button>
             <button class="nav-tab" onclick="switchTab('analytics')">📈 Analytics</button>
+            <button class="nav-tab" onclick="switchTab('ananta-whatsapp')">💬 Ananta WhatsApp</button>
+            <button class="nav-tab" onclick="switchTab('whatsapp-flow')">📱 WhatsApp Flow</button>
+            <button class="nav-tab" onclick="switchTab('recordings')">🎙️ Recordings</button>
             <button class="nav-tab" onclick="switchTab('settings')">⚙️ Settings</button>
         </div>
 
@@ -850,6 +853,132 @@
                             <td>70</td>
                             <td><span class="badge badge-warning">7.1%</span></td>
                             <td>↓ -1%</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ANANTA WHATSAPP TAB -->
+        <section id="ananta-whatsapp" class="section">
+            <div class="flex-between mb-20">
+                <h2 style="font-size: 20px;">Ananta WhatsApp Configuration</h2>
+                <button class="btn btn-primary" onclick="openAnantaConfigModal()">⚙️ Configure</button>
+            </div>
+
+            <div class="grid grid-2">
+                <!-- Configuration Status -->
+                <div class="card">
+                    <h3 style="margin-bottom: 15px;">Connection Status</h3>
+                    <div id="ananta-status" style="padding: 15px; background: #fef3c7; border-radius: 6px; border-left: 4px solid #f59e0b;">
+                        <p style="margin: 0; color: #92400e;">⏳ Loading configuration...</p>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card">
+                    <h3 style="margin-bottom: 15px;">Quick Actions</h3>
+                    <button class="btn btn-primary btn-block" onclick="testAnantaConnection()" style="margin-bottom: 10px;">🧪 Test Connection</button>
+                    <button class="btn btn-secondary btn-block" onclick="loadAnantaTemplates()">📋 Load Templates</button>
+                </div>
+            </div>
+
+            <!-- Message Templates -->
+            <div class="card mt-20">
+                <div class="flex-between mb-20">
+                    <h3>WhatsApp Message Templates</h3>
+                    <button class="btn btn-primary" onclick="openTemplateModal()">+ New Template</button>
+                </div>
+
+                <table class="table" id="templates-table">
+                    <thead>
+                        <tr>
+                            <th>Template Name</th>
+                            <th>Message Preview</th>
+                            <th>Lender</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="templates-list">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #6b7280;">Loading templates...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- WHATSAPP FLOW TAB -->
+        <section id="whatsapp-flow" class="section">
+            <h2 style="font-size: 20px; margin-bottom: 20px;">WhatsApp Chatbot Flow</h2>
+
+            <!-- Flow Statistics -->
+            <div class="metrics-grid">
+                <div class="card">
+                    <div class="card-title">Active Conversations</div>
+                    <div class="card-value" id="flow-active">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Completed</div>
+                    <div class="card-value" id="flow-completed">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Total Messages</div>
+                    <div class="card-value" id="flow-messages">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-title">Documents Collected</div>
+                    <div class="card-value" id="flow-docs">0</div>
+                </div>
+            </div>
+
+            <!-- Active Conversations -->
+            <div class="card mt-20">
+                <h3 style="margin-bottom: 15px;">Active Conversations</h3>
+                <table class="table" id="conversations-table">
+                    <thead>
+                        <tr>
+                            <th>Phone</th>
+                            <th>Name</th>
+                            <th>Last Message</th>
+                            <th>Status</th>
+                            <th>Documents</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="conversations-list">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #6b7280;">Loading conversations...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- RECORDINGS TAB -->
+        <section id="recordings" class="section">
+            <div class="flex-between mb-20">
+                <h2 style="font-size: 20px;">Recording Library</h2>
+                <button class="btn btn-primary" onclick="openRecordingModal()">+ Upload Recording</button>
+            </div>
+
+            <div class="card">
+                <table class="table" id="recordings-table">
+                    <thead>
+                        <tr>
+                            <th>Recording Name</th>
+                            <th>Duration</th>
+                            <th>Language</th>
+                            <th>Size</th>
+                            <th>Created</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recordings-list">
+                        <tr>
+                            <td colspan="6" style="text-align: center; color: #6b7280;">Loading recordings...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1183,6 +1312,100 @@
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button class="btn btn-primary btn-block" onclick="saveRecordingToLibrary()">Save Recording</button>
                     <button class="btn btn-secondary btn-block" onclick="closeIVRRecordingManager()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ananta Configuration Modal -->
+    <div id="ananta-config-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Ananta WhatsApp Configuration</span>
+                <button class="modal-close" onclick="closeAnantaConfigModal()">×</button>
+            </div>
+            <div style="padding: 20px;">
+                <div class="form-group">
+                    <label>API Key *</label>
+                    <input type="password" id="ananta-api-key" placeholder="Enter Ananta API Key" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>API Token</label>
+                    <input type="password" id="ananta-api-token" placeholder="Enter Ananta API Token" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Phone Number (Sender ID)</label>
+                    <input type="text" id="ananta-phone" placeholder="e.g., 919876543210" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn btn-primary btn-block" onclick="saveAnantaConfig()">Save Configuration</button>
+                    <button class="btn btn-secondary btn-block" onclick="closeAnantaConfigModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Template Modal -->
+    <div id="template-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Create WhatsApp Message Template</span>
+                <button class="modal-close" onclick="closeTemplateModal()">×</button>
+            </div>
+            <div style="padding: 20px;">
+                <div class="form-group">
+                    <label>Template Name *</label>
+                    <input type="text" id="template-name" placeholder="e.g., Loan Offer - FlexiLoans" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Message *</label>
+                    <textarea id="template-message" rows="4" placeholder="Enter WhatsApp message template..." style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Lender</label>
+                    <select id="template-lender" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                        <option value="">-- Select Lender (Optional) --</option>
+                        <option value="flexiloans">FlexiLoans</option>
+                        <option value="poonawala">Poonawala Finance</option>
+                        <option value="hero_fincorp">Hero FinCorp</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn btn-primary btn-block" onclick="saveTemplate()">Create Template</button>
+                    <button class="btn btn-secondary btn-block" onclick="closeTemplateModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recording Upload Modal -->
+    <div id="recording-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Upload Recording</span>
+                <button class="modal-close" onclick="closeRecordingModal()">×</button>
+            </div>
+            <div style="padding: 20px;">
+                <div class="form-group">
+                    <label>Recording Name *</label>
+                    <input type="text" id="new-recording-name" placeholder="e.g., Greeting - English" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Audio File *</label>
+                    <input type="file" id="new-recording-file" accept="audio/mpeg,audio/wav,audio/ogg" style="width: 100%; padding: 8px;">
+                    <p style="font-size: 12px; color: #6b7280; margin-top: 8px;">Max 30MB • MP3, WAV, OGG</p>
+                </div>
+                <div class="form-group">
+                    <label>Language</label>
+                    <select id="recording-language" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                        <option value="en">English</option>
+                        <option value="hi">Hindi</option>
+                        <option value="ta">Tamil</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button class="btn btn-primary btn-block" onclick="uploadRecording()">Upload Recording</button>
+                    <button class="btn btn-secondary btn-block" onclick="closeRecordingModal()">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1591,6 +1814,360 @@
                 }, 1000);
             } catch (error) {
                 console.error('Save error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        // ============================================
+        // ANANTA WHATSAPP CONFIGURATION
+        // ============================================
+        async function loadAnantaConfig() {
+            try {
+                const response = await fetch('/api/ananta/config');
+                const result = await response.json();
+
+                if (result.success) {
+                    const config = result.data;
+                    document.getElementById('ananta-status').innerHTML = `
+                        <p style="margin: 0; color: #1f2937;">✓ Connected</p>
+                        <p style="font-size: 12px; color: #6b7280; margin-top: 5px;">Phone: ${config.phone_number || 'Not configured'}</p>
+                    `;
+                    document.getElementById('ananta-status').style.background = '#dcfce7';
+                    document.getElementById('ananta-status').style.borderLeftColor = '#10b981';
+                } else {
+                    document.getElementById('ananta-status').innerHTML = '<p style="margin: 0; color: #dc2626;">✗ Not Configured</p>';
+                    document.getElementById('ananta-status').style.background = '#fee2e2';
+                    document.getElementById('ananta-status').style.borderLeftColor = '#ef4444';
+                }
+            } catch (error) {
+                console.error('Failed to load Ananta config:', error);
+                document.getElementById('ananta-status').innerHTML = '<p style="margin: 0; color: #dc2626;">✗ Error loading configuration</p>';
+            }
+        }
+
+        function openAnantaConfigModal() {
+            document.getElementById('ananta-config-modal').classList.add('active');
+        }
+
+        function closeAnantaConfigModal() {
+            document.getElementById('ananta-config-modal').classList.remove('active');
+        }
+
+        async function saveAnantaConfig() {
+            const apiKey = document.getElementById('ananta-api-key').value;
+            const apiToken = document.getElementById('ananta-api-token').value;
+            const phoneNumber = document.getElementById('ananta-phone').value;
+
+            if (!apiKey) {
+                showAlert('Please enter API Key', 'warning');
+                return;
+            }
+
+            try {
+                showAlert('Saving configuration...', 'info');
+
+                const response = await fetch('/api/ananta/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apiKey, apiToken, phoneNumber })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Configuration saved successfully!', 'success');
+                    closeAnantaConfigModal();
+                    loadAnantaConfig();
+                } else {
+                    showAlert(`Error: ${result.error}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Error saving config:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        async function testAnantaConnection() {
+            try {
+                showAlert('Testing connection...', 'info');
+                const response = await fetch('/api/ananta/config');
+                const result = await response.json();
+
+                if (result.success && result.data.phone_number) {
+                    showAlert('✓ Ananta WhatsApp connection is active!', 'success');
+                } else {
+                    showAlert('✗ Ananta is not configured. Please add credentials.', 'warning');
+                }
+            } catch (error) {
+                showAlert(`Connection test failed: ${error.message}`, 'danger');
+            }
+        }
+
+        async function loadAnantaTemplates() {
+            try {
+                const response = await fetch('/api/ananta/templates');
+                const result = await response.json();
+
+                if (result.success) {
+                    const templates = result.data;
+                    const tbody = document.getElementById('templates-list');
+
+                    if (templates.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No templates created yet. Create your first template!</td></tr>';
+                    } else {
+                        tbody.innerHTML = templates.map(t => `
+                            <tr>
+                                <td>${t.name}</td>
+                                <td>${t.message.substring(0, 40)}...</td>
+                                <td>${t.lender_id || '-'}</td>
+                                <td>${t.type}</td>
+                                <td><span class="badge badge-success">${t.status}</span></td>
+                                <td><button class="btn btn-small btn-danger" onclick="deleteTemplate('${t.id}')">Delete</button></td>
+                            </tr>
+                        `).join('');
+                    }
+                    showAlert(`Loaded ${templates.length} templates`, 'success');
+                }
+            } catch (error) {
+                console.error('Failed to load templates:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        function openTemplateModal() {
+            document.getElementById('template-modal').classList.add('active');
+        }
+
+        function closeTemplateModal() {
+            document.getElementById('template-modal').classList.remove('active');
+            document.getElementById('template-name').value = '';
+            document.getElementById('template-message').value = '';
+            document.getElementById('template-lender').value = '';
+        }
+
+        async function saveTemplate() {
+            const name = document.getElementById('template-name').value;
+            const message = document.getElementById('template-message').value;
+            const lenderId = document.getElementById('template-lender').value;
+
+            if (!name || !message) {
+                showAlert('Please fill in all required fields', 'warning');
+                return;
+            }
+
+            try {
+                showAlert('Creating template...', 'info');
+
+                const response = await fetch('/api/ananta/templates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, message, lenderId })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Template created successfully!', 'success');
+                    closeTemplateModal();
+                    loadAnantaTemplates();
+                } else {
+                    showAlert(`Error: ${result.error}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Error creating template:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        async function deleteTemplate(templateId) {
+            if (!confirm('Delete this template?')) return;
+
+            try {
+                const response = await fetch(`/api/ananta/templates/${templateId}`, { method: 'DELETE' });
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('Template deleted!', 'success');
+                    loadAnantaTemplates();
+                } else {
+                    showAlert(`Error: ${result.error}`, 'danger');
+                }
+            } catch (error) {
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        // ============================================
+        // WHATSAPP CHATBOT FLOW
+        // ============================================
+        async function loadWhatsAppFlow() {
+            try {
+                const response = await fetch('/api/whatsapp/flow/stats');
+                const result = await response.json();
+
+                if (result.success) {
+                    const data = result.data;
+                    document.getElementById('flow-active').textContent = data.activeConversations || 0;
+                    document.getElementById('flow-completed').textContent = data.completedConversations || 0;
+                    document.getElementById('flow-messages').textContent = data.totalMessages || 0;
+                    document.getElementById('flow-docs').textContent = data.documentsCollected || 0;
+                }
+
+                // Load conversations
+                const convResponse = await fetch('/api/whatsapp/flow/conversations');
+                const convResult = await convResponse.json();
+
+                if (convResult.success) {
+                    const conversations = convResult.data;
+                    const tbody = document.getElementById('conversations-list');
+
+                    if (conversations.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No active conversations</td></tr>';
+                    } else {
+                        tbody.innerHTML = conversations.map(c => `
+                            <tr>
+                                <td>**** ${c.phone_number ? c.phone_number.slice(-4) : 'Unknown'}</td>
+                                <td>${c.user_name || 'Unknown'}</td>
+                                <td>${new Date(c.last_message_at).toLocaleString()}</td>
+                                <td><span class="badge badge-success">${c.status}</span></td>
+                                <td>${c.documents_collected || 0}/3</td>
+                                <td><button class="btn btn-small" onclick="viewConversation('${c.phone_number}')">View</button></td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load WhatsApp flow:', error);
+            }
+        }
+
+        async function viewConversation(phone) {
+            try {
+                const response = await fetch(`/api/whatsapp/flow/conversations/${phone}`);
+                const result = await response.json();
+
+                if (result.success) {
+                    const data = result.data;
+                    alert(`Conversation with ${phone}\n\nMessages: ${data.messages.length}\nDocuments: ${data.documents.length}`);
+                }
+            } catch (error) {
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        // ============================================
+        // RECORDING MANAGEMENT
+        // ============================================
+        async function loadRecordings() {
+            try {
+                const response = await fetch('/api/recordings');
+                const result = await response.json();
+
+                if (result.success) {
+                    const recordings = result.data;
+                    const tbody = document.getElementById('recordings-list');
+
+                    if (recordings.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #6b7280;">No recordings uploaded yet</td></tr>';
+                    } else {
+                        tbody.innerHTML = recordings.map(r => `
+                            <tr>
+                                <td>${r.name}</td>
+                                <td>${r.duration || 0}s</td>
+                                <td>${r.language || 'en'}</td>
+                                <td>${(r.file_size / 1024 / 1024).toFixed(2)} MB</td>
+                                <td>${new Date(r.created_at).toLocaleDateString()}</td>
+                                <td>
+                                    <button class="btn btn-small" onclick="playRecording('${r.url}')">Play</button>
+                                    <button class="btn btn-small btn-danger" onclick="deleteRecording('${r.id}')">Delete</button>
+                                </td>
+                            </tr>
+                        `).join('');
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load recordings:', error);
+            }
+        }
+
+        function openRecordingModal() {
+            document.getElementById('recording-modal').classList.add('active');
+        }
+
+        function closeRecordingModal() {
+            document.getElementById('recording-modal').classList.remove('active');
+            document.getElementById('new-recording-name').value = '';
+            document.getElementById('new-recording-file').value = '';
+        }
+
+        async function uploadRecording() {
+            const name = document.getElementById('new-recording-name').value;
+            const fileInput = document.getElementById('new-recording-file');
+            const language = document.getElementById('recording-language').value;
+            const file = fileInput.files[0];
+
+            if (!name || !file) {
+                showAlert('Please fill in all fields', 'warning');
+                return;
+            }
+
+            if (file.size > 30 * 1024 * 1024) {
+                showAlert('File size exceeds 30MB limit', 'danger');
+                return;
+            }
+
+            try {
+                showAlert('Uploading recording...', 'info');
+
+                // In production, upload file to storage service
+                // For now, simulate upload and save metadata
+                const mockUrl = `https://storage.example.com/recordings/${Date.now()}_${file.name}`;
+
+                const response = await fetch('/api/recordings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        url: mockUrl,
+                        language,
+                        duration: 0,
+                        fileSize: file.size
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Recording uploaded successfully!', 'success');
+                    closeRecordingModal();
+                    loadRecordings();
+                } else {
+                    showAlert(`Error: ${result.error}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        function playRecording(url) {
+            const audio = new Audio(url);
+            audio.play().catch(() => {
+                showAlert('Unable to play recording. File may not be accessible.', 'warning');
+            });
+        }
+
+        async function deleteRecording(recordingId) {
+            if (!confirm('Delete this recording?')) return;
+
+            try {
+                const response = await fetch(`/api/recordings/${recordingId}`, { method: 'DELETE' });
+                const result = await response.json();
+
+                if (result.success) {
+                    showAlert('Recording deleted!', 'success');
+                    loadRecordings();
+                } else {
+                    showAlert(`Error: ${result.error}`, 'danger');
+                }
+            } catch (error) {
                 showAlert(`Error: ${error.message}`, 'danger');
             }
         }
