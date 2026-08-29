@@ -23,6 +23,9 @@ import ivrCampaignRouterRoutes from "./lib/routes/ivrCampaignRouterRoutes.js";
 import ivrCampaignsRoutes from "./lib/routes/ivrCampaignsRoutes.js";
 import lendersRoutes from "./lib/routes/lendersRoutes.js";
 import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.js";
+import recordingRoutes from "./lib/routes/recordingRoutes.js";
+import anantaConfigRoutes from "./lib/routes/anantaConfigRoutes.js";
+import whatsappFlowRoutes from "./lib/routes/whatsappFlowRoutes.js";
 import logger from "./lib/logging.js";
 
 dotenv.config();
@@ -124,6 +127,15 @@ app.use("/api/lenders", lendersRoutes);
 
 // ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
 app.use("/api/mis", misFeedbackCollectorRoutes);
+
+// ==================== Recording Management Routes ====================
+app.use("/api/recordings", recordingRoutes);
+
+// ==================== Ananta WhatsApp Configuration Routes ====================
+app.use("/api/ananta", anantaConfigRoutes);
+
+// ==================== WhatsApp Chatbot Flow Routes ====================
+app.use("/api/whatsapp/flow", whatsappFlowRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
