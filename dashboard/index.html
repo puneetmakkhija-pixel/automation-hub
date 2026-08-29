@@ -72,23 +72,41 @@
         /* Navigation Tabs */
         .nav-tabs {
             display: flex;
-            gap: 10px;
+            gap: 5px;
             margin-bottom: 30px;
             border-bottom: 2px solid var(--border);
             overflow-x: auto;
+            flex-wrap: wrap;
+            padding-bottom: 0;
+            scrollbar-width: thin;
+            scrollbar-color: var(--primary) transparent;
+        }
+
+        .nav-tabs::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .nav-tabs::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .nav-tabs::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 2px;
         }
 
         .nav-tab {
-            padding: 12px 20px;
+            padding: 10px 14px;
             border: none;
             background: none;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             color: var(--text-light);
             border-bottom: 3px solid transparent;
             transition: all 0.3s;
             white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .nav-tab.active {
