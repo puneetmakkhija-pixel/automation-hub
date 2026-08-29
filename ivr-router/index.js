@@ -20,6 +20,7 @@ import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js
 import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
 import breShortlistingRoutes from "./lib/routes/breShortlistingRoutes.js";
 import ivrCampaignRouterRoutes from "./lib/routes/ivrCampaignRouterRoutes.js";
+import ivrCampaignsRoutes from "./lib/routes/ivrCampaignsRoutes.js";
 import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.js";
 import logger from "./lib/logging.js";
 
@@ -113,6 +114,9 @@ app.use("/api/bre", breShortlistingRoutes);
 
 // ==================== IVR Campaign Router Routes (Dual-Path Routing) ====================
 app.use("/api/router", ivrCampaignRouterRoutes);
+
+// ==================== IVR Campaigns Management Routes (Campaign CRUD) ====================
+app.use("/api/ivr-campaigns", ivrCampaignsRoutes);
 
 // ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
 app.use("/api/mis", misFeedbackCollectorRoutes);
