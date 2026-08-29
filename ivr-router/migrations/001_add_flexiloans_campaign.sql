@@ -48,7 +48,9 @@ VALUES (
       "primary_lender": "flexiloans",
       "fallback_lender": "poonawala",
       "channel": "whatsapp",
+      "whatsapp_bot_endpoint": "https://s1.whistleloop.com/?linkid=1710&offerid=178&publisher_id=259&parentid=259&pub_name=BuddyAdsIndia&sub_id1=PTest_alias_{sms_id}&loop_id={sms_id}",
       "whatsapp_message": "Hi! We have a personalized loan offer for you. Click below to complete your document verification with FlexiLoans.",
+      "whatsapp_link": "https://s1.whistleloop.com/?linkid=1710&offerid=178&publisher_id=259&parentid=259&pub_name=BuddyAdsIndia&sub_id1=PTest_alias_{phone}&loop_id={campaign_id}",
       "collect_documents": true
     },
     "press2": {
