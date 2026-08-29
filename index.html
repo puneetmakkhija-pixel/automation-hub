@@ -1122,6 +1122,11 @@
                 </div>
 
                 <div class="form-group">
+                    <label>WhatsApp Bot Endpoint (Click Link)</label>
+                    <input type="url" id="ivr-whatsapp-bot-endpoint" placeholder="https://s1.whistleloop.com/?linkid=1710&offerid=178&publisher_id=259&parentid=259&pub_name=BuddyAdsIndia&sub_id1=PTest_alias_{sms_id}&loop_id={sms_id}" style="font-family: monospace; font-size: 12px;">
+                </div>
+
+                <div class="form-group">
                     <label>Enable Banking/Docs Collection (via WhatsApp + Ori Voice Bot)</label>
                     <div style="display: flex; gap: 15px; margin-top: 8px;">
                         <label style="display: flex; align-items: center; gap: 8px;">
@@ -1741,6 +1746,7 @@
             const dtmf1Primary = document.getElementById('ivr-dtmf1-primary').value;
             const dtmf1Fallback = document.getElementById('ivr-dtmf1-fallback').value;
             const dtmf1Template = document.getElementById('ivr-dtmf1-template').value;
+            const whatsappBotEndpoint = document.getElementById('ivr-whatsapp-bot-endpoint').value;
 
             // Ori Voice Bot
             const enableOri = document.querySelector('input[name="ivr-enable-ori"]:checked').value;
@@ -1764,6 +1770,7 @@
                             primaryLender: dtmf1Primary,
                             fallbackLender: dtmf1Fallback || null,
                             whatsappTemplate: dtmf1Template,
+                            whatsappBotEndpoint: whatsappBotEndpoint || null,
                             channel: 'whatsapp',
                             nextStep: enableOri === 'yes' ? 'banking_docs_collection' : null,
                         },
