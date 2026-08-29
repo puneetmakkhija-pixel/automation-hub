@@ -11,6 +11,16 @@ try {
   console.warn("   CRM features will be unavailable until configuration is complete");
 }
 
+// ==================== Health Check ====================
+router.get("/health", (_req, res) => {
+  res.json({
+    success: true,
+    service: 'crm_integration',
+    status: crmClient ? 'healthy' : 'unavailable',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 router.use((req, res, next) => {
   if (!crmClient) {
     return res.status(503).json({
@@ -26,19 +36,6 @@ router.use((req, res, next) => {
  * Phase 1: Lead Intake Pipeline
  * Endpoint: /api/crm/*
  */
-
-/**
- * POST /api/crm/health
- * Check CRM connectivity
- */
-router.post("/health", async (_req, res) => {
-  try {
-    const health = await crmClient.healthCheck();
-    res.status(health.success ? 200 : 503).json(health);
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 /**
  * POST /api/crm/lead-intake-sync
