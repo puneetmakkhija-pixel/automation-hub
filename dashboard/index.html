@@ -2090,6 +2090,27 @@
 
         // Initial load
         loadDashboard();
+
+        // ============================================
+        // GITHUB PAGES CACHE WORKAROUND
+        // ============================================
+        // Inject IVR Campaigns tab if not already present
+        setTimeout(() => {
+            const navTabs = document.querySelector('.nav-tabs');
+            const existingIVRTab = document.querySelector('[onclick="switchTab(\'ivr-campaigns\')"]');
+
+            if (navTabs && !existingIVRTab) {
+                const campaignsTab = document.querySelector('[onclick="switchTab(\'campaigns\')"]');
+                if (campaignsTab) {
+                    const ivrTab = document.createElement('button');
+                    ivrTab.className = 'nav-tab';
+                    ivrTab.onclick = () => switchTab('ivr-campaigns');
+                    ivrTab.textContent = '☎️ IVR Campaigns';
+                    campaignsTab.parentNode.insertBefore(ivrTab, campaignsTab.nextSibling);
+                    console.log('✓ IVR Campaigns tab injected');
+                }
+            }
+        }, 50);
     </script>
 </body>
 </html>
