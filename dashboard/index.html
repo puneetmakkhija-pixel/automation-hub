@@ -2313,8 +2313,9 @@
             }
 
             try {
-                showAlert('Submitting documents and sending email...', 'info');
+                showAlert('Submitting documents...', 'info');
 
+                // Store submission in backend
                 const response = await fetch('/api/flexiloans/submit-documents', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2333,7 +2334,50 @@
 
                 const result = await response.json();
                 if (result.success) {
-                    showAlert(`Documents submitted! Email sent to FlexiLoans team (${result.data.emailStatus})`, 'success');
+                    // Prepare email data for Gmail
+                    const documentLinks = [];
+                    if (panUrl) documentLinks.push(`PAN: ${panUrl}`);
+                    if (aadharUrl) documentLinks.push(`Aadhar: ${aadharUrl}`);
+                    if (bankUrl) documentLinks.push(`Bank Statement: ${bankUrl}`);
+
+                    const emailBody = `
+FlexiLoans Document Collection
+
+Customer Name: ${name}
+Phone Number: ${phone}
+Submission Time: ${new Date().toISOString()}
+
+Documents Submitted:
+${documentLinks.map(link => `• ${link}`).join('\n')}
+
+This is an automated message from the FlexiLoans IVR Automation Hub
+                    `.trim();
+
+                    const emailHtml = `
+<h2>FlexiLoans Document Collection</h2>
+<p><strong>Customer Name:</strong> ${name}</p>
+<p><strong>Phone Number:</strong> ${phone}</p>
+<p><strong>Submission Time:</strong> ${new Date().toISOString()}</p>
+<h3>Documents Submitted:</h3>
+<ul>
+${documentLinks.map(link => `<li>${link}</li>`).join('\n')}
+</ul>
+<p><em>This is an automated message from the FlexiLoans IVR Automation Hub</em></p>
+                    `.trim();
+
+                    // Note: Gmail sending via MCP would be called here from Claude
+                    // For dashboard usage, you'd need to use the Gmail extension
+                    showAlert(`✓ Documents submitted to database. Ready to send email via Gmail.`, 'success');
+
+                    // Log email intent for manual sending or integration
+                    console.log('Email ready to send to FlexiLoans:', {
+                        to: ['dadocs@flexiloans.com'],
+                        cc: ['sharda.p@buddyloan.com', 'rachit.saini@buddyloan.com'],
+                        subject: `[FlexiLoans] Document Collection - ${phone}`,
+                        body: emailBody,
+                        html: emailHtml
+                    });
+
                     closeFlexiLoansDocModal();
                     loadFlexiLoansSubmissions();
                 } else {
