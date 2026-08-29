@@ -1,0 +1,19 @@
+{
+  "recordings": [
+    {
+      "id": "rec_bureau_qualified_07",
+      "filename": "ivr_bureau_qualified_07.mp3",
+      "name": "Bureau Qualified Greeting",
+      "description": "IVR greeting for bureau-qualified leads - FlexiLoans document collection flow",
+      "duration_seconds": 15,
+      "format": "mp3",
+      "bitrate": "128k",
+      "sample_rate": "44100Hz",
+      "created_date": "2025-08-29",
+      "use_case": "flexiloans_documents",
+      "language": "en-IN",
+      "voice_type": "professional",
+      "greeting_text": "Welcome to our loan service. We have a personalized offer for you with FlexiLoans. Press 1 if you're interested in proceeding with document verification, or Press 2 if you prefer not to be contacted."
+    }
+  ]
+}
