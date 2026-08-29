@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #818cf8;
+      --primary-dark: #6366f1;
+      --success: #34d399;
+      --warning: #fbbf24;
+      --bg: #111318;
+      --bg-secondary: #1a1e2e;
+      --bg-tertiary: #252c3c;
+      --border: #2d3748;
+      --text: #f8fafc;
+      --text-secondary: #cbd5e1;
+      --text-tertiary: #94a3b8;
+    }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+    a { color: var(--primary); }
+    a:hover { color: #a5b4fc; }
+    .container { max-width: 1600px; margin: 0 auto; padding: 0 24px; }
+    .header { background: var(--bg-secondary); border-bottom: 1px solid var(--border); padding: 24px 0; margin-bottom: 32px; }
+    .header-content { display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-family: 'Poppins', sans-serif; font-size: 24px; font-weight: 800; color: var(--primary); letter-spacing: -0.5px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); animation: glow 2s infinite; }
+    @keyframes glow { 0%, 100% { box-shadow: 0 0 10px rgba(52, 211, 153, 0.3); } 50% { box-shadow: 0 0 20px rgba(52, 211, 153, 0.6); } }
+    .status-indicator { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 32px; border-bottom: 1px solid var(--border); padding-bottom: 0; }
+    .nav-tab { padding: 12px 16px; border: none; background: none; cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text-tertiary); border-bottom: 2px solid transparent; white-space: nowrap; }
+    .nav-tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    h2 { font-family: 'Poppins', sans-serif; font-size: 28px; font-weight: 700; margin-bottom: 24px; color: var(--text); }
+    h3 { font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+    .grid { display: grid; gap: 24px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 24px; }
+    .card { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 14px; padding: 24px; transition: all 0.3s; }
+    .card:hover { background: var(--bg-tertiary); border-color: var(--primary-dark); box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15); transform: translateY(-4px); }
+    .card-title { font-size: 12px; font-weight: 600; color: var(--text-tertiary); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card-value { font-family: 'Poppins', sans-serif; font-size: 32px; font-weight: 800; color: var(--text); margin-bottom: 6px; letter-spacing: -0.5px; }
+    .card-meta { font-size: 12px; color: var(--text-tertiary); }
+    .card.success .card-value { color: var(--success); }
+    .card.warning .card-value { color: var(--warning); }
+    .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .table thead { background: var(--bg-tertiary); border-bottom: 1px solid var(--border); }
+    .table th { padding: 14px; text-align: left; font-weight: 600; color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .table td { padding: 14px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+    .table tbody tr:hover { background: var(--bg-tertiary); }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: rgba(52, 211, 153, 0.15); color: var(--success); border: 1px solid rgba(52, 211, 153, 0.3); }
+    .stat-row { display: flex; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: var(--text-secondary); }
+    .stat-value { font-weight: 600; color: var(--text); }
+  </style>
+</helmet>
+<div class="container">
+  <div class="header">
+    <div class="header-content">
+      <div class="logo">IVR Hub</div>
+      <div class="status-indicator">
+        <span class="status-dot"></span>
+        <span>Live • Dark Optimized</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active">📊 Dashboard</button>
+    <button class="nav-tab">🎯 Campaigns</button>
+    <button class="nav-tab">👥 Leads</button>
+    <button class="nav-tab">📈 Analytics</button>
+    <button class="nav-tab">⚙️ Settings</button>
+  </div>
+
+  <h2>Real-Time Overview</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Leads Processed</div>
+      <div class="card-value">2,450</div>
+      <div class="card-meta">Today</div>
+    </div>
+    <div class="card success">
+      <div class="card-title">WhatsApp Delivered</div>
+      <div class="card-value">87%</div>
+      <div class="card-meta">Delivery Rate</div>
+    </div>
+    <div class="card success">
+      <div class="card-title">Calls Connected</div>
+      <div class="card-value">64%</div>
+      <div class="card-meta">Connect Rate</div>
+    </div>
+    <div class="card warning">
+      <div class="card-title">DTMF Captured</div>
+      <div class="card-value">52%</div>
+      <div class="card-meta">Response Rate</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Active Campaigns</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Campaign Name</th>
+          <th>Leads Sent</th>
+          <th>Delivered</th>
+          <th>Interested</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Test Campaign - Day 1</td>
+          <td>100</td>
+          <td>87</td>
+          <td>24</td>
+          <td><span class="badge">Active</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top: 24px;">
+    <h3>Recent Events</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Event</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2:45 PM</td>
+          <td>Campaign Launched - 100 Leads</td>
+          <td><span class="badge">Active</span></td>
+        </tr>
+        <tr>
+          <td>2:40 PM</td>
+          <td>WhatsApp Delivered - 87 Messages</td>
+          <td><span class="badge">Success</span></td>
+        </tr>
+        <tr>
+          <td>2:35 PM</td>
+          <td>Calls Connected - 56 Calls</td>
+          <td><span class="badge">Success</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
