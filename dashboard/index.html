@@ -1027,8 +1027,26 @@
                 <h3 style="margin-bottom: 15px; font-size: 14px; font-weight: 600;">🔊 IVR Voice Flow</h3>
 
                 <div class="form-group">
-                    <label>IVR Greeting Message (Voice)</label>
-                    <textarea id="ivr-greeting-message" rows="2" required placeholder="Welcome! Press 1 if you're interested in availing a loan. Press 2 if you'd prefer we don't call."></textarea>
+                    <label>Select Pre-Recorded IVR Greeting *</label>
+                    <select id="ivr-greeting-recording" required onchange="updateGreetingPreview()">
+                        <option value="">-- Select an IVR Recording --</option>
+                        <option value="greeting_1">Loan Eligibility Check (Standard)</option>
+                        <option value="greeting_2">Loan Eligibility Check (Urgent)</option>
+                        <option value="greeting_3">Pre-Approved Loan Offer</option>
+                        <option value="greeting_4">Personal Loan Available</option>
+                        <option value="greeting_5">Bureau-Based Quick Check</option>
+                        <option value="greeting_custom">Custom Message (Type Below)</option>
+                    </select>
+                </div>
+
+                <div class="form-group" id="custom-greeting-group" style="display: none;">
+                    <label>Custom IVR Greeting Message</label>
+                    <textarea id="ivr-greeting-message" rows="2" placeholder="Welcome! Press 1 if you're interested in availing a loan. Press 2 if you'd prefer we don't call."></textarea>
+                </div>
+
+                <div class="form-group" id="greeting-preview" style="background: #f0f9ff; padding: 12px; border-radius: 6px; border-left: 4px solid #0ea5e9; display: none;">
+                    <label style="font-size: 12px; color: #0369a1; font-weight: 600;">📢 Preview:</label>
+                    <p id="preview-text" style="margin: 8px 0 0 0; color: #1e40af; font-size: 13px;"></p>
                 </div>
 
                 <div class="form-group">
@@ -1345,6 +1363,35 @@
             document.getElementById('ivr-campaign-modal').querySelector('form').reset();
         }
 
+        // IVR Recording Preview Data
+        const ivrRecordings = {
+            greeting_1: "Welcome! Thank you for calling. Press 1 if you're interested in checking your loan eligibility. Press 2 if you'd prefer we don't call you.",
+            greeting_2: "Great news! You may be eligible for an instant personal loan. Press 1 to proceed with quick eligibility check. Press 2 to opt out.",
+            greeting_3: "Congratulations! You've been pre-approved for a loan. Press 1 to view your offer details. Press 2 if you're not interested.",
+            greeting_4: "Hello! We have a special personal loan offer for you at low interest rates. Press 1 to check your eligibility. Press 2 to decline.",
+            greeting_5: "Hi! We can give you a quick answer about your loan eligibility using your bureau data. Press 1 to proceed. Press 2 to skip."
+        };
+
+        function updateGreetingPreview() {
+            const recordingId = document.getElementById('ivr-greeting-recording').value;
+            const customGroup = document.getElementById('custom-greeting-group');
+            const previewGroup = document.getElementById('greeting-preview');
+            const previewText = document.getElementById('preview-text');
+
+            if (recordingId === 'greeting_custom') {
+                customGroup.style.display = 'block';
+                previewGroup.style.display = 'block';
+                previewText.textContent = 'Enter custom message above';
+            } else if (recordingId && ivrRecordings[recordingId]) {
+                customGroup.style.display = 'none';
+                previewGroup.style.display = 'block';
+                previewText.textContent = ivrRecordings[recordingId];
+            } else {
+                customGroup.style.display = 'none';
+                previewGroup.style.display = 'none';
+            }
+        }
+
         // ============================================
         // CAMPAIGN FUNCTIONS
         // ============================================
@@ -1495,7 +1542,23 @@
 
             const campaignName = document.getElementById('ivr-campaign-name').value;
             const campaignLeads = document.getElementById('ivr-campaign-leads').value;
-            const greetingMessage = document.getElementById('ivr-greeting-message').value;
+            const selectedRecording = document.getElementById('ivr-greeting-recording').value;
+
+            // Get greeting message from selected recording or custom input
+            let greetingMessage = '';
+            if (selectedRecording === 'greeting_custom') {
+                greetingMessage = document.getElementById('ivr-greeting-message').value;
+                if (!greetingMessage.trim()) {
+                    showAlert('Please enter a custom greeting message', 'warning');
+                    return;
+                }
+            } else if (ivrRecordings[selectedRecording]) {
+                greetingMessage = ivrRecordings[selectedRecording];
+            } else {
+                showAlert('Please select an IVR greeting', 'warning');
+                return;
+            }
+
             const maxDuration = document.getElementById('ivr-max-duration').value;
 
             // DTMF Press 1 (Interested)
@@ -1515,6 +1578,7 @@
                     leadCount: parseInt(campaignLeads),
                     ivrConfig: {
                         greetingMessage,
+                        greetingRecordingId: selectedRecording,
                         maxDuration: parseInt(maxDuration),
                     },
                     dtmfOptions: {
