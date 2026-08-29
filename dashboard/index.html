@@ -539,6 +539,7 @@
             <button class="nav-tab" onclick="switchTab('ananta-whatsapp')">💬 Ananta WhatsApp</button>
             <button class="nav-tab" onclick="switchTab('whatsapp-flow')">📱 WhatsApp Flow</button>
             <button class="nav-tab" onclick="switchTab('recordings')">🎙️ Recordings</button>
+            <button class="nav-tab" onclick="switchTab('flexiloans-documents')">📄 FlexiLoans Documents</button>
             <button class="nav-tab" onclick="switchTab('settings')">⚙️ Settings</button>
         </div>
 
@@ -985,6 +986,71 @@
             </div>
         </section>
 
+        <!-- FLEXILOANS DOCUMENTS TAB -->
+        <section id="flexiloans-documents" class="section">
+            <div class="flex-between mb-20">
+                <h2 style="font-size: 20px;">FlexiLoans Document Submission</h2>
+                <button class="btn btn-primary" onclick="openFlexiLoansDocModal()">+ Submit Documents</button>
+            </div>
+
+            <div class="grid grid-2">
+                <!-- Submission Stats -->
+                <div class="card">
+                    <h3 style="margin-bottom: 15px;">Submission Stats</h3>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
+                        <span>Total Submissions</span>
+                        <strong id="flexiloans-total" style="color: var(--primary);">0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
+                        <span>Email Sent Today</span>
+                        <strong id="flexiloans-today" style="color: var(--success);">0</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Recipients</span>
+                        <strong style="color: var(--text-light); font-size: 14px;">dadocs@flexiloans.com</strong>
+                    </div>
+                </div>
+
+                <!-- Email Recipients -->
+                <div class="card">
+                    <h3 style="margin-bottom: 15px;">Email Recipients</h3>
+                    <div style="font-size: 12px; line-height: 1.8;">
+                        <div style="margin-bottom: 8px;">
+                            <strong>To:</strong> dadocs@flexiloans.com
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <strong>CC:</strong>
+                        </div>
+                        <div style="margin-left: 12px; color: var(--text-light);">
+                            • sharda.p@buddyloan.com<br>
+                            • rachit.saini@buddyloan.com
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Submissions -->
+            <div class="card mt-20">
+                <h3 style="margin-bottom: 15px;">Recent Submissions</h3>
+                <table class="table" id="flexiloans-table">
+                    <thead>
+                        <tr>
+                            <th>Phone Number</th>
+                            <th>Customer Name</th>
+                            <th>Documents</th>
+                            <th>Status</th>
+                            <th>Submitted</th>
+                        </tr>
+                    </thead>
+                    <tbody id="flexiloans-list">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: #6b7280;">Loading submissions...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
         <!-- SETTINGS TAB -->
         <section id="settings" class="section">
             <h2 style="font-size: 20px; margin-bottom: 20px;">System Settings</h2>
@@ -1411,6 +1477,45 @@
         </div>
     </div>
 
+    <!-- FlexiLoans Document Submission Modal -->
+    <div id="flexiloans-doc-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Submit Documents to FlexiLoans</span>
+                <button class="modal-close" onclick="closeFlexiLoansDocModal()">×</button>
+            </div>
+            <div style="padding: 20px;">
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="tel" id="flexiloans-phone" placeholder="91XXXXXXXXXX" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Customer Name *</label>
+                    <input type="text" id="flexiloans-name" placeholder="Full Name" style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>PAN Document URL</label>
+                    <input type="url" id="flexiloans-pan" placeholder="https://..." style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Aadhar Document URL</label>
+                    <input type="url" id="flexiloans-aadhar" placeholder="https://..." style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div class="form-group">
+                    <label>Bank Statement URL</label>
+                    <input type="url" id="flexiloans-bank" placeholder="https://..." style="width: 100%; padding: 8px; border: 1px solid #e5e7eb; border-radius: 4px;">
+                </div>
+                <div style="padding: 12px; background: #fef3c7; border-radius: 4px; border-left: 4px solid #f59e0b; font-size: 13px; margin-bottom: 15px;">
+                    ℹ️ Documents will be emailed to FlexiLoans team: dadocs@flexiloans.com
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-primary btn-block" onclick="submitFlexiLoansDocuments()">Submit & Send Email</button>
+                    <button class="btn btn-secondary btn-block" onclick="closeFlexiLoansDocModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // ============================================
         // API SERVICE LAYER
@@ -1600,6 +1705,8 @@
             if (tab === 'leads') loadLeads();
             if (tab === 'lenders') loadLenders();
             if (tab === 'analytics') loadAnalytics();
+            if (tab === 'recordings') loadRecordings();
+            if (tab === 'flexiloans-documents') loadFlexiLoansSubmissions();
         }
 
         // ============================================
@@ -2169,6 +2276,113 @@
                 }
             } catch (error) {
                 showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        // ============================================
+        // FLEXILOANS DOCUMENT FUNCTIONS
+        // ============================================
+        function openFlexiLoansDocModal() {
+            document.getElementById('flexiloans-doc-modal').classList.add('active');
+        }
+
+        function closeFlexiLoansDocModal() {
+            document.getElementById('flexiloans-doc-modal').classList.remove('active');
+            document.getElementById('flexiloans-phone').value = '';
+            document.getElementById('flexiloans-name').value = '';
+            document.getElementById('flexiloans-pan').value = '';
+            document.getElementById('flexiloans-aadhar').value = '';
+            document.getElementById('flexiloans-bank').value = '';
+        }
+
+        async function submitFlexiLoansDocuments() {
+            const phone = document.getElementById('flexiloans-phone').value;
+            const name = document.getElementById('flexiloans-name').value;
+            const panUrl = document.getElementById('flexiloans-pan').value;
+            const aadharUrl = document.getElementById('flexiloans-aadhar').value;
+            const bankUrl = document.getElementById('flexiloans-bank').value;
+
+            if (!phone || !name) {
+                showAlert('Phone number and customer name are required', 'warning');
+                return;
+            }
+
+            if (!panUrl && !aadharUrl && !bankUrl) {
+                showAlert('Please provide at least one document URL', 'warning');
+                return;
+            }
+
+            try {
+                showAlert('Submitting documents and sending email...', 'info');
+
+                const response = await fetch('/api/flexiloans/submit-documents', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone,
+                        name,
+                        panUrl: panUrl || null,
+                        aadharUrl: aadharUrl || null,
+                        bankStatementUrl: bankUrl || null,
+                        metadata: {
+                            submittedVia: 'dashboard',
+                            timestamp: new Date().toISOString()
+                        }
+                    })
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    showAlert(`Documents submitted! Email sent to FlexiLoans team (${result.data.emailStatus})`, 'success');
+                    closeFlexiLoansDocModal();
+                    loadFlexiLoansSubmissions();
+                } else {
+                    showAlert(`Error: ${result.error}`, 'danger');
+                }
+            } catch (error) {
+                console.error('Submission error:', error);
+                showAlert(`Error: ${error.message}`, 'danger');
+            }
+        }
+
+        async function loadFlexiLoansSubmissions() {
+            try {
+                const response = await fetch('/api/flexiloans/submissions');
+                const result = await response.json();
+
+                if (result.success) {
+                    const tbody = document.getElementById('flexiloans-list');
+                    if (!tbody) return;
+
+                    if (result.data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6b7280;">No submissions yet</td></tr>';
+                        return;
+                    }
+
+                    tbody.innerHTML = result.data.map(submission => {
+                        const documents = [];
+                        if (submission.pan_url) documents.push('PAN');
+                        if (submission.aadhar_url) documents.push('Aadhar');
+                        if (submission.bank_statement_url) documents.push('Bank Statement');
+
+                        return `
+                            <tr>
+                                <td>${submission.phone_number}</td>
+                                <td>${submission.customer_name}</td>
+                                <td>${documents.join(', ') || 'None'}</td>
+                                <td><span class="badge badge-success">${submission.status}</span></td>
+                                <td>${new Date(submission.submitted_at).toLocaleDateString('en-IN')}</td>
+                            </tr>
+                        `;
+                    }).join('');
+
+                    // Update stats
+                    document.getElementById('flexiloans-total').textContent = result.count;
+                } else {
+                    console.error('Failed to load submissions:', result.error);
+                }
+            } catch (error) {
+                console.error('Error loading FlexiLoans submissions:', error);
             }
         }
 

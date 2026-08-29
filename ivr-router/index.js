@@ -26,6 +26,7 @@ import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.
 import recordingRoutes from "./lib/routes/recordingRoutes.js";
 import anantaConfigRoutes from "./lib/routes/anantaConfigRoutes.js";
 import whatsappFlowRoutes from "./lib/routes/whatsappFlowRoutes.js";
+import flexiloansDocumentRoutes from "./lib/routes/flexiloansDocumentRoutes.js";
 import logger from "./lib/logging.js";
 
 dotenv.config();
@@ -136,6 +137,9 @@ app.use("/api/ananta", anantaConfigRoutes);
 
 // ==================== WhatsApp Chatbot Flow Routes ====================
 app.use("/api/whatsapp/flow", whatsappFlowRoutes);
+
+// ==================== FlexiLoans Document Submission Routes ====================
+app.use("/api/flexiloans", flexiloansDocumentRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
