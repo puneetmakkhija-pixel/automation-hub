@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #ffffff; color: #111827; line-height: 1.5; }
+    a { color: #4f46e5; }
+    a:hover { color: #4338ca; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+    .header { border-bottom: 1px solid #f3f4f6; padding: 16px 0; margin-bottom: 24px; }
+    .header-content { display: flex; justify-content: space-between; align-items: center; }
+    .logo { font-size: 18px; font-weight: 600; color: #4f46e5; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
+    .status-indicator { font-size: 12px; color: #10b981; display: flex; align-items: center; gap: 6px; }
+    .nav-tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid #f3f4f6; padding-bottom: 0; }
+    .nav-tab { padding: 8px 12px; background: none; border: none; cursor: pointer; font-size: 13px; font-weight: 500; color: #6b7280; border-bottom: 2px solid transparent; white-space: nowrap; }
+    .nav-tab.active { color: #4f46e5; border-bottom-color: #4f46e5; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom: 16px; }
+    .card { background: #ffffff; border: 1px solid #f3f4f6; border-radius: 8px; padding: 16px; transition: all 0.2s; }
+    .card:hover { border-color: #4f46e5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+    .card-title { font-size: 11px; font-weight: 600; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card-value { font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 4px; }
+    .card-meta { font-size: 11px; color: #6b7280; }
+    .card.success .card-value { color: #10b981; }
+    .card.warning .card-value { color: #f59e0b; }
+    .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .table thead { background: #fafafa; border-bottom: 1px solid #f3f4f6; }
+    .table th { padding: 10px 12px; text-align: left; font-weight: 600; color: #6b7280; font-size: 11px; }
+    .table td { padding: 10px 12px; border-bottom: 1px solid #f3f4f6; }
+    .table tbody tr:hover { background: #fafafa; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; background: rgba(16, 185, 129, 0.1); color: #10b981; }
+    .stat-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+    .stat-row:last-child { border-bottom: none; }
+    .stat-label { color: #6b7280; }
+    .stat-value { font-weight: 600; }
+    h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+    h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  </style>
+</helmet>
+<div class="container">
+  <div class="header">
+    <div class="header-content">
+      <div class="logo">IVR Hub</div>
+      <div class="status-indicator">
+        <span class="status-dot"></span>
+        <span>Online • Minimal Theme</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active">Dashboard</button>
+    <button class="nav-tab">Campaigns</button>
+    <button class="nav-tab">Leads</button>
+    <button class="nav-tab">Analytics</button>
+    <button class="nav-tab">Settings</button>
+  </div>
+
+  <h2>Dashboard</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Leads Processed</div>
+      <div class="card-value">2,450</div>
+      <div class="card-meta">Today</div>
+    </div>
+    <div class="card success">
+      <div class="card-title">WhatsApp Delivered</div>
+      <div class="card-value">87%</div>
+      <div class="card-meta">Delivery Rate</div>
+    </div>
+    <div class="card success">
+      <div class="card-title">Calls Connected</div>
+      <div class="card-value">64%</div>
+      <div class="card-meta">Connect Rate</div>
+    </div>
+    <div class="card warning">
+      <div class="card-title">DTMF Response</div>
+      <div class="card-value">52%</div>
+      <div class="card-meta">Response Rate</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Recent Activity</h3>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Count</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2:45 PM</td>
+          <td>Campaign Started</td>
+          <td>100 leads</td>
+          <td><span class="badge">Active</span></td>
+        </tr>
+        <tr>
+          <td>2:40 PM</td>
+          <td>WhatsApp Delivery</td>
+          <td>87 messages</td>
+          <td><span class="badge">Success</span></td>
+        </tr>
+        <tr>
+          <td>2:35 PM</td>
+          <td>Calls Initiated</td>
+          <td>64 calls</td>
+          <td><span class="badge">Success</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top: 16px;">
+    <h3>Analytics</h3>
+    <div class="stat-row">
+      <span class="stat-label">Conversion Rate</span>
+      <span class="stat-value">24%</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">Cost per Lead</span>
+      <span class="stat-value">₹8</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-label">System Uptime</span>
+      <span class="stat-value">99.95%</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
