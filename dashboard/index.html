@@ -1407,8 +1407,45 @@
             document.getElementById('add-lender-modal').querySelector('form').reset();
         }
 
-        function openIVRCampaignModal() {
+        async function openIVRCampaignModal() {
             document.getElementById('ivr-campaign-modal').classList.add('active');
+
+            // Load lenders dynamically from API
+            try {
+                const response = await fetch('/api/lenders');
+                const result = await response.json();
+
+                if (result.success && result.data && result.data.length > 0) {
+                    const primarySelect = document.getElementById('ivr-dtmf1-primary');
+                    const fallbackSelect = document.getElementById('ivr-dtmf1-fallback');
+
+                    // Clear existing options (except first)
+                    const primaryOptions = primarySelect.querySelectorAll('option');
+                    primaryOptions.forEach((opt, idx) => {
+                        if (idx > 0) opt.remove();
+                    });
+
+                    const fallbackOptions = fallbackSelect.querySelectorAll('option');
+                    fallbackOptions.forEach((opt, idx) => {
+                        if (idx > 0) opt.remove();
+                    });
+
+                    // Add lenders from database
+                    result.data.forEach(lender => {
+                        const opt1 = document.createElement('option');
+                        opt1.value = lender.lender_id;
+                        opt1.textContent = lender.name;
+                        primarySelect.appendChild(opt1);
+
+                        const opt2 = document.createElement('option');
+                        opt2.value = lender.lender_id;
+                        opt2.textContent = lender.name;
+                        fallbackSelect.appendChild(opt2);
+                    });
+                }
+            } catch (error) {
+                console.warn('Failed to load lenders from API, using defaults:', error);
+            }
 
             // Setup Ori voice bot toggle
             const oriRadios = document.querySelectorAll('input[name="ivr-enable-ori"]');
