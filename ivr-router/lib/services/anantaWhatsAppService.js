@@ -3,7 +3,7 @@
  * Handles sending WhatsApp messages via Ananta WhatsApp API
  */
 
-const axios = require('axios');
+import axios from 'axios';
 
 const ANANTA_API_ENDPOINT = process.env.ANANTA_API_ENDPOINT || 'https://api.ananta.io/v1/messages/send';
 const ANANTA_API_KEY = process.env.ANANTA_API_KEY;
@@ -154,4 +154,4 @@ Click above to get started!`;
   }
 }
 
-module.exports = AnantaWhatsAppService;
+export default AnantaWhatsAppService;
