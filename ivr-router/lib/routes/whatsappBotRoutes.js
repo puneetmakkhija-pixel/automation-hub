@@ -38,7 +38,20 @@ router.get('/health/bot', (req, res) => {
   res.json({ status: 'ok', service: 'whatsapp-bot' });
 });
 
-router.get('/debug/state/:phone', async (req, res) => {
+// The two debug routes below return a customer's conversation contents for any
+// phone number given. They were unauthenticated, and until PR #21 they threw on
+// every request, so nothing had ever been served from them — worth closing
+// before they start working.
+//
+// failClosed: unlike the webhooks, an unset secret must NOT leave these open.
+// They accept ?token=<secret> as well as the header, so a browser can reach
+// them; that puts the secret in access logs and history, which is the accepted
+// cost of a debug route being usable from a URL bar.
+const requireSecret = verifyWebhookSecret('ANANTA_WEBHOOK_SECRET', 'BOT_DEBUG', {
+  failClosed: true,
+});
+
+router.get('/debug/state/:phone', requireSecret, async (req, res) => {
   try {
     if (!supabase) {
       return res.status(503).json({
@@ -53,7 +66,7 @@ router.get('/debug/state/:phone', async (req, res) => {
   }
 });
 
-router.get('/debug/events/:phone', async (req, res) => {
+router.get('/debug/events/:phone', requireSecret, async (req, res) => {
   try {
     if (!supabase) {
       return res.status(503).json({
