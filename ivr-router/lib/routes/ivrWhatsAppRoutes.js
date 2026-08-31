@@ -44,22 +44,43 @@ function templateMap() {
   }
 }
 
+function parseJsonEnv(name) {
+  const raw = process.env[name];
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    console.error(`[IVR_WA] ${name} is not valid JSON — ignoring it`);
+    return null;
+  }
+}
+
 /**
- * Optional per-digit placeholder values, e.g. {"1":["{{campaign_name}}"]}.
+ * Placeholder values for a keypress, e.g. {"1":[" ","https://apply.example/"]}.
  * {{field}} is replaced from the IVR payload. Templates with placeholders
- * REQUIRE them — Ananta returns 1325/1327 otherwise.
+ * REQUIRE them, and the count must match exactly — Ananta returns 1325/1327
+ * otherwise.
+ *
+ * Two campaigns can share a template and a digit but need different values —
+ * typically the same message pointing at a different application link. So a
+ * campaign-scoped map wins over the digit-scoped one:
+ *
+ *   IVR_CAMPAIGN_PLACEHOLDERS={"1164053":{"1":[" ","https://crmbusinessloans.com/apply"]}}
+ *   IVR_DTMF_PLACEHOLDERS={"1":[" ","https://instant-pocket-loan…"]}
+ *
+ * A campaign with no entry falls back to the digit map, so adding a campaign to
+ * the IVR panel without touching this config sends the default link rather than
+ * nothing.
  */
 function placeholdersFor(digit, body) {
-  const raw = process.env.IVR_DTMF_PLACEHOLDERS;
-  if (!raw) return [];
-  let map;
-  try {
-    map = JSON.parse(raw);
-  } catch {
-    console.error("[IVR_WA] IVR_DTMF_PLACEHOLDERS is not valid JSON — sending none");
-    return [];
-  }
-  const list = map[String(digit)];
+  const campaign = String(body.campaign_id ?? "").trim();
+  const perCampaign = campaign
+    ? parseJsonEnv("IVR_CAMPAIGN_PLACEHOLDERS")?.[campaign]?.[String(digit)]
+    : null;
+  const list = Array.isArray(perCampaign)
+    ? perCampaign
+    : parseJsonEnv("IVR_DTMF_PLACEHOLDERS")?.[String(digit)];
+
   if (!Array.isArray(list)) return [];
   return list.map((v) =>
     String(v).replace(/\{\{(\w+)\}\}/g, (_, k) => (body[k] == null ? "" : String(body[k])))
@@ -156,14 +177,36 @@ router.post(
     const apiKey = (process.env.ANANTA_API_KEY || "").trim();
     if (!apiKey) {
       console.error("[IVR_WA] ANANTA_API_KEY is not set — cannot send");
+      // Nothing was sent, so release the dedupe key: once the variable is set,
+      // a retry of this same call must still be able to get through.
+      sent.delete(key);
       return res.status(503).json({ success: false, error: "WhatsApp sender not configured" });
+    }
+
+    // WhatsApp rejects an empty template variable outright (#131008, surfaced by
+    // Ananta as 1353), so a {{field}} that resolved to nothing is a config bug
+    // worth naming here rather than a failed send to debug from the provider's
+    // error. A deliberately blank value is a single space, which passes.
+    const placeholders = placeholdersFor(digit, body);
+    const blank = placeholders.findIndex((v) => v === "");
+    if (blank !== -1) {
+      console.error(
+        `[IVR_WA] Placeholder ${blank + 1} of ${placeholders.length} resolved to an ` +
+          `empty string (digit=${digit} campaign=${body.campaign_id ?? "-"}). WhatsApp ` +
+          'rejects empty template variables — use " " for a deliberately blank value, ' +
+          "and check any {{field}} against the fields this webhook actually receives."
+      );
+      sent.delete(key);
+      return res
+        .status(503)
+        .json({ success: false, error: "Placeholder resolved empty", position: blank + 1 });
     }
 
     const payload = {
       template,
       phone: phone.phone,
       is_short_url: process.env.ANANTA_IS_SHORT_URL || "0",
-      message: { placeholders: placeholdersFor(digit, body) },
+      message: { placeholders },
     };
 
     try {
