@@ -3,10 +3,35 @@ import { createClient } from "@supabase/supabase-js";
 // Twice-daily cron status monitor for API pulls and cron jobs
 // Runs at 6 AM and 6 PM to check status of critical jobs
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+function validateEnvironment() {
+  const required = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"];
+  const missing = required.filter((key) => !process.env[key]);
+
+  if (missing.length > 0) {
+    console.error(
+      `[status-monitor] Missing required environment variable(s): ${missing.join(", ")}`
+    );
+    throw new Error(
+      `Missing required environment variable(s): ${missing.join(", ")}`
+    );
+  }
+}
+
+let supabase;
+
+try {
+  validateEnvironment();
+  supabase = createClient(
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+} catch (error) {
+  console.error(
+    "[status-monitor] Failed to initialize Supabase client:",
+    error
+  );
+  process.exit(1);
+}
 
 const JOB_CONFIGS = {
   "digitap-bank-statement-parsing": {
@@ -100,6 +125,10 @@ async function checkJobStatus(jobKey, config) {
       .limit(1);
 
     if (error) {
+      console.error(
+        `[status-monitor] Supabase error querying cron_job_status for "${jobKey}" — code: ${error.code}, message: ${error.message}, details: ${error.details}, hint: ${error.hint}`,
+        error
+      );
       throw new Error(`Failed to query status: ${error.message}`);
     }
 
@@ -132,6 +161,10 @@ async function checkJobStatus(jobKey, config) {
       statusRecord.error_message = "No status record found";
     }
   } catch (error) {
+    console.error(
+      `[status-monitor] Error checking job status for "${jobKey}":`,
+      error
+    );
     statusRecord.status = "error";
     statusRecord.error_message = error.message;
   }
@@ -176,20 +209,37 @@ async function saveStatusReport(report) {
       ]);
 
     if (error) {
-      console.error("[status-monitor] Failed to save report:", error.message);
+      console.error(
+        `[status-monitor] Supabase error inserting into cron_status_reports — code: ${error.code}, message: ${error.message}, details: ${error.details}, hint: ${error.hint}`,
+        error
+      );
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error("[status-monitor] Error saving report:", error.message);
+    console.error(
+      "[status-monitor] Unexpected error saving report:",
+      error
+    );
     return false;
   }
 }
 
 async function main() {
+  // Re-validate environment at the start of main() in case this function
+  // is ever invoked without the module-level guard (e.g. in tests).
+  validateEnvironment();
+
   console.log(
     `[status-monitor] Cron status check started at ${new Date().toISOString()}`
+  );
+  console.log(
+    `[status-monitor] Startup banner: SUPABASE_URL=${
+      process.env.SUPABASE_URL ? "loaded" : "MISSING"
+    }, SUPABASE_SERVICE_ROLE_KEY=${
+      process.env.SUPABASE_SERVICE_ROLE_KEY ? "loaded" : "MISSING"
+    }`
   );
 
   const allStatuses = [];
@@ -204,13 +254,25 @@ async function main() {
       );
     } catch (error) {
       console.error(
-        `[status-monitor] Error checking ${jobKey}: ${error.message}`
+        `[status-monitor] Error checking ${jobKey}:`,
+        error && error.message ? error.message : error,
+        error
       );
     }
   }
 
   // Generate and save report
-  const report = await generateStatusReport(allStatuses);
+  let report;
+  try {
+    report = await generateStatusReport(allStatuses);
+  } catch (error) {
+    console.error(
+      "[status-monitor] Error generating status report:",
+      error
+    );
+    throw error;
+  }
+
   console.log(
     `[status-monitor] Report Summary: ${report.summary.healthy} healthy, ${report.summary.errors} errors, ${report.summary.overdue} overdue`
   );
@@ -222,12 +284,28 @@ async function main() {
     });
   }
 
-  await saveStatusReport(report);
+  try {
+    const saved = await saveStatusReport(report);
+    if (!saved) {
+      console.error(
+        "[status-monitor] Status report was not saved to the database. See errors above for details."
+      );
+    }
+  } catch (error) {
+    console.error(
+      "[status-monitor] Unexpected error while saving status report:",
+      error
+    );
+    throw error;
+  }
 
   console.log(`[status-monitor] Status check completed`);
 }
 
 main().catch((error) => {
   console.error("[status-monitor] Fatal error:", error);
+  if (error && error.stack) {
+    console.error("[status-monitor] Stack trace:", error.stack);
+  }
   process.exit(1);
 });
