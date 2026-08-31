@@ -65,15 +65,29 @@ function presentedSecret(req) {
 /**
  * @param {string} envVar name of the env var holding the expected secret
  * @param {string} label  used in logs to identify the webhook
- * @param {{ failClosed?: boolean }} [options]
+ * @param {{ failClosed?: boolean, onlyPaths?: RegExp[] }} [options]
  *   failClosed: refuse the request when envVar is unset, instead of allowing
  *   it. Use for routes that return data.
+ *   onlyPaths: when mounted on a whole router, protect ONLY the paths matching
+ *   these patterns and pass everything else through untouched.
+ *
+ * onlyPaths is an allowlist of what to LOCK, not of what to let through, and
+ * deliberately so. These routers mix operator endpoints with externally-driven
+ * ones — /api/mis/webhook/poonawalla and /webhook/hero-fincorp are called by
+ * lenders, /api/router/voice-disposition by the call platform, and /health by
+ * uptime checks. With an exception list, a forgotten entry silently breaks a
+ * live integration. This way a forgotten entry leaves a route exactly as it is
+ * today, and the damage is a missed lock rather than an outage.
  */
 export function verifyWebhookSecret(envVar, label, options = {}) {
-  const { failClosed = false } = options;
+  const { failClosed = false, onlyPaths = null } = options;
   let warned = false;
 
   return function verify(req, res, next) {
+    if (onlyPaths && !onlyPaths.some((pattern) => pattern.test(req.path))) {
+      return next();
+    }
+
     const expected = process.env[envVar];
 
     if (!expected) {
