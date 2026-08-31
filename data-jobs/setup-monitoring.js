@@ -104,24 +104,53 @@ async function setupMonitoring() {
 
     // Initialize job status records
     console.log("[setup-monitoring] Initializing job status records...");
+    // cron_job_status holds a HISTORY of checks, not one row per job: its only
+    // unique constraint is (job_key, checked_at), and status-monitor.js reads it
+    // with .eq(job_key).order(checked_at desc).limit(1) to get the latest.
+    //
+    // So this seeds one placeholder row per job and then leaves the table alone.
+    // It must not upsert on job_key -- Postgres requires ON CONFLICT to name a
+    // unique index and none covers job_key alone, so that errored every time. It
+    // must not blindly insert either: re-running setup after the jobs have run
+    // would make a fresh "not yet executed" row the newest, hiding real status
+    // from the reader. Seed only when the job has no rows at all.
     for (const job of JOBS_TO_INITIALIZE) {
-      const { error } = await supabase.from("cron_job_status").upsert(
-        [
-          {
-            job_key: job.job_key,
-            job_name: job.job_name,
-            category: job.category,
-            status: job.status,
-            checked_at: new Date().toISOString(),
-            error_message: "Job not yet executed",
-          },
-        ],
-        { onConflict: "job_key" }
-      );
+      const { data: existing, error: lookupError } = await supabase
+        .from("cron_job_status")
+        .select("id")
+        .eq("job_key", job.job_key)
+        .limit(1);
+
+      if (lookupError) {
+        console.error(
+          `[setup-monitoring] ✗ Could not check for existing ${job.job_name} — code: ${lookupError.code}, message: ${lookupError.message}, details: ${lookupError.details}, hint: ${lookupError.hint}`,
+          lookupError
+        );
+        continue;
+      }
+
+      if (existing && existing.length > 0) {
+        console.log(
+          `[setup-monitoring] — Skipped: ${job.job_name} (already has status history)`
+        );
+        continue;
+      }
+
+      const { error } = await supabase.from("cron_job_status").insert([
+        {
+          job_key: job.job_key,
+          job_name: job.job_name,
+          category: job.category,
+          status: job.status,
+          checked_at: new Date().toISOString(),
+          error_message: "Job not yet executed",
+        },
+      ]);
 
       if (error) {
         console.error(
-          `[setup-monitoring] ✗ Failed to initialize ${job.job_name}: ${error.message}`
+          `[setup-monitoring] ✗ Failed to initialize ${job.job_name} — code: ${error.code}, message: ${error.message}, details: ${error.details}, hint: ${error.hint}`,
+          error
         );
       } else {
         console.log(`[setup-monitoring] ✓ Initialized: ${job.job_name}`);
