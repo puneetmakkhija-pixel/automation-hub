@@ -3,6 +3,7 @@ import axios from "axios";
 import { verifyWebhookSecret } from "../middleware/verifyWebhookSecret.js";
 import SupabaseClient from "../supabaseClient.js";
 import { resolveCustomerId } from "../customerIds.js";
+import { resolveSsoLink } from "../crmSsoLink.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -79,7 +80,7 @@ function parseJsonEnv(name) {
  * A variant with no entry falls back to the digit map, so a new campaign or a
  * mistyped suffix sends the default link rather than nothing.
  */
-function placeholdersFor(digit, body, variant) {
+function rawPlaceholders(digit, body, variant) {
   const key = String(variant || body.campaign_id || "").trim();
   const perVariant = key
     ? parseJsonEnv("IVR_VARIANT_PLACEHOLDERS")?.[key]?.[String(digit)]
@@ -88,9 +89,12 @@ function placeholdersFor(digit, body, variant) {
     ? perVariant
     : parseJsonEnv("IVR_DTMF_PLACEHOLDERS")?.[String(digit)];
 
-  if (!Array.isArray(list)) return [];
+  return Array.isArray(list) ? list : [];
+}
+
+function interpolate(list, fields) {
   return list.map((v) =>
-    String(v).replace(/\{\{(\w+)\}\}/g, (_, k) => (body[k] == null ? "" : String(body[k])))
+    String(v).replace(/\{\{(\w+)\}\}/g, (_, k) => (fields[k] == null ? "" : String(fields[k])))
   );
 }
 
@@ -207,6 +211,8 @@ function recordSend(row) {
           campaign_name: row.campaignName || null,
           unique_id: row.uniqueId || null,
           customer_id: row.customerId || null,
+          sso_minted: row.ssoMinted === true,
+          sso_reason: row.ssoReason || null,
           link: row.link || null,
           message_id: row.messageId || null,
           error: row.error ?? null,
@@ -320,7 +326,30 @@ async function handleKeypress(req, res) {
     variant,
   });
 
-  const placeholders = placeholdersFor(digit, { ...body, customer_id: customerId ?? "" }, variant);
+  // {{sso_link}} puts a pre-verified /apply?t=<token> link in the message, so
+  // the customer lands past OTP. Minted only when the configured placeholders
+  // actually ask for one — otherwise every send would call the CRM for a value
+  // nothing uses, and put a cross-service dependency on a path that does not
+  // need it.
+  const raw = rawPlaceholders(digit, body, variant);
+  const wantsSso = raw.some((v) => String(v).includes("{{sso_link}}"));
+  const sso = wantsSso
+    ? await resolveSsoLink(phone.phone, database()?.client)
+    : { url: "", minted: false, expiresAt: null, reason: "not_requested" };
+
+  if (wantsSso) {
+    console.log(
+      sso.minted
+        ? `[IVR_WA] SSO link minted for ${phone.phone}, expires ${sso.expiresAt ?? "?"}`
+        : `[IVR_WA] Plain apply link for ${phone.phone} (${sso.reason}) — customer will do OTP`
+    );
+  }
+
+  const placeholders = interpolate(raw, {
+    ...body,
+    customer_id: customerId ?? "",
+    sso_link: sso.url,
+  });
   const blank = placeholders.findIndex((v) => v === "");
   if (blank !== -1) {
     console.error(
@@ -364,6 +393,8 @@ async function handleKeypress(req, res) {
       campaignName: campaign_name,
       uniqueId: unique_id,
       customerId,
+      ssoMinted: sso.minted,
+      ssoReason: sso.reason,
       // The link is the placeholder that differs between campaigns, so record
       // which one this customer actually received.
       link: placeholders[placeholders.length - 1],
@@ -409,6 +440,8 @@ async function handleKeypress(req, res) {
       campaignName: campaign_name,
       uniqueId: unique_id,
       customerId,
+      ssoMinted: sso.minted,
+      ssoReason: sso.reason,
       link: placeholders[placeholders.length - 1],
       error: detail,
     });
