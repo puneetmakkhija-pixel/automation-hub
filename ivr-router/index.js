@@ -116,11 +116,45 @@ app.use("/api/suppression", suppressionAnalysisRoutes);
 // ==================== Re-engagement Campaign Routes (Phase 3.5e: Feedback Loop Closer) ====================
 app.use("/api/reengagement", reengagementRoutes);
 
+// ==================== Operator console authentication ====================
+//
+// /console is an operator dashboard that TAKES ACTIONS — it can start the daily
+// shortlist, push journeys and process MIS reports. It was reachable by anyone
+// who knew the URL, as were the endpoints behind it.
+//
+// CONSOLE_SECRET rather than ANANTA_WEBHOOK_SECRET: operators should not have
+// to hold the credential the providers post with, and either should be
+// rotatable without disturbing the other.
+//
+// Each guard names the exact paths to lock. Everything else on these routers
+// stays as it is — /health for uptime checks, /config, the lender MIS webhooks
+// and voice-disposition, none of which the console calls and all of which have
+// callers outside our control.
+function consoleAuth(label, onlyPaths) {
+  return verifyWebhookSecret("CONSOLE_SECRET", label, { failClosed: true, onlyPaths });
+}
+
 // ==================== BRE Shortlisting Routes (Daily Base Filtering) ====================
-app.use("/api/bre", breShortlistingRoutes);
+app.use(
+  "/api/bre",
+  consoleAuth("CONSOLE_BRE", [
+    /^\/run-daily-shortlist$/,
+    /^\/shortlist\//,
+    /^\/mark-dispatched$/,
+  ]),
+  breShortlistingRoutes
+);
 
 // ==================== IVR Campaign Router Routes (Dual-Path Routing) ====================
-app.use("/api/router", ivrCampaignRouterRoutes);
+app.use(
+  "/api/router",
+  consoleAuth("CONSOLE_ROUTER", [
+    /^\/document-journey$/,
+    /^\/diy-journey$/,
+    /^\/lender-rejection$/,
+  ]),
+  ivrCampaignRouterRoutes
+);
 
 // ==================== IVR Campaigns Management Routes (Campaign CRUD) ====================
 app.use("/api/ivr-campaigns", ivrCampaignsRoutes);
@@ -129,7 +163,17 @@ app.use("/api/ivr-campaigns", ivrCampaignsRoutes);
 app.use("/api/lenders", lendersRoutes);
 
 // ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
-app.use("/api/mis", misFeedbackCollectorRoutes);
+// /webhook/poonawalla and /webhook/hero-fincorp are LENDER-FACING and stay
+// open: locking them would break the feedback those lenders post to us.
+app.use(
+  "/api/mis",
+  consoleAuth("CONSOLE_MIS", [
+    /^\/process-report$/,
+    /^\/bre-optimization-report\//,
+    /^\/customer\//,
+  ]),
+  misFeedbackCollectorRoutes
+);
 
 // ==================== Recording Management Routes ====================
 app.use("/api/recordings", recordingRoutes);
@@ -455,7 +499,9 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-app.get('/console', (req, res) => {
+// Load it as /console?token=<CONSOLE_SECRET> — the page stores the token and
+// sends it as a header on every call it makes afterwards.
+app.get('/console', consoleAuth('CONSOLE_PAGE', null), (req, res) => {
   res.sendFile('public/console.html', { root: __dirname });
 });
 
