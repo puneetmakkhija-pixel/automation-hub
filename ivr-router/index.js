@@ -14,6 +14,7 @@ import crmIntegrationRoutes from "./lib/crmIntegrationRoutes.js";
 import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
 import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import { verifyWebhookSecret } from "./lib/middleware/verifyWebhookSecret.js";
+import ivrWhatsAppRoutes from "./lib/routes/ivrWhatsAppRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
@@ -141,6 +142,10 @@ app.use("/api/whatsapp/flow", whatsappFlowRoutes);
 
 // ==================== FlexiLoans Document Submission Routes ====================
 app.use("/api/flexiloans", flexiloansDocumentRoutes);
+
+// IVR keypress -> WhatsApp, direct. voice2.ivrsms.com posts its call payload
+// here; a mapped DTMF digit sends the matching Ananta template.
+app.use("/webhooks/ivr", ivrWhatsAppRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
