@@ -1,7 +1,21 @@
 import express from 'express';
 import reengagementClient from '../llm/reengagementClient.js';
+import supabase from '../clients/supabaseClient.js';
 
 const router = express.Router();
+
+/**
+ * The query builder, or null after answering 503. See the matching comment in
+ * suppressionAnalysisRoutes.js: the handler below used to call require() in an
+ * ES module, where it is not defined.
+ */
+function queryBuilder(res) {
+  if (!supabase) {
+    res.status(503).json({ success: false, error: 'Database not configured' });
+    return null;
+  }
+  return supabase.supabase;
+}
 
 // POST /api/reengagement/find-eligible
 // Called by nightly job (02:00 UTC) to find users eligible under new rules
@@ -159,7 +173,11 @@ router.get('/events/:phone_number', async (req, res) => {
       });
     }
 
-    const { data, error } = require('../clients/supabaseClient.js').default
+    const client = queryBuilder(res);
+    if (!client) return;
+
+    // await was missing here too.
+    const { data, error } = await client
       .from('reengagement_events')
       .select('*')
       .eq('phone_number', phone_number)
