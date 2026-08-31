@@ -32,6 +32,12 @@ import crypto from "crypto";
  * Set the variable to switch enforcement on. A misconfigured secret would
  * otherwise silently drop customer conversations, which is worse than the
  * status quo it replaces.
+ *
+ * That tradeoff only holds for INBOUND WEBHOOKS, where the cost of failing
+ * closed is lost customer messages. It is the wrong way round for a route that
+ * hands data OUT: there, an unset variable would quietly leave the data public.
+ * Pass { failClosed: true } for those — the route answers 503 rather than
+ * serving anything without a configured secret.
  */
 
 function timingSafeEqual(a, b) {
@@ -59,8 +65,12 @@ function presentedSecret(req) {
 /**
  * @param {string} envVar name of the env var holding the expected secret
  * @param {string} label  used in logs to identify the webhook
+ * @param {{ failClosed?: boolean }} [options]
+ *   failClosed: refuse the request when envVar is unset, instead of allowing
+ *   it. Use for routes that return data.
  */
-export function verifyWebhookSecret(envVar, label) {
+export function verifyWebhookSecret(envVar, label, options = {}) {
+  const { failClosed = false } = options;
   let warned = false;
 
   return function verify(req, res, next) {
@@ -71,10 +81,16 @@ export function verifyWebhookSecret(envVar, label) {
         // Once per process, not per request — this would otherwise be the
         // noisiest line in the log.
         console.warn(
-          `[${label}] ${envVar} is not set — webhook is UNAUTHENTICATED and ` +
-            `accepting any caller. Set ${envVar} here and at the provider to enforce.`
+          failClosed
+            ? `[${label}] ${envVar} is not set — refusing every request to this ` +
+                `route rather than serving it unauthenticated. Set ${envVar} to enable it.`
+            : `[${label}] ${envVar} is not set — webhook is UNAUTHENTICATED and ` +
+                `accepting any caller. Set ${envVar} here and at the provider to enforce.`
         );
         warned = true;
+      }
+      if (failClosed) {
+        return res.status(503).json({ success: false, error: "Not configured" });
       }
       return next();
     }
@@ -83,7 +99,7 @@ export function verifyWebhookSecret(envVar, label) {
 
     if (!presented || !timingSafeEqual(presented, expected)) {
       console.warn(
-        `[${label}] Rejected webhook: ${presented ? "bad" : "missing"} secret ` +
+        `[${label}] Rejected request: ${presented ? "bad" : "missing"} secret ` +
           `(ip=${req.ip}, path=${req.path})`
       );
       // 401 rather than 403: the caller may retry with a credential.
