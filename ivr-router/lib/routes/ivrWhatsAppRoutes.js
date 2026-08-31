@@ -85,18 +85,35 @@ function formatPhone(raw) {
 
 /**
  * The IVR panel retries, and every retry that reaches Ananta costs money.
- * unique_id is per call, so remember the ones already sent.
+ *
+ * unique_id is the right key — one per call — but the panel only sends it if
+ * the operator added it to the webhook body, and the first live test showed it
+ * arriving empty while the panel retried nine times on a failing send. Keying
+ * on nothing meant no dedupe at all, so fall back to campaign+mobile+digit.
+ * That is coarser: a caller who rings the same campaign twice and presses the
+ * same key gets one message until the window clears. Sending one message too
+ * few is the cheaper mistake here.
+ *
  * In-memory: resets on restart and is not shared across replicas. That is
  * acceptable for a single-replica service and is the tradeoff to revisit if
  * this ever scales out — the durable version belongs in Postgres.
  */
 const sent = new Set();
 const SENT_MAX = 5000;
-function alreadySent(id) {
-  if (!id) return false;
-  if (sent.has(id)) return true;
+
+function dedupeKey(body, digit) {
+  const uid = String(body.unique_id || "").trim();
+  if (uid) return `uid:${uid}`;
+  const campaign = String(body.campaign_id || "-").trim();
+  const mobile = String(body.mobile || "-").trim();
+  return `cmd:${campaign}:${mobile}:${digit}`;
+}
+
+function alreadySent(key) {
+  if (!key) return false;
+  if (sent.has(key)) return true;
   if (sent.size >= SENT_MAX) sent.clear();
-  sent.add(id);
+  sent.add(key);
   return false;
 }
 
@@ -128,12 +145,15 @@ router.post(
       return res.json({ success: true, sent: false, reason: phone.error });
     }
 
-    if (alreadySent(unique_id)) {
-      console.log(`[IVR_WA] Duplicate webhook for unique_id=${unique_id} — not resending`);
-      return res.json({ success: true, sent: false, reason: "duplicate", unique_id });
+    const key = dedupeKey(body, digit);
+    if (alreadySent(key)) {
+      console.log(`[IVR_WA] Duplicate webhook (${key}) — not resending`);
+      return res.json({ success: true, sent: false, reason: "duplicate", key });
     }
 
-    const apiKey = process.env.ANANTA_API_KEY;
+    // Trimmed: a key pasted into the Railway variable editor with a trailing
+    // newline is indistinguishable from a wrong one in Ananta's 1310 response.
+    const apiKey = (process.env.ANANTA_API_KEY || "").trim();
     if (!apiKey) {
       console.error("[IVR_WA] ANANTA_API_KEY is not set — cannot send");
       return res.status(503).json({ success: false, error: "WhatsApp sender not configured" });
@@ -171,12 +191,22 @@ router.post(
       // so surface theirs rather than a bare axios message.
       const detail = error.response?.data ?? error.message;
       console.error(
-        `[IVR_WA] Send FAILED template=${template} phone=${phone.phone} ` +
-          `unique_id=${unique_id}:`,
+        `[IVR_WA] Send FAILED template=${template} phone=${phone.phone} key=${key}:`,
         detail
       );
+
+      // 1310 is "api_key is invalid" — the panel will retry this on every call
+      // and every retry fails the same way, so say what to check once per hit.
+      if (String(detail?.code) === "1310") {
+        console.error(
+          `[IVR_WA] ANANTA_API_KEY is set (${apiKey.length} chars) but Ananta rejects it. ` +
+            "This is the WABA send key from utilsapi.anantadot.com — not ANANTA_API_TOKEN " +
+            "or ANANTA_API_SECRET_KEY, which belong to the separate Data API."
+        );
+      }
+
       // Let the send be retried: drop it from the dedupe set.
-      if (unique_id) sent.delete(unique_id);
+      sent.delete(key);
       return res.status(502).json({ success: false, error: "Ananta send failed", detail });
     }
   }
