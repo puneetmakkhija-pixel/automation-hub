@@ -675,7 +675,33 @@
   <script>
     // ==================== Configuration ====================
     const API_CONFIG_KEY = 'automationHubAPIConfig';
+    const TOKEN_KEY = 'automationHubConsoleToken';
     const SYSTEM_LOG = [];
+
+    // The page is served from /console?token=<secret>. Keep the token so the
+    // API calls below can present it, and strip it from the address bar so it
+    // does not sit in history or leak through a Referer header.
+    (function captureToken() {
+      const url = new URL(window.location.href);
+      const token = url.searchParams.get('token');
+      if (!token) return;
+      try {
+        localStorage.setItem(TOKEN_KEY, token);
+      } catch (e) {
+        // Private browsing: the token stays in memory for this page only.
+        window.__consoleToken = token;
+      }
+      url.searchParams.delete('token');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    })();
+
+    function consoleToken() {
+      try {
+        return localStorage.getItem(TOKEN_KEY) || window.__consoleToken || '';
+      } catch (e) {
+        return window.__consoleToken || '';
+      }
+    }
 
     function getAPIBaseURL() {
       const stored = localStorage.getItem(API_CONFIG_KEY);
@@ -710,15 +736,21 @@
       const url = `${baseURL}${endpoint}`;
 
       try {
-        const options = {
-          method,
-          headers: { 'Content-Type': 'application/json' },
-        };
+        const headers = { 'Content-Type': 'application/json' };
+        const token = consoleToken();
+        if (token) headers['X-Webhook-Secret'] = token;
+
+        const options = { method, headers };
         if (body) options.body = JSON.stringify(body);
 
         const response = await fetch(url, options);
         const data = await response.json();
 
+        if (response.status === 401) {
+          throw new Error(
+            'Unauthorized — reopen this console as /console?token=<CONSOLE_SECRET>'
+          );
+        }
         if (!response.ok) throw new Error(data.error || 'API Error');
         updateAPIStatus(true);
         return data;
