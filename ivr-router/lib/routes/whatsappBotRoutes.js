@@ -1,6 +1,7 @@
 import express from 'express';
 import AnantaWebhookHandler from '../webhook/anantaWebhookHandler.js';
 import SupabaseClient from '../supabaseClient.js';
+import { verifyWebhookSecret } from '../middleware/verifyWebhookSecret.js';
 
 const router = express.Router();
 let supabase = null;
@@ -12,9 +13,17 @@ try {
   console.warn('   WhatsApp bot features will be unavailable until configuration is complete');
 }
 
-router.post('/webhooks/ananta/message', async (req, res) => {
-  await AnantaWebhookHandler.handleMessage(req, res);
-});
+// Inbound customer messages — this drives the conversation journey and writes
+// conversation_state / conversation_events, so it is the endpoint that most
+// needs authenticating. Gated on ANANTA_WEBHOOK_SECRET; unauthenticated while
+// that variable is unset (see lib/middleware/verifyWebhookSecret.js).
+router.post(
+  '/webhooks/ananta/message',
+  verifyWebhookSecret('ANANTA_WEBHOOK_SECRET', 'ANANTA_MESSAGE'),
+  async (req, res) => {
+    await AnantaWebhookHandler.handleMessage(req, res);
+  }
+);
 
 router.get('/health/bot', (req, res) => {
   res.json({ status: 'ok', service: 'whatsapp-bot' });
