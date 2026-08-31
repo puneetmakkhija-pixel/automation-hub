@@ -1,6 +1,7 @@
 import express from "express";
 import axios from "axios";
 import { verifyWebhookSecret } from "../middleware/verifyWebhookSecret.js";
+import SupabaseClient from "../supabaseClient.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -145,6 +146,115 @@ function alreadySent(key) {
   return false;
 }
 
+/**
+ * The send log, in public.whatsapp_messages.
+ *
+ * Without it the only record of who was messaged is the Railway log, which
+ * ages out and cannot be queried. Each row carries the phone number as a real
+ * column and everything else — variant, template, digit, campaign, unique_id,
+ * Ananta's message_id, the outcome — in metadata, so no schema change was
+ * needed and the existing whatsapp_messages readers keep working.
+ *
+ * Constructed lazily: SupabaseClient throws when SUPABASE_URL or
+ * SUPABASE_SERVICE_ROLE_KEY is unset, and that must not stop a send. Logging is
+ * a side effect of this webhook, never a precondition for it.
+ */
+let db = null;
+let dbUnavailable = false;
+
+function database() {
+  if (db) return db;
+  if (dbUnavailable) return null;
+  try {
+    db = new SupabaseClient();
+    return db;
+  } catch (error) {
+    console.warn(
+      `[IVR_WA] Send log unavailable (${error.message}) — messages will still ` +
+        "send, but nothing will be recorded."
+    );
+    dbUnavailable = true;
+    return null;
+  }
+}
+
+/**
+ * Fire and forget: never awaited, so a slow or broken database cannot add
+ * latency to the webhook or fail a send that already happened.
+ */
+function recordSend(row) {
+  const client = database()?.client;
+  if (!client) return;
+
+  const onError = (message) =>
+    console.error(`[IVR_WA] Could not record send (${row.status}): ${message}`);
+
+  client
+    .from("whatsapp_messages")
+    .insert([
+      {
+        phone_number: row.phone,
+        direction: "outbound",
+        type: "ivr_dtmf_template",
+        metadata: {
+          source: "ivr_keypress_webhook",
+          status: row.status, // sent | failed
+          digit: row.digit,
+          template: row.template,
+          variant: row.variant || null,
+          campaign_id: row.campaignId || null,
+          campaign_name: row.campaignName || null,
+          unique_id: row.uniqueId || null,
+          link: row.link || null,
+          message_id: row.messageId || null,
+          error: row.error ?? null,
+        },
+      },
+    ])
+    .then(({ error }) => {
+      if (error) onError(error.message);
+    }, (error) => onError(error?.message ?? String(error)));
+}
+
+/**
+ * Has this exact call already produced a message?
+ *
+ * The in-memory set only remembers within one process, and this service was
+ * redeployed six times in a single afternoon — every restart forgets. A retry
+ * arriving after one would send a second paid message. This survives restarts.
+ *
+ * Only meaningful when unique_id is present: it is the one key that identifies
+ * a call rather than a caller, so a repeat press is not mistaken for a retry.
+ *
+ * Fails OPEN. If the database is unreachable this returns false and the message
+ * sends — a rare duplicate is a better failure than a customer who pressed 1
+ * and heard nothing because Supabase was down.
+ */
+async function sentPreviously(uniqueId) {
+  if (!uniqueId) return false;
+  const client = database()?.client;
+  if (!client) return false;
+
+  try {
+    const { data, error } = await client
+      .from("whatsapp_messages")
+      .select("id")
+      .eq("direction", "outbound")
+      .eq("metadata->>unique_id", uniqueId)
+      .eq("metadata->>status", "sent")
+      .limit(1);
+
+    if (error) {
+      console.error(`[IVR_WA] Send-log lookup failed, sending anyway: ${error.message}`);
+      return false;
+    }
+    return Array.isArray(data) && data.length > 0;
+  } catch (error) {
+    console.error(`[IVR_WA] Send-log lookup threw, sending anyway: ${error.message}`);
+    return false;
+  }
+}
+
 async function handleKeypress(req, res) {
   const body = req.body || {};
   const variant = String(req.params.variant || "").trim();
@@ -175,6 +285,13 @@ async function handleKeypress(req, res) {
   if (alreadySent(key)) {
     console.log(`[IVR_WA] Duplicate webhook (${key}) — not resending`);
     return res.json({ success: true, sent: false, reason: "duplicate", key });
+  }
+
+  // The in-memory set above only covers this process; the send log covers
+  // restarts. Checked second because it costs a round trip.
+  if (await sentPreviously(unique_id)) {
+    console.log(`[IVR_WA] Already sent for unique_id=${unique_id} before restart — not resending`);
+    return res.json({ success: true, sent: false, reason: "duplicate (send log)", unique_id });
   }
 
   // Trimmed: a key pasted into the Railway variable editor with a trailing
@@ -226,6 +343,21 @@ async function handleKeypress(req, res) {
         `message_id=${r.data?.message_id || "-"}`
     );
 
+    recordSend({
+      status: "sent",
+      phone: phone.phone,
+      digit,
+      template,
+      variant,
+      campaignId: body.campaign_id,
+      campaignName: campaign_name,
+      uniqueId: unique_id,
+      // The link is the placeholder that differs between campaigns, so record
+      // which one this customer actually received.
+      link: placeholders[placeholders.length - 1],
+      messageId: r.data?.message_id,
+    });
+
     return res.json({
       success: true,
       sent: true,
@@ -255,7 +387,21 @@ async function handleKeypress(req, res) {
       );
     }
 
-    // Let the send be retried: drop it from the dedupe set.
+    recordSend({
+      status: "failed",
+      phone: phone.phone,
+      digit,
+      template,
+      variant,
+      campaignId: body.campaign_id,
+      campaignName: campaign_name,
+      uniqueId: unique_id,
+      link: placeholders[placeholders.length - 1],
+      error: detail,
+    });
+
+    // Let the send be retried: drop it from the dedupe set. sentPreviously()
+    // only matches status "sent", so a failed row never blocks the retry.
     sent.delete(key);
     return res.status(502).json({ success: false, error: "Ananta send failed", detail });
   }
