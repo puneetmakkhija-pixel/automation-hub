@@ -80,5 +80,5 @@ CREATE POLICY "Allow service role insert access to cron_status_reports" ON publi
 CREATE POLICY "Allow service role update access to cron_status_reports" ON public.cron_status_reports
   FOR UPDATE TO service_role USING (true) WITH CHECK (true);
 
-CREATE POLICY "Allow read access to cron_job_executions" ON public.cron_job_executions
-  FOR SELECT USING (true);
+CREATE POLICY "Allow service role read access to cron_job_executions" ON public.cron_job_executions
+  FOR SELECT TO service_role USING (true);
