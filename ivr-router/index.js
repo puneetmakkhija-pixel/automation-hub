@@ -13,6 +13,7 @@ import poonawalaaCampaignRoutes from "./lib/poonawalaaCampaignRoutes.js";
 import crmIntegrationRoutes from "./lib/crmIntegrationRoutes.js";
 import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
 import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
+import { verifyWebhookSecret } from "./lib/middleware/verifyWebhookSecret.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
@@ -305,7 +306,9 @@ app.post("/webhooks/sms/confirmation", (req, res) => {
 
 // ==================== Ananta Webhook Handlers ====================
 // Ananta WhatsApp delivery webhook
-app.post("/webhooks/ananta", (req, res) => {
+// Delivery receipts from Ananta. Gated on ANANTA_WEBHOOK_SECRET; unauthenticated
+// while that variable is unset (see lib/middleware/verifyWebhookSecret.js).
+app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANTA"), (req, res) => {
   try {
     const payload = req.body;
     logger.logAnantaMessage(payload.phone, payload.status, payload.msgid);
