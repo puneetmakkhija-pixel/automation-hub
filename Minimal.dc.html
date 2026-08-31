@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap">
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #fafbfc; color: #0f172a; line-height: 1.6; }
+
+    a { color: #2563eb; text-decoration: none; }
+    a:hover { color: #1d4ed8; }
+
+    .container { max-width: 1440px; margin: 0 auto; padding: 48px 32px; }
+
+    .header { display: flex; justify-content: space-between; align-items: center; padding: 0 0 32px 0; border-bottom: 1px solid #e2e8f0; margin-bottom: 48px; animation: slideIn 0.5s ease-out; }
+
+    .logo { font-size: 20px; font-weight: 800; color: #2563eb; letter-spacing: -0.5px; }
+
+    .status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #059669; }
+    .status::before { content: '●'; animation: pulse 2s ease-in-out infinite; }
+
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    .nav { display: flex; gap: 32px; margin-bottom: 48px; border-bottom: 1px solid #e2e8f0; padding-bottom: 16px; }
+
+    .nav-item { padding: 0 0 16px 0; border-bottom: 2px solid transparent; color: #64748b; font-weight: 500; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+
+    .nav-item:hover { color: #0f172a; }
+
+    .nav-item.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+    h2 { font-size: 24px; font-weight: 700; margin-bottom: 24px; color: #0f172a; letter-spacing: -0.3px; }
+
+    h3 { font-size: 15px; font-weight: 600; margin-bottom: 16px; color: #0f172a; }
+
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px; }
+
+    .metric { padding: 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; animation: slideIn 0.5s ease-out; transition: all 0.2s; }
+
+    .metric:hover { border-color: #2563eb; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05); }
+
+    .metric-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+
+    .metric-value { font-size: 32px; font-weight: 800; color: #0f172a; margin-bottom: 4px; letter-spacing: -0.5px; }
+
+    .metric-change { font-size: 12px; color: #64748b; }
+
+    .metric.success .metric-value { color: #059669; }
+    .metric.warning .metric-value { color: #d97706; }
+
+    .section { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; margin-bottom: 20px; animation: slideIn 0.6s ease-out; }
+
+    .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+    .table th { padding: 12px 0; text-align: left; font-weight: 600; color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #e2e8f0; }
+
+    .table td { padding: 12px 0; border-bottom: 1px solid #f1f5f9; color: #475569; }
+
+    .table tbody tr:hover { background: #f8fafc; }
+
+    .badge { display: inline-block; padding: 4px 10px; background: #ecfdf5; border: 1px solid #d1fae5; color: #059669; border-radius: 16px; font-size: 12px; font-weight: 600; }
+
+    .flex-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  </style>
+</helmet>
+
+<div class="container">
+  <div class="header">
+    <div class="logo">IVR Hub</div>
+    <div class="status">
+      Online • Minimal Design
+    </div>
+  </div>
+
+  <div class="nav">
+    <div class="nav-item active">Dashboard</div>
+    <div class="nav-item">Campaigns</div>
+    <div class="nav-item">Analytics</div>
+    <div class="nav-item">Leads</div>
+    <div class="nav-item">Settings</div>
+  </div>
+
+  <h2>Performance Overview</h2>
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">Leads Processed</div>
+      <div class="metric-value">2,450</div>
+      <div class="metric-change">Last 24 hours</div>
+    </div>
+    <div class="metric success">
+      <div class="metric-label">WhatsApp Rate</div>
+      <div class="metric-value">87%</div>
+      <div class="metric-change">Delivery success</div>
+    </div>
+    <div class="metric success">
+      <div class="metric-label">Call Connect</div>
+      <div class="metric-value">64%</div>
+      <div class="metric-change">Success rate</div>
+    </div>
+    <div class="metric warning">
+      <div class="metric-label">DTMF Response</div>
+      <div class="metric-value">52%</div>
+      <div class="metric-change">User input rate</div>
+    </div>
+  </div>
+
+  <h2>Active Campaigns</h2>
+  <div class="section">
+    <div class="flex-between">
+      <h3>Running Campaigns</h3>
+    </div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Campaign</th>
+          <th>Leads</th>
+          <th>Sent</th>
+          <th>Delivered</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Premium Lead Batch</td>
+          <td>100</td>
+          <td>100</td>
+          <td>87</td>
+          <td><span class="badge">Active</span></td>
+        </tr>
+        <tr>
+          <td>Follow-up Campaign</td>
+          <td>50</td>
+          <td>48</td>
+          <td>42</td>
+          <td><span class="badge">Active</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Recent Activity</h2>
+  <div class="section">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>Result</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2:45 PM</td>
+          <td>Campaign launched</td>
+          <td>100 leads queued</td>
+          <td><span class="badge">Active</span></td>
+        </tr>
+        <tr>
+          <td>2:40 PM</td>
+          <td>WhatsApp batch sent</td>
+          <td>87 of 100 delivered</td>
+          <td><span class="badge">Success</span></td>
+        </tr>
+        <tr>
+          <td>2:35 PM</td>
+          <td>Voice calls initiated</td>
+          <td>56 connected, 8 pending</td>
+          <td><span class="badge">Success</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</x-dc>
+</body>
+</html>

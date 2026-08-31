@@ -1,33 +1,28 @@
-# Multi-stage Dockerfile for IVR Router service
+# Dockerfile for IVR Automation Hub Router
 FROM node:22-alpine
 
-# Install build dependencies needed for native modules
-RUN apk add --no-cache --virtual .build-deps python3 make g++ cairo-dev jpeg-dev pango-dev giflib-dev
+# Install dependencies
+RUN apk add --no-cache curl bash
 
 # Set working directory
 WORKDIR /app
 
-# Clear npm cache before install (force fresh resolution)
-RUN npm cache clean --force
-
-# Copy package files
-COPY ivr-router/package.json ivr-router/package-lock.json* ./
-
-# Install dependencies with clean cache
-RUN npm ci --omit=dev --legacy-peer-deps
-
-# Remove build dependencies to keep image small
-RUN apk del .build-deps
-
-# Copy application code
+# Copy ivr-router application
+COPY ivr-router/package*.json ./
 COPY ivr-router/ ./
 
-# Expose port
+# Install dependencies
+RUN npm install --omit=dev
+
+# Documentation only; the listening port comes from PORT at runtime and the
+# platform routes to it, so this value does not constrain anything.
 EXPOSE 3000
 
-# Health check
+# index.js listens on process.env.PORT (falling back to 3000), so the check has
+# to resolve the same value rather than assume 3000 — otherwise setting PORT
+# marks a perfectly healthy container unhealthy.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+  CMD curl -f "http://localhost:${PORT:-3000}/health" || exit 1
 
-# Start application
+# Start the application
 CMD ["node", "index.js"]

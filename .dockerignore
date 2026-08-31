@@ -1,0 +1,45 @@
+# Docker build context excludes.
+#
+# railway.toml sets context = ".", so the whole repo is the build context even
+# though the Dockerfile only needs ivr-router/. Anything listed here is never
+# uploaded to the daemon and can never end up in an image layer.
+
+# --- Secrets -----------------------------------------------------------------
+# .env is gitignored, so it never reaches Railway (which builds from git), but a
+# local `docker build` would otherwise bake real credentials into a layer where
+# they survive even if a later step deletes them. The app reads its config from
+# environment variables in production; dotenv no-ops when no .env is present.
+**/.env
+**/.env.*
+
+# --- Dependencies ------------------------------------------------------------
+# The image runs `npm install --omit=dev`. Copying a host-built tree in would
+# shadow that install, drag dev dependencies into production, and ship native
+# modules compiled for the host rather than node:22-alpine. This is also 57MB
+# of the 69MB context.
+**/node_modules
+
+# --- VCS and agent tooling ---------------------------------------------------
+.git
+.gitignore
+.claude
+
+# --- Logs, caches, build output ----------------------------------------------
+**/*.log
+**/npm-debug.log*
+**/.DS_Store
+**/dist
+**/build
+**/coverage
+**/.nyc_output
+**/.vscode
+**/.idea
+
+# --- Docs and design assets --------------------------------------------------
+# Not read at runtime. Note ivr-router/public/console.html IS served by the
+# /console route, so HTML is excluded only at the repo root, never recursively.
+*.md
+**/*.md
+/*.html
+/*.dc.html
+/canvas.json
