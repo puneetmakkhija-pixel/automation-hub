@@ -1,7 +1,27 @@
 import express from 'express';
 import suppressionAnalysisClient from '../llm/suppressionAnalysisClient.js';
+import supabase from '../clients/supabaseClient.js';
 
 const router = express.Router();
+
+/**
+ * The query builder, or null after answering 503.
+ *
+ * The handlers below used to call require('../clients/supabaseClient.js') —
+ * this package is "type": "module", so require is not defined and every one of
+ * them threw. The default export is the client instance and its query methods
+ * hang off .supabase, so .default.from(...) would not have worked either.
+ *
+ * The instance is null when SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are unset
+ * (it logs that itself at import), hence the guard.
+ */
+function queryBuilder(res) {
+  if (!supabase) {
+    res.status(503).json({ success: false, error: 'Database not configured' });
+    return null;
+  }
+  return supabase.supabase;
+}
 
 // POST /api/suppression/analyze
 // Called by nightly job (01:00 UTC) to analyze rejections and generate rule recommendations
@@ -90,7 +110,10 @@ router.get('/recommendations', async (req, res) => {
   try {
     const { status = 'pending_review', limit = 10 } = req.query;
 
-    const query = require('../clients/supabaseClient.js').default
+    const client = queryBuilder(res);
+    if (!client) return;
+
+    const query = client
       .from('rule_recommendations')
       .select('*');
 
@@ -128,7 +151,12 @@ router.get('/recommendations', async (req, res) => {
 // Fetch active eligibility rules
 router.get('/current-rules', async (req, res) => {
   try {
-    const { data, error } = require('../clients/supabaseClient.js').default
+    const client = queryBuilder(res);
+    if (!client) return;
+
+    // await was missing: without it this destructured a promise, so data and
+    // error were both undefined and the handler answered an empty result.
+    const { data, error } = await client
       .from('eligibility_rules')
       .select('*')
       .eq('active', true)
@@ -162,7 +190,10 @@ router.get('/rule-history', async (req, res) => {
   try {
     const { limit = 20 } = req.query;
 
-    const { data, error } = require('../clients/supabaseClient.js').default
+    const client = queryBuilder(res);
+    if (!client) return;
+
+    const { data, error } = await client
       .from('eligibility_rules')
       .select('*')
       .order('created_at', { ascending: false })
