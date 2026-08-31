@@ -20,7 +20,13 @@ import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js
 import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
 import breShortlistingRoutes from "./lib/routes/breShortlistingRoutes.js";
 import ivrCampaignRouterRoutes from "./lib/routes/ivrCampaignRouterRoutes.js";
+import ivrCampaignsRoutes from "./lib/routes/ivrCampaignsRoutes.js";
+import lendersRoutes from "./lib/routes/lendersRoutes.js";
 import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.js";
+import recordingRoutes from "./lib/routes/recordingRoutes.js";
+import anantaConfigRoutes from "./lib/routes/anantaConfigRoutes.js";
+import whatsappFlowRoutes from "./lib/routes/whatsappFlowRoutes.js";
+import flexiloansDocumentRoutes from "./lib/routes/flexiloansDocumentRoutes.js";
 import logger from "./lib/logging.js";
 
 dotenv.config();
@@ -114,8 +120,26 @@ app.use("/api/bre", breShortlistingRoutes);
 // ==================== IVR Campaign Router Routes (Dual-Path Routing) ====================
 app.use("/api/router", ivrCampaignRouterRoutes);
 
+// ==================== IVR Campaigns Management Routes (Campaign CRUD) ====================
+app.use("/api/ivr-campaigns", ivrCampaignsRoutes);
+
+// ==================== Lenders Management Routes ====================
+app.use("/api/lenders", lendersRoutes);
+
 // ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
 app.use("/api/mis", misFeedbackCollectorRoutes);
+
+// ==================== Recording Management Routes ====================
+app.use("/api/recordings", recordingRoutes);
+
+// ==================== Ananta WhatsApp Configuration Routes ====================
+app.use("/api/ananta", anantaConfigRoutes);
+
+// ==================== WhatsApp Chatbot Flow Routes ====================
+app.use("/api/whatsapp/flow", whatsappFlowRoutes);
+
+// ==================== FlexiLoans Document Submission Routes ====================
+app.use("/api/flexiloans", flexiloansDocumentRoutes);
 
 // ==================== Voice Webhook Handlers ====================
 // Main OBD Webhook: Processes voice call events
@@ -124,14 +148,21 @@ app.post("/webhooks/obd", (req, res) => {
     const { eventType, payload } = req.body;
     const startTime = Date.now();
 
+    if (!eventType || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'eventType and payload are required',
+      });
+    }
+
     const result = routeWebhookEvent(eventType, payload);
     const duration = Date.now() - startTime;
 
-    if (eventType === 'CALL_CONNECT') {
+    if (eventType === 'CALL_CONNECT' && payload.phone) {
       logger.logIncomingCall(payload.phone, payload.lenderId, payload.callSid);
-    } else if (eventType === 'DTMF') {
+    } else if (eventType === 'DTMF' && payload.phone) {
       logger.logDTMFInput(payload.phone, payload.dtmfInput, payload.lenderId);
-    } else {
+    } else if (payload.phone) {
       logger.log('info', `OBD_${eventType}`, `OBD webhook received`, {
         eventType,
         phone: payload.phone,
@@ -205,12 +236,19 @@ app.post("/webhooks/sms", (req, res) => {
     const { eventType, payload } = req.body;
     const startTime = Date.now();
 
+    if (!eventType || !payload) {
+      return res.status(400).json({
+        success: false,
+        error: 'eventType and payload are required',
+      });
+    }
+
     const result = routeWebhookEvent(eventType, payload);
     const duration = Date.now() - startTime;
 
-    if (eventType === 'WHATSAPP_SEND') {
+    if (eventType === 'WHATSAPP_SEND' && payload.phone) {
       logger.logWhatsAppSent(payload.phone, payload.message);
-    } else {
+    } else if (payload.phone) {
       logger.log('info', `SMS_${eventType}`, 'SMS/WhatsApp event', {
         eventType,
         phone: payload.phone,
