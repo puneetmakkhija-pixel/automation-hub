@@ -2092,12 +2092,11 @@
         setInterval(updateTime, 1000);
         updateTime();
 
-        // Auto-refresh metrics every 30 seconds
-        setInterval(() => {
-            if (document.getElementById('dashboard').classList.contains('active')) {
-                loadDashboard();
-            }
-        }, 30000);
+        // Auto-refresh disabled. This polled /api/analytics/metrics every 30s,
+        // which the IVR service does not implement (see DASHBOARD_API_CONTRACT.md
+        // -- the contract and this page agree, the service never matched them), so
+        // every tick was a 404. A tab left open here generated ~1,440 failed
+        // requests a day against production. Re-enable once the endpoints exist.
 
         // Initial load
         loadDashboard();
