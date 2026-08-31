@@ -2,6 +2,7 @@ import express from "express";
 import axios from "axios";
 import { verifyWebhookSecret } from "../middleware/verifyWebhookSecret.js";
 import SupabaseClient from "../supabaseClient.js";
+import { resolveCustomerId } from "../customerIds.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -205,6 +206,7 @@ function recordSend(row) {
           campaign_id: row.campaignId || null,
           campaign_name: row.campaignName || null,
           unique_id: row.uniqueId || null,
+          customer_id: row.customerId || null,
           link: row.link || null,
           message_id: row.messageId || null,
           error: row.error ?? null,
@@ -309,7 +311,16 @@ async function handleKeypress(req, res) {
   // Ananta as 1353), so a {{field}} that resolved to nothing is a config bug
   // worth naming here rather than a failed send to debug from the provider's
   // error. A deliberately blank value is a single space, which passes.
-  const placeholders = placeholdersFor(digit, body, variant);
+  // One id per mobile number, minted on first contact. Exposed to placeholders
+  // as {{customer_id}} so an application link can carry per-lead attribution,
+  // and recorded on the send. Null when the database is unreachable — the
+  // message still goes.
+  const customerId = await resolveCustomerId(database()?.client, phone.phone, {
+    campaignId: body.campaign_id,
+    variant,
+  });
+
+  const placeholders = placeholdersFor(digit, { ...body, customer_id: customerId ?? "" }, variant);
   const blank = placeholders.findIndex((v) => v === "");
   if (blank !== -1) {
     console.error(
@@ -352,6 +363,7 @@ async function handleKeypress(req, res) {
       campaignId: body.campaign_id,
       campaignName: campaign_name,
       uniqueId: unique_id,
+      customerId,
       // The link is the placeholder that differs between campaigns, so record
       // which one this customer actually received.
       link: placeholders[placeholders.length - 1],
@@ -396,6 +408,7 @@ async function handleKeypress(req, res) {
       campaignId: body.campaign_id,
       campaignName: campaign_name,
       uniqueId: unique_id,
+      customerId,
       link: placeholders[placeholders.length - 1],
       error: detail,
     });
