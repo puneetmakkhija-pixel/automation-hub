@@ -90,11 +90,16 @@ curl https://your-railway-url/api/mis/health
 Nothing to deploy — the console is `ivr-router/public/console.html` and
 `ivr-router` already serves it.
 
-1. **Set `CONSOLE_SECRET`** in the `ivr` service's Railway variables.
+1. **Set `CONSOLE_SECRET`** in the **`ivr-voice-bot-system`** service's Railway
+   variables. That is the service running `ivr-router` — not the `ivr` service,
+   which has no variables set at all.
 2. **Open** `https://your-railway-url/console?token=<CONSOLE_SECRET>`.
-3. **Verify:** the console interface loads. The page stores the token and sends
-   it as a header on every subsequent call, so the query string is only needed
-   on first load.
+3. **Set the API Base URL.** The console prompts for it on first load; enter the
+   same origin you opened it from (e.g. `https://your-railway-url`, no trailing
+   slash). Do not dismiss the prompt — see below.
+4. **Verify:** the console interface loads and the API status indicator reads
+   online. The page stores the token and sends it as a header on every
+   subsequent call, so the query string is only needed on first load.
 
 > Earlier revisions of this guide told you to upload a root-level
 > `automation-console.html`, or to `express.static()` it from `index.js`. That
@@ -105,12 +110,16 @@ Nothing to deploy — the console is `ivr-router/public/console.html` and
 
 Once deployed, the console will:
 1. Prompt for API Base URL on first load
-2. Save to browser localStorage
-3. Allow dynamic reconfiguration via the "Config" section
+2. Save it to browser localStorage
+3. Allow reconfiguration via the "Config" section
 
-**Default settings:**
-- API Base URL: `http://localhost:3000` (auto-detects in console)
-- Updates saved to localStorage automatically
+**About the API Base URL:** it does *not* auto-detect, despite what earlier
+revisions of this guide said. `getAPIBaseURL()` in `public/console.html` reads
+localStorage and, finding nothing, shows a blocking `prompt()`; dismissing that
+prompt falls back to `http://localhost:3000`. An operator who clicks past it
+sends every console action to their own laptop and sees the API reported
+offline. If that happens, open "Config", enter the deployment's own origin, and
+save — the page reloads against the right host.
 
 ---
 
