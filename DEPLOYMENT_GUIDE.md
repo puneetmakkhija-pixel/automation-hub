@@ -85,31 +85,21 @@ curl https://your-railway-url/api/mis/health
 
 ---
 
-## Phase 3: Deploy Monitoring Console
+## Phase 3: Open the Monitoring Console
 
-### Option A: Deploy to Public URL (Recommended)
+Nothing to deploy — the console is `ivr-router/public/console.html` and
+`ivr-router` already serves it.
 
-1. **Get the console file:**
-   - File: `automation-console.html`
+1. **Set `CONSOLE_SECRET`** in the `ivr` service's Railway variables.
+2. **Open** `https://your-railway-url/console?token=<CONSOLE_SECRET>`.
+3. **Verify:** the console interface loads. The page stores the token and sends
+   it as a header on every subsequent call, so the query string is only needed
+   on first load.
 
-2. **Deploy to web server:**
-   - Upload to your web host (e.g., crmbusinessloans.com)
-   - URL: `https://crmbusinessloans.com/automation-hub` or similar
-   - File should be directly accessible via HTTPS
-
-3. **Verify access:**
-   - Open the URL in browser
-   - Should see the 5-tab console interface
-
-### Option B: Serve from IVR Router (Alternative)
-
-1. Add to `ivr-router/index.js`:
-```javascript
-// Before other routes
-app.use('/automation-console', express.static('./automation-console.html'));
-```
-
-2. Access at: `https://your-railway-url/automation-console`
+> Earlier revisions of this guide told you to upload a root-level
+> `automation-console.html`, or to `express.static()` it from `index.js`. That
+> file was a design mockup superseded by `public/console.html`; it was deleted
+> on 31 Aug 2026 and neither instruction applies any more.
 
 ### Console Configuration
 
