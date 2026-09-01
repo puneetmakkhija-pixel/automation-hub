@@ -387,7 +387,7 @@ Used for bulk eligibility checking during campaign processing (50K+/day).
    - Status updated to "eligibility_passed"
 
 5. **Phase 3+: Document Collection**
-   - Chatsense sends lender-specific doc collection template
+   - Ananta sends the lender-specific doc collection template
    - Application advances to "documents_pending"
 
 ---
@@ -568,7 +568,7 @@ LIMIT 100;
 
 ## What's Next (Phase 3)
 
-- Document collection via Chatsense templates
+- Document collection via Ananta templates
 - Lender-specific doc requirements mapping
 - Document upload & verification workflow
 - OCR + compliance checking

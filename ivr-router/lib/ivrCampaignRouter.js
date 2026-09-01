@@ -184,7 +184,9 @@ class IVRCampaignRouter {
   /**
    * PATH A: Document Journey
    * Triggers Ori Voice Bot + Ananta WhatsApp simultaneously
-   * Goal: Collect documents, sync to Chatsense CRM for human agent
+   * Goal: Collect documents. This never synced to Chatsense — the body below
+   * launches the Ori voice bot and the Ananta WhatsApp bot and does nothing
+   * else, and the Chatsense integration was removed on 1 Sep 2026 regardless.
    */
   async _launchDocumentJourney(data, routingId) {
     const { phone, name, callSid, campaignId, lenderId } = data;

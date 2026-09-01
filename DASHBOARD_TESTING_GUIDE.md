@@ -204,7 +204,6 @@ file:///home/user/automation-hub/dashboard/index.html
 - [ ] Webhook Status shows all Connected:
   - Ananta WhatsApp ✓
   - OBD Voice Calls ✓
-  - Chatsense DTMF ✓
   - Poonawala MIS ✓
 - [ ] Database Status shows Connected
 
