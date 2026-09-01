@@ -1,7 +1,7 @@
 # Automation Hub
 
 Two self-hosted services behind the BuddyLoan call centre: **`ivr-router`** (call
-routing, OBD campaigns, the voice bot and the WhatsApp/ChatSense journeys) and
+routing, OBD campaigns, the voice bot and the WhatsApp journeys) and
 **`data-jobs`** (scheduled ETL and the cron monitor).
 
 Deploys as **one GitHub repo → one Railway project ("Automation Hub")**. Each
@@ -17,7 +17,7 @@ deliberately build from the repo root rather than from a subfolder.
 
 | Folder | What it's for | Railway service | Root Directory | How it starts |
 | --- | --- | --- | --- | --- |
-| `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp/ChatSense journeys, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
+| `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp journeys, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
 | `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack |
 | `data-jobs` | Twice-daily cron monitor | `morning-check` (`0 5 * * *` UTC), `afternoon-check` (`30 8 * * *` UTC) | *(repo root)* | `npm --prefix data-jobs run cron:morning` / `cron:afternoon` |
 
@@ -56,7 +56,7 @@ since it was scaffolded, and the work each was a placeholder for had meanwhile
 been built properly elsewhere:
 
 - WhatsApp is `ivr-router/lib/journeys/` plus `lib/whatsapp/` in
-  `dsa-business-crm` — Ananta and ChatSense, templates, the bot engine, tested.
+  `dsa-business-crm` — Ananta, templates, the bot engine, tested.
 - The chatbot is `/apply` in `dsa-business-crm` (`lib/chat/`), with guardrails.
 - The backend is `dsa-business-crm` itself.
 
