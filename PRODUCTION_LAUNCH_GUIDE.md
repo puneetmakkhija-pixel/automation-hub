@@ -72,7 +72,8 @@ grep "Error" dashboard/index.html
 # Login to provider dashboards:
 # - Ananta: https://data-api.anantadot.com/dashboard
 # - OBD: https://obdapi2.ivrsms.com/dashboard
-# - Chatsense: (your chatsense URL)
+# - Chatsense: (your chatsense URL) — its voice-disposition webhook must
+#   point at /api/crm/lead-intake-sync; /api/chatsense/* was removed
 #
 # Verify:
 # ✓ Webhook IDs are correct

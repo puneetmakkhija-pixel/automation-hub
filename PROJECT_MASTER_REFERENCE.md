@@ -49,10 +49,12 @@ Single unified platform for IVR voice & WhatsApp automation that consolidates 5+
    - GET /api/obd/health - Health check
    - Webhook IDs: 539 (connect), 540 (DTMF), 541 (hangup)
 
-5. ✅ **Disposition Tracking (Chatsense)**
-   - POST /api/chatsense/webhooks/chatsense - Disposition webhook
-   - Disposition states: interested, not_interested, callback_later, no_response
-   - GET /api/chatsense/health - Health check
+5. ⚠️ **Disposition Tracking (Chatsense)** — endpoints removed 1 Sep 2026
+   - `/api/chatsense/*` and `/webhooks/chatsense` are gone and now 404
+   - Chatsense still captures the DTMF disposition; it now delivers it to
+     POST /api/crm/lead-intake-sync
+   - Disposition states accepted there: interested, callback, rejected,
+     agent_connect, contacted
 
 6. ✅ **MIS Report Processing**
    - POST /api/mis/webhook/poonawalla - Poonawala MIS processing
@@ -89,7 +91,7 @@ Tables:
 | OBD | 540 | /webhooks/obd/dtmf | DTMF |
 | OBD | 541 | /webhooks/obd/hangup | HANGUP |
 | Ananta | N/A | /api/ananta/webhooks/ananta | Delivery Status |
-| Chatsense | N/A | /api/chatsense/webhooks/chatsense | Disposition |
+| Chatsense | N/A | /api/crm/lead-intake-sync | Disposition |
 | Poonawala | N/A | /api/mis/webhook/poonawalla | MIS Report |
 | Hero FinCorp | N/A | /api/mis/webhook/hero-fincorp | MIS Report |
 
@@ -303,7 +305,6 @@ GET  /api/database/status - Database health
 - `src/routes/ivr-router/index.js` - Webhook handlers
 - `src/routes/ananta/index.js` - WhatsApp integration
 - `src/routes/obd/index.js` - Voice call integration
-- `src/routes/chatsense/index.js` - Disposition tracking
 - `src/routes/mis/index.js` - MIS report processing
 - `index.js` - Main Express app
 

@@ -23,7 +23,7 @@ The automation-hub IVR Router has been integrated with the dsa-business-crm to c
 **What it does:**
 1. OBD outbound dialer calls customer
 2. Chatsense DTMF (1=interested, 2=agent, 3=callback) captured
-3. Webhook triggers `/api/chatsense/voice-disposition`
+3. Webhook triggers `/api/crm/lead-intake-sync`
 4. CRM Integration Client calls Supabase RPC `lead_intake_sync()`
 5. Application created in `crm.leads` table with all metadata
 6. Disposition event logged in `crm.lead_events` (audit trail)
@@ -123,7 +123,7 @@ POST /api/routing/batch-eligibility-check    (Bulk: 50K+/day)
 
 | Step | Trigger | API | Response | CRM Table |
 |------|---------|-----|----------|-----------|
-| 1 | Voice call completes | POST /api/chatsense/voice-disposition | 201 Created | crm.leads (new row) |
+| 1 | Voice call completes | POST /api/crm/lead-intake-sync | 201 Created | crm.leads (new row) |
 | 2 | Disposition captured | CrmIntegrationClient.leadIntakeSyncFromVoice() | application_id | crm.leads (updated) |
 | 3 | Audit logging | CrmIntegrationClient.logVoiceDisposition() | success | crm.lead_events (log) |
 
@@ -350,8 +350,6 @@ SUPABASE_URL=https://xyz.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 CRM_SUPABASE_URL=https://crm.supabase.co       (Phase 1)
 CRM_SUPABASE_SERVICE_ROLE_KEY=eyJ...           (Phase 1)
-CHATSENSE_API_KEY=...
-CHATSENSE_BASE_URL=...
 ```
 
 **Existing (no changes):**
