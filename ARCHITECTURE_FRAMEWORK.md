@@ -14,7 +14,6 @@
 | Component | Role | Owns |
 |-----------|------|------|
 | OBD Routes | Outbound dialing orchestration | Campaign execution |
-| Chatsense Routes | Interactive template delivery | DTMF capture + follow-ups |
 | Ananta Routes | WhatsApp message delivery | Bulk SMS/WhatsApp campaigns |
 | Eleven Labs Routes | Voice synthesis | Personalized voice greetings |
 | Pincode Gating | Eligibility pre-check | Gating rules enforcement |
@@ -173,7 +172,7 @@
 [Chatsense DTMF Capture]
     │ (disposition captured)
     ↓
-[IVR Router: /api/chatsense/voice-disposition]
+[IVR Router: /api/crm/lead-intake-sync]
     │ POST {phone, name, age, income, disposition, callDuration, ...}
     ↓
 [CRM Integration Client]

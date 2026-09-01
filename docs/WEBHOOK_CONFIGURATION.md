@@ -266,26 +266,43 @@ curl -X POST https://ivr-voice-bot-system-production.up.railway.app/webhooks/obd
 
 ---
 
-## 4. Chatsense Voice Disposition Webhooks
+## 4. Voice Disposition Webhooks (Chatsense → CRM lead intake)
+
+> **The endpoint this section used to name no longer exists.**
+> `POST /api/chatsense/voice-disposition` was removed on 1 Sep 2026 along with
+> the rest of the Chatsense integration, and now returns **404**. Chatsense
+> itself is unchanged — it still places the OBD calls and captures the DTMF
+> disposition. What changed is where it delivers that disposition.
+>
+> **If a Chatsense webhook is still pointed at the old path, lead intake is
+> failing silently right now.** Repoint it as below and replay anything missed.
 
 ### Endpoint
 ```
-POST https://ivr-voice-bot-system-production.up.railway.app/api/chatsense/voice-disposition
+POST https://ivr-voice-bot-system-production.up.railway.app/api/crm/lead-intake-sync
 ```
+
+This is the endpoint the removed one delegated to — same `leadIntakeSyncFromVoice`
+call, same CRM application created, same `201` on success.
 
 ### Setup Instructions
 1. **Configure in Chatsense Dashboard**
    - Navigate to Campaign Settings → Webhooks
-   - **URL:** `https://ivr-voice-bot-system-production.up.railway.app/api/chatsense/voice-disposition`
+   - **URL:** `https://ivr-voice-bot-system-production.up.railway.app/api/crm/lead-intake-sync`
    - **Trigger:** After DTMF capture and voice call completion
 
 2. **Environment Variables**
-   ```
-   CHATSENSE_API_KEY=<api_key>
-   CHATSENSE_BASE_URL=https://api.chatsense.ai
-   ```
+
+   None for this. `CHATSENSE_API_KEY` and `CHATSENSE_BASE_URL` were only ever
+   read by the deleted client, were never set on the production service, and
+   are no longer used by anything — do not add them back.
 
 ### Payload Format
+
+Three fields moved when the path changed. `callSid` and any extra fields now go
+inside `customMetadata` rather than at the top level, and `metadata` is renamed
+to `customMetadata`:
+
 ```json
 {
   "phone": "919876543210",
@@ -295,30 +312,48 @@ POST https://ivr-voice-bot-system-production.up.railway.app/api/chatsense/voice-
   "pincode": "400001",
   "state": "Maharashtra",
   "email": "rajesh@email.com",
-  "disposition": "interested|not_interested|callback_later",
+  "channel": "obd_voice",
+  "disposition": "interested",
   "callDuration": 45,
   "dtmfChoice": 1,
-  "callSid": "call_123456",
   "campaignId": "poonawala_stpl_batch_1724095200000_1",
   "batchId": "batch_001",
-  "metadata": {
+  "customMetadata": {
+    "callSid": "call_123456",
     "ivrGreeting": "english",
     "customField": "value"
   }
 }
 ```
 
+`phone` and `name` are required. `disposition` is optional and defaults to
+`contacted`, but if sent it must be one of `interested`, `callback`,
+`rejected`, `agent_connect`, `contacted` — the old free-text values
+`not_interested` and `callback_later` are rejected with a `400`.
+
+### Audit trail — one extra call
+
+The removed endpoint logged the disposition to `crm.lead_events` for you, by
+calling `logVoiceDisposition` after the intake succeeded. `/api/crm/lead-intake-sync`
+does not. To keep the compliance trail, POST the returned `applicationId` to:
+
+```
+POST /api/crm/application/<applicationId>/log-event
+{ "disposition": "interested", "details": { "callSid": "call_123456", "dtmfChoice": 1 } }
+```
+
 ### Test Payload
 ```bash
-curl -X POST https://ivr-voice-bot-system-production.up.railway.app/api/chatsense/voice-disposition \
+curl -X POST https://ivr-voice-bot-system-production.up.railway.app/api/crm/lead-intake-sync \
   -H "Content-Type: application/json" \
   -d '{
     "phone": "919876543210",
     "name": "Test User",
+    "channel": "obd_voice",
     "disposition": "interested",
     "callDuration": 45,
     "dtmfChoice": 1,
-    "callSid": "call_test_123"
+    "customMetadata": { "callSid": "call_test_123" }
   }'
 ```
 
@@ -346,10 +381,6 @@ OBD_BASE_URL=https://obdapi2.ivrsms.com
 OBD_USERNAME=<username>
 OBD_PASSWORD=<password>
 
-# Chatsense Configuration
-CHATSENSE_API_KEY=<api_key>
-CHATSENSE_BASE_URL=https://api.chatsense.ai
-
 # Lender MIS Secrets
 POONAWALLA_MIS_SECRET=<webhook_secret>
 POONAWALLA_API_TOKEN=<api_token>
@@ -370,7 +401,7 @@ SUPABASE_SERVICE_ROLE_KEY=<your_service_role_key>
 - [ ] Poonawala MIS webhook configured and tested
 - [ ] Hero FinCorp MIS webhook configured and tested
 - [ ] OBD voice webhooks configured and tested
-- [ ] Chatsense voice disposition webhook configured and tested
+- [ ] Chatsense voice disposition webhook points at `/api/crm/lead-intake-sync` (not the removed `/api/chatsense/voice-disposition`) and is tested
 - [ ] All environment variables set in Railway
 - [ ] SSL/TLS certificates verified
 - [ ] Webhook signatures validated (where applicable)

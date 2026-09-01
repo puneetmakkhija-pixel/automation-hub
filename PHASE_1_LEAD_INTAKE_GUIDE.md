@@ -30,7 +30,9 @@ OBD Voice Call → Chatsense captures DTMF → lead_intake_sync RPC → Applicat
 
 - ✅ `crmIntegrationClient.js` — CRM API client
 - ✅ `crmIntegrationRoutes.js` — REST endpoints for lead intake
-- ✅ `chatsenseRoutes.js` — Updated with `voice-disposition` webhook handler
+- ⚠️ `chatsenseRoutes.js` — **deleted on 1 Sep 2026.** It carried a second,
+  equivalent `voice-disposition` entry point; `/api/crm/lead-intake-sync`
+  below is now the only one.
 - ✅ `index.js` — Mounted `/api/crm` routes
 
 **Environment Variables Required:**
@@ -38,10 +40,6 @@ OBD Voice Call → Chatsense captures DTMF → lead_intake_sync RPC → Applicat
 # CRM Supabase (same as automation-hub or separate)
 CRM_SUPABASE_URL=https://your-crm-project.supabase.co
 CRM_SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-
-# Chatsense (existing)
-CHATSENSE_API_KEY=your_api_key
-CHATSENSE_BASE_URL=https://api.chatsense.com
 
 # OBD (existing)
 OBD_BASE_URL=https://obdapi2.ivrsms.com
@@ -254,29 +252,21 @@ curl -X POST http://localhost:3000/api/crm/lead-intake-sync \
 
 ---
 
-### 3. **POST /api/chatsense/voice-disposition**
+### 3. ~~POST /api/chatsense/voice-disposition~~ — removed
 
-Alternative endpoint: Called directly from Chatsense webhook
+This was an alternative entry point that Chatsense could call directly. It was
+deleted on 1 Sep 2026 with the rest of the Chatsense integration and now
+returns **404**.
 
-```bash
-curl -X POST http://localhost:3000/api/chatsense/voice-disposition \
-  -H "Content-Type: application/json" \
-  -d '{
-    "phone": "919876543210",
-    "name": "Rajesh Kumar",
-    "age": 32,
-    "income": 500000,
-    "pincode": "400001",
-    "state": "Maharashtra",
-    "email": "rajesh@email.com",
-    "disposition": "interested",
-    "callDuration": 45,
-    "dtmfChoice": 1,
-    "callSid": "call_12345",
-    "campaignId": "poonawala_stpl_batch_1724095200000_1",
-    "batchId": 1
-  }'
-```
+It was never a separate path: it validated the same fields and then called the
+same `crmClient.leadIntakeSyncFromVoice()` that endpoint 2 above calls. Point
+the Chatsense webhook at `/api/crm/lead-intake-sync` instead. Two differences
+when moving a caller across:
+
+- `callSid` was top-level; it now goes inside `customMetadata`.
+- The removed endpoint logged the disposition to `crm.lead_events` itself. To
+  keep that audit record, follow the intake with
+  `POST /api/crm/application/<applicationId>/log-event`.
 
 ---
 
@@ -382,7 +372,7 @@ curl -X POST http://localhost:3000/api/crm/batch-lead-intake \
                └─► Chatsense captures disposition + call metadata
 
 2. Chatsense webhook triggers
-   └─► POST /api/chatsense/voice-disposition
+   └─► POST /api/crm/lead-intake-sync
        ├─ phone: "919876543210"
        ├─ name: "Rajesh Kumar"
        ├─ disposition: "interested"
@@ -568,10 +558,12 @@ docker logs automation-hub | grep -i "error\|failed" | grep "lead_intake"
 If Phase 1 integration fails:
 
 1. **Disable lead intake webhook:**
-   ```bash
-   # In chatsenseRoutes.js, comment out voice-disposition endpoint
-   // router.post('/voice-disposition', async (req, res) => { ... })
-   ```
+
+   Turn the webhook off in the Chatsense dashboard — that is the only switch
+   now. The old instruction here was to comment the handler out of
+   `chatsenseRoutes.js`, which no longer exists. Do not comment out
+   `/api/crm/lead-intake-sync`: the batch intake path and other callers share
+   it.
 
 2. **Revert to manual entry:**
    ```

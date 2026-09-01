@@ -171,32 +171,38 @@
 
 **Status:** Requires Chatsense account configuration
 
+> The path in this step changed. `/api/chatsense/voice-disposition` was removed
+> on 1 Sep 2026 with the rest of the Chatsense integration and now 404s;
+> `/api/crm/lead-intake-sync` is the endpoint it delegated to and is the one to
+> configure. Chatsense still captures the DTMF disposition — only the delivery
+> path moved. Full payload notes are in `docs/WEBHOOK_CONFIGURATION.md` §4.
+
 **What to do:**
 1. Log into Chatsense dashboard
 2. Navigate to Campaign Settings → Webhooks
 
 3. Configure voice disposition webhook:
-   - **URL:** `https://ivr-voice-bot-system-production.up.railway.app/api/chatsense/voice-disposition`
+   - **URL:** `https://ivr-voice-bot-system-production.up.railway.app/api/crm/lead-intake-sync`
    - **Trigger:** After DTMF capture
    - **Method:** POST
 
 4. Add environment variables:
-   ```
-   CHATSENSE_API_KEY=<your_api_key>
-   CHATSENSE_BASE_URL=https://api.chatsense.ai
-   ```
+
+   None. `CHATSENSE_API_KEY` and `CHATSENSE_BASE_URL` were read only by the
+   deleted client, were never set in production, and are not used any more.
 
 5. Test endpoint:
    ```bash
-   curl -X POST https://ivr-voice-bot-system-production.up.railway.app/api/chatsense/voice-disposition \
+   curl -X POST https://ivr-voice-bot-system-production.up.railway.app/api/crm/lead-intake-sync \
      -H "Content-Type: application/json" \
      -d '{
        "phone": "919876543210",
        "name": "Test User",
+       "channel": "obd_voice",
        "disposition": "interested",
        "callDuration": 45,
        "dtmfChoice": 1,
-       "callSid": "call_test"
+       "customMetadata": { "callSid": "call_test" }
      }'
    ```
 
@@ -224,10 +230,6 @@ POONAWALLA_MIS_SECRET=<get_from_poonawala>
 
 HERO_FINCORP_API_TOKEN=<get_from_hero>
 HERO_FINCORP_MIS_SECRET=<get_from_hero>
-
-# Chatsense Configuration
-CHATSENSE_API_KEY=<get_from_chatsense>
-CHATSENSE_BASE_URL=https://api.chatsense.ai
 
 # Supabase Configuration (already set)
 SUPABASE_URL=<your_supabase_url>
@@ -286,7 +288,7 @@ SUPABASE_SERVICE_ROLE_KEY=<your_key>
    - "Poonawalla webhook"
    - "Hero FinCorp webhook"
    - "OBD webhook"
-   - "Chatsense voice disposition"
+   - "Lead intake sync" (the Chatsense voice disposition path)
    ```
 
 ### Check Webhook Failures
