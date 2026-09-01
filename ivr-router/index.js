@@ -5,7 +5,6 @@ import createObdRoutes from "./lib/obdRoutes.js";
 import { routeWebhookEvent } from "./lib/webhookHandlers.js";
 import anantaRoutes from "./lib/anantaRoutes.js";
 import oriserveRoutes from "./lib/oriserveRoutes.js";
-import chatsenseRoutes from "./lib/chatsenseRoutes.js";
 import supabaseRoutes from "./lib/supabaseRoutes.js";
 import elevenLabsRoutes from "./lib/elevenLabsRoutes.js";
 import pincodeRoutes from "./lib/pincodeRoutes.js";
@@ -76,9 +75,6 @@ app.use("/api/ananta", anantaRoutes);
 
 // ==================== Oriserve Voice Agent Routes ====================
 app.use("/api/oriserve", oriserveRoutes);
-
-// ==================== Chatsense API Routes ====================
-app.use("/api/chatsense", chatsenseRoutes);
 
 // ==================== Supabase Database Routes ====================
 app.use("/api/db", supabaseRoutes);
@@ -418,38 +414,6 @@ app.post("/webhooks/oriserve", (req, res) => {
   }
 });
 
-// ==================== Chatsense Webhook Handlers ====================
-// Chatsense message delivery webhooks
-app.post("/webhooks/chatsense", (req, res) => {
-  try {
-    const payload = req.body;
-    logger.log('info', 'CHATSENSE_DELIVERY', 'Chatsense message delivery event', {
-      phone: payload.phone,
-      status: payload.status,
-      messageId: payload.messageId,
-      templateName: payload.templateName,
-      type: 'chatsense_event',
-    });
-
-    res.json({
-      success: true,
-      message: "Chatsense webhook received and processed",
-      data: {
-        phone: payload.phone,
-        status: payload.status,
-        messageId: payload.messageId,
-        templateName: payload.templateName,
-        timestamp: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    logger.logWebhookError('CHATSENSE', error, req.body);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-    });
-  }
-});
 
 // ==================== Twilio IVR (Legacy) ====================
 // Twilio calls this when a call comes in to your IVR number.
