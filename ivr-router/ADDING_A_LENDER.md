@@ -7,8 +7,43 @@ to know a new lender exists.
 
 ## The two pieces
 
-**1. The variant entry**, in `IVR_VARIANT_PLACEHOLDERS` on the
-`ivr-voice-bot-system` service. Keyed by variant, then by DTMF digit:
+**1. The link**, as its own variable on the `ivr-voice-bot-system` service:
+
+```bash
+IVR_LINK_HEROFINCORP=https://loans.apps.herofincorp.com/en/personal-loan?af_xp=custom&...
+```
+
+The name is `IVR_LINK_` plus the variant, uppercased, with anything that is not
+a letter or digit becoming an underscore — so the webhook suffix `herofincorp`
+reads `IVR_LINK_HEROFINCORP`, and `hero-fincorp` would read
+`IVR_LINK_HERO_FINCORP`.
+
+Only the link goes here. The placeholder count comes from
+`IVR_DTMF_PLACEHOLDERS` with its last entry swapped, so it always matches the
+template the default campaign already sends with, and Ananta's 1325/1327
+count-mismatch cannot happen on this path.
+
+A value that is not an absolute `http(s)` URL is refused with a log line and the
+default link is sent instead — a paste error does not become a dead link in a
+customer's message.
+
+### The older way
+
+`IVR_VARIANT_PLACEHOLDERS` still works and still wins over the digit map; the
+per-lender variable simply wins over both. Reach for it when a variant needs
+more than the link changed — `businessloans` uses it to put `{{sso_link}}` in
+the message, which a plain URL cannot express.
+
+Be careful with it. It is one nested JSON object edited by hand in a web
+textarea, and its failure mode is silent and total: one stray comma and the
+service logs `IVR_VARIANT_PLACEHOLDERS is not valid JSON — ignoring it`, then
+**every** variant falls back to the default link. From the outside that is
+indistinguishable from the variant never having been added — a campaign for one
+lender quietly sends another lender's application link.
+
+## And the webhook
+
+Whichever source supplies the link, the panel side is the same. For reference, the `IVR_VARIANT_PLACEHOLDERS` shape is keyed by variant, then by DTMF digit:
 
 ```json
 {
@@ -39,11 +74,10 @@ Panel webhook:
 https://<service-domain>/webhooks/ivr/whatsapp/herofincorp?token=<ANANTA_WEBHOOK_SECRET>
 ```
 
-Variant entry to **merge into** the existing `IVR_VARIANT_PLACEHOLDERS` — do not
-replace the variable, or the other lenders configured in it are lost:
+Link:
 
-```json
-{"herofincorp": {"1": [" ", "https://loans.apps.herofincorp.com/en/personal-loan?af_xp=custom&source_caller=ui&pid=Buddyloan&utm_medium=4636&utm_campaignid=IVR&is_retargeting=true&utm_source=partnership_BDL&shortlink=qtuldaei&utm_campaign=Buddyloan&af_reengagement_window=30d&c=Buddyloan_ACQ_08052025&referrer=af_tranid=Jog5Tb-3i0OzCfrWRkQShg&utm_source=partnership_BDL&af_android_url=https://loans.apps.herofincorp.com/en/personal-loan&utm_campaign=Buddyloan&c=Buddyloan_ACQ_08052025&pid=Buddyloan&af_ios_url=https://loans.apps.herofincorp.com/en/personal-loan"]}}
+```bash
+IVR_LINK_HEROFINCORP=https://loans.apps.herofincorp.com/en/personal-loan?af_xp=custom&source_caller=ui&pid=Buddyloan&utm_medium=4636&utm_campaignid=IVR&is_retargeting=true&utm_source=partnership_BDL&shortlink=qtuldaei&utm_campaign=Buddyloan&af_reengagement_window=30d&c=Buddyloan_ACQ_08052025&referrer=af_tranid=Jog5Tb-3i0OzCfrWRkQShg&utm_source=partnership_BDL&af_android_url=https://loans.apps.herofincorp.com/en/personal-loan&utm_campaign=Buddyloan&c=Buddyloan_ACQ_08052025&pid=Buddyloan&af_ios_url=https://loans.apps.herofincorp.com/en/personal-loan
 ```
 
 The link is 532 characters, nearly three times the Poonawalla one, so the
