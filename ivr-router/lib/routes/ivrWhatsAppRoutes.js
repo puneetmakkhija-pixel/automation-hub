@@ -72,8 +72,13 @@ function parseJsonEnv(name) {
  * typically the same message pointing at a different application link. So a
  * variant-scoped map wins over the digit-scoped one:
  *
- *   IVR_VARIANT_PLACEHOLDERS={"businessloans":{"1":[" ","https://crmbusinessloans.com/apply"]}}
+ *   IVR_VARIANT_PLACEHOLDERS={"businessloans":{"1":[" ","https://crmbusinessloans.com/apply"]},
+ *                              "herofincorp":{"1":[" ","https://loans.apps.herofincorp.com/…"]}}
  *   IVR_DTMF_PLACEHOLDERS={"1":[" ","https://instant-pocket-loan…"]}
+ *
+ * Adding a lender is therefore config, not code: add its entry here and point a
+ * new panel webhook at /whatsapp/<variant>. Nothing below needs to know the
+ * lender exists.
  *
  * The variant is either the URL suffix the panel posts to (/whatsapp/businessloans)
  * or, on the bare /whatsapp path, the campaign_id. The URL is the sturdier of the
@@ -377,7 +382,7 @@ async function handleKeypress(req, res) {
     // DSA and UTM query string — the Poonawalla Fincorp one is ~190 characters.
     // In WhatsApp that wraps over three lines, none of it means anything to the
     // person reading it, and a wall of tracking parameters is what a scam
-    // message looks like. Ananta rewrites it to anantadot.com/l/<code> before
+    // message looks like. Ananta rewrites it to op2.in/wt/<code> before
     // it goes out.
     //
     // The tradeoff is where the click lands: their redirect, so an open is

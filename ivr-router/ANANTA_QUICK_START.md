@@ -223,7 +223,7 @@ https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Par
 On a phone that wraps over three lines, none of it means anything to the person
 reading it, and a wall of tracking parameters is what a scam message looks
 like. Setting `is_short_url` to `"1"` has Ananta rewrite it to
-`anantadot.com/l/<code>` — roughly 30 characters — before the message goes out.
+`op2.in/wt/<code>` — 35 characters — before the message goes out.
 
 `lib/routes/ivrWhatsAppRoutes.js` sends `"1"` by default. To send links at full
 length again:
@@ -232,38 +232,61 @@ length again:
 ANANTA_IS_SHORT_URL=0
 ```
 
-**Two things to know.**
+*The click is recorded on Ananta's side.* The redirect is theirs, so an open is
+logged in their panel against their message id and never reaches
+`whatsapp_messages`. Our send log still records the URL we handed them, so what
+a customer was sent stays answerable here — whether they opened it does not.
+Their **Click URL** webhook is the way to close that: it is configured on the
+same screen as the DLR webhook (a bare URL field, no custom headers — so
+authenticate it with `?token=<secret>`, the way `/webhooks/ananta` does).
 
-*It is Ananta's redirect, so the click is recorded in their panel*, against
-their message id, and does not reach `whatsapp_messages`. Our send log still
-records the URL we handed them, so what a customer was sent stays answerable
-from our side — but whether they opened it does not. Their **Click URL**
-webhook is the way to close that: it is configured on the same screen as the
-DLR webhook (a bare URL field, no custom headers — so authenticate it with
-`?token=<secret>`, the way `/webhooks/ananta` does).
+**Verified against the live account on 2026-09-01.** Ananta document
+`is_short_url` on the send API but only show it worked through in the example
+carrying a `buttons.button_url`, and our templates put the link in a **body
+placeholder** instead. A paired test send — the same template and placeholders
+twice, once with the flag on and once off — settled it: the body placeholder
+is rewritten too.
 
-*Confirm it applies to your template.* Ananta documents `is_short_url` on the
-send API but only shows it worked through in the example carrying a
-`buttons.button_url`. Our templates put the link in a **body placeholder**
-instead, and nothing in their documentation says outright whether the shortener
-rewrites those too. One test call settles it — send to your own number and look
-at what arrives:
+| `is_short_url` | what arrived |
+|---|---|
+| `"1"` | `https://op2.in/wt/UY6JIkzkQAqq0oeah` — one line |
+| `"0"` | `https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=…&UTM_Partner_ReferenceID=PK2002` — three wrapped lines |
+
+Note the domain: the shortener on this account serves `op2.in/wt/<code>`, not
+the `anantadot.com/l/<code>` that Ananta's published examples show. Whitelist
+`op2.in` wherever link domains are filtered, and expect customers to see it
+rather than the lender's own hostname.
+
+To re-run the check — it sends two real messages, so it costs two:
 
 ```bash
-curl -X POST "https://utilsapi.anantadot.com/waba/sendmessage" \
-  -H "Content-Type: application/json" \
-  -H "api_key: $ANANTA_API_KEY" \
-  -d '{
-    "template": "<your template id>",
-    "phone": "<your mobile>",
-    "is_short_url": "1",
-    "message": { "placeholders": [" ", "https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Partner_Name=BuddyLoan&UTM_Partner_Medium=BDLParameter&UTM_Partner_AgentCode=IVRSMS&UTM_Partner_ReferenceID=PK2002" ] }
-  }'
+cat > /tmp/short-test.sh <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+PHONE="${1:?usage: short-test.sh <10-digit mobile>}"
+TPL=$(jq -r '."1"' <<<"$IVR_DTMF_TEMPLATES")
+PH=$(jq -c  '."1"' <<<"$IVR_DTMF_PLACEHOLDERS")
+# The live config carries {{...}} tokens the webhook fills in per caller.
+PH=$(sed -e 's/{{customer_id}}/BLTEST000001/g' \
+         -e 's#{{sso_link}}#https://crmbusinessloans.com/apply#g' <<<"$PH")
+for FLAG in 1 0; do
+  echo "=== is_short_url=$FLAG ==="
+  jq -n --arg t "$TPL" --arg p "$PHONE" --arg f "$FLAG" --argjson ph "$PH" \
+     '{template:$t, phone:$p, is_short_url:$f, message:{placeholders:$ph}}' \
+  | curl -sS -X POST "https://utilsapi.anantadot.com/waba/sendmessage" \
+      -H "Content-Type: application/json" -H "api_key: $ANANTA_API_KEY" -d @-
+  echo; echo
+done
+SCRIPT
+chmod +x /tmp/short-test.sh
+
+railway run --service ivr-voice-bot-system --environment production \
+  -- /tmp/short-test.sh <your 10-digit mobile>
 ```
 
-If the link arrives at full length, the shortener only covers button URLs, and
-shortening a body link needs either a template whose button carries the URL or
-a redirect of our own.
+Going through `railway run` reads the live template id and placeholder list
+straight from the service, so the placeholder count always matches the template
+— a mismatch is Ananta error 1325/1327 rather than a send.
 
 ## 5. Integration with IVR Router
 
