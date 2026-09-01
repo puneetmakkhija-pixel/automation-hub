@@ -40,20 +40,29 @@ HERO_FINCORP_MIS_SECRET=<get_from_hero_ops>
 
 ---
 
-### ✅ Step 3: Deploy Monitoring Console (2 minutes)
+### ✅ Step 3: Open the Monitoring Console (nothing to deploy)
 
-**Option A (Recommended):** Upload to Web Server
+The console ships inside `ivr-router` and is served by it — there is no file to
+copy anywhere.
+
 ```
-File: automation-console.html
-URL: https://crmbusinessloans.com/automation-hub
-Access: Browser → Test all 5 tabs load
+Access: https://your-railway-url/console?token=<CONSOLE_SECRET>
 ```
 
-**Option B:** Serve from IVR Router
-```
-Copy: automation-console.html → ivr-router/public/
-Access: https://your-railway-url/automation-console
-```
+It is auth-gated: the page stores the token on load and sends it as a header on
+every call it makes afterwards. Set `CONSOLE_SECRET` in the
+**`ivr-voice-bot-system`** service's Railway variables first — that is the
+service running `ivr-router`, not the `ivr` service, which has no variables set.
+
+On first load the console prompts for an **API Base URL**. Enter the same origin
+you opened it from (`https://your-railway-url`, no trailing slash). It does not
+auto-detect: dismissing the prompt falls back to `http://localhost:3000`, and
+every action then goes to your own laptop while the status indicator reads
+offline. Fix it later from "Config" if you clicked past it.
+
+(The old instructions here copied a root-level `automation-console.html` into
+`ivr-router/public/`. That file was a design mockup, superseded by
+`ivr-router/public/console.html`, and was deleted on 31 Aug 2026.)
 
 ---
 
