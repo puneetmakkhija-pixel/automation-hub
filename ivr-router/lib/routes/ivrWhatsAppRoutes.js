@@ -21,6 +21,10 @@ import { resolveSsoLink } from "../crmSsoLink.js";
  *   header: api_key
  *   body:   { template, phone, is_short_url, message: { placeholders: [...] } }
  * Wiring this onto either client would fail at the provider.
+ *
+ * is_short_url is sent as "1" unless ANANTA_IS_SHORT_URL says otherwise, so the
+ * lender journey URL reaches the customer as a short anantadot.com link rather
+ * than 190 characters of UTM parameters. See the payload below.
  */
 
 const router = express.Router();
@@ -367,7 +371,25 @@ async function handleKeypress(req, res) {
   const payload = {
     template,
     phone: phone.phone,
-    is_short_url: process.env.ANANTA_IS_SHORT_URL || "0",
+    // Ananta's shortener, ON by default.
+    //
+    // The link this webhook sends is a lender journey URL carrying the whole
+    // DSA and UTM query string — the Poonawalla Fincorp one is ~190 characters.
+    // In WhatsApp that wraps over three lines, none of it means anything to the
+    // person reading it, and a wall of tracking parameters is what a scam
+    // message looks like. Ananta rewrites it to anantadot.com/l/<code> before
+    // it goes out.
+    //
+    // The tradeoff is where the click lands: their redirect, so an open is
+    // recorded in their panel against their id, not in our whatsapp_messages
+    // send log. Their panel has a Click URL webhook that can post those back —
+    // see ANANTA_QUICK_START.md — which is the way to close that gap without
+    // running a redirect of our own.
+    //
+    // Set ANANTA_IS_SHORT_URL=0 to send links at full length again. The send
+    // log records the URL we handed Ananta either way, so what a customer was
+    // sent stays answerable from our side whatever this is set to.
+    is_short_url: process.env.ANANTA_IS_SHORT_URL || "1",
     message: { placeholders },
   };
 

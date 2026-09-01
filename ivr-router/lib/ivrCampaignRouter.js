@@ -29,7 +29,6 @@ import { createClient } from '@supabase/supabase-js';
 import OBDApiClient from './obdApiClient.js';
 import AnantaApiClient from './anantaApiClient.js';
 import OriserveVoiceClient from './oriserveVoiceClient.js';
-import ChatsenseClient from './chatsenseClient.js';
 import logger from './logging.js';
 
 class IVRCampaignRouter {
@@ -46,7 +45,6 @@ class IVRCampaignRouter {
     );
     this.anantaClient = new AnantaApiClient();
     this.oriserveClient = new OriserveVoiceClient();
-    this.chatsenseClient = new ChatsenseClient();
 
     // Campaign configuration
     this.campaignConfig = {
