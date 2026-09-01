@@ -1,0 +1,16 @@
+# Railway reads the config file relative to a service's Root Directory, so this
+# governs every service rooted at data-jobs: `jobs`, `morning-check` and
+# `afternoon-check`.
+#
+# Without it those services fall through to the repo-root railway.toml, which
+# sets builder = "dockerfile" with dockerfile = "Dockerfile". Resolved against
+# this root directory that becomes data-jobs/Dockerfile, which does not exist,
+# and the build fails with "couldn't locate a dockerfile at path
+# data-jobs/Dockerfile". Rooting a service at the repo instead is not a fix
+# either: the root Dockerfile copies only ivr-router/, so the image has no
+# data-jobs for `npm --prefix data-jobs run cron:*` to execute.
+#
+# Railpack builds this folder from its own package.json, which is what `jobs`
+# was built with before the root railway.toml was added on 2026-08-27.
+[build]
+builder = "railpack"
