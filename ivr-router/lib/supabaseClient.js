@@ -25,7 +25,7 @@
  *   });
  *
  *   // Log webhook event
- *   await db.logWebhookEvent('chatsense', {
+ *   await db.logWebhookEvent('ananta', {
  *     phone: '919876543210',
  *     status: 'delivered',
  *     messageId: 'msg_123'
