@@ -342,7 +342,7 @@ CRM State After Phase 3:
 [Application with All Documents] (from Phase 3)
     │ (status = "documents_complete")
     ↓
-[IVR Router: /api/lenders/submit-application]
+[IVR Router: /api/lenders/submit-application]  ← never built; /api/lenders retired 1 Sep 2026
     │ POST {applicationId, lenderId: "poonawala"}
     │ Body: Full application data (lead + docs + credit scores)
     ↓
@@ -534,7 +534,7 @@ IVR Router → CRM
 
 ```
 Lender API → CRM
-├─ Poll: GET /api/lenders/application/{id}/status (Phase 4)
+├─ Poll: GET /api/lenders/application/{id}/status (Phase 4 — never built; /api/lenders retired)
 │  └─ Every 1 hour until decision received
 ├─ Webhook: POST /webhooks/lender-decision (Phase 4)
 │  └─ When lender decision ready (optional, if lender supports)
