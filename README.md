@@ -5,23 +5,38 @@ routing, OBD campaigns, the voice bot and the WhatsApp flows) and
 **`data-jobs`** (scheduled ETL and the cron monitor).
 
 Deploys as **one GitHub repo → one Railway project ("Automation Hub")**. Each
-service sets Railway's "Root Directory" to the folder it builds from — or
-leaves it at the repo root, which three of the five do. See the table below
+service sets Railway's "Root Directory" to the folder it builds from — except
+`ivr-voice-bot-system`, which must stay at the repo root. See the table below
 before changing one.
 
 ## Services
 
-Two folders, five Railway services. The Root Directory column is what each
-service is actually set to today — it is not uniform, and three of them
-deliberately build from the repo root rather than from a subfolder.
+Six Railway services: four built from this repo, plus two Railway-provisioned
+databases. The Root Directory column is what each service is actually set to
+today.
 
 | Folder | What it's for | Railway service | Root Directory | How it starts |
 | --- | --- | --- | --- | --- |
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
-| `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack |
-| `data-jobs` | Twice-daily cron monitor | `morning-check` (`0 5 * * *` UTC), `afternoon-check` (`30 8 * * *` UTC) | *(repo root)* | `npm --prefix data-jobs run cron:morning` / `cron:afternoon` |
+| `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack, `npm start` |
+| `data-jobs` | Morning cron monitor, `0 5 * * *` UTC | `morning-check` | `data-jobs` | Railpack, `npm run cron:morning` |
+| `data-jobs` | Afternoon cron monitor, `30 8 * * *` UTC | `afternoon-check` | `data-jobs` | Railpack, `npm run cron:afternoon` |
+| — | Cache | `redis` | — | `redis:7` image |
+| — | Database | `postgresql` | — | `postgres:16` image |
 
-Env vars for each are in that folder's `.env.example`.
+Env vars for each are in that folder's `.env.example`. `redis` and `postgresql`
+are provisioned from Docker images and build nothing from this repo.
+
+### `data-jobs` carries its own build config
+
+`data-jobs/railway.toml` sets the Railpack builder for every service rooted
+there. Without it those services fall through to the repo-root `railway.toml`,
+which sets `builder = "dockerfile"`; Railway resolves that against the root
+directory and the build dies on a `data-jobs/Dockerfile` that does not exist.
+
+`data-jobs/package.json` also pins `engines.node` to `>=22.0.0`.
+`@supabase/supabase-js` constructs a `RealtimeClient` on `createClient()` and
+needs a native WebSocket, so it cannot start on Node 20 or below.
 
 ### Leave `ivr-voice-bot-system` rooted at the repo root
 
@@ -34,17 +49,20 @@ which `GET /console` serves via `res.sendFile('public/console.html')`
 `ivr-router/Dockerfile` and drops `railway.toml` out of scope, so change it
 only deliberately.
 
-`morning-check` and `afternoon-check` are rooted at the repo root for the same
-kind of reason: they reach into the folder with `npm --prefix data-jobs`
-instead.
+### Four Railway services were deleted on 1 Sep 2026
 
-### The `ivr` service has no variables set
+`api`, `chatbot` and `whatsapp` backed the three stub folders removed below.
+`ivr` was a duplicate rooted at `ivr-router` with zero environment variables —
+no `SUPABASE_URL`, no `OBD_*`, no `CONSOLE_SECRET` — so it could not have been
+doing the job `ivr-voice-bot-system` does. Nothing in this repo or in
+`dsa-business-crm` called any of their domains, and nothing broke.
 
-There is a fifth service, `ivr` (`ivr-production-38c0.up.railway.app`), rooted
-at `ivr-router` with **zero environment variables** — no `SUPABASE_URL`, no
-`OBD_*`, no `CONSOLE_SECRET`. It cannot be doing the job
-`ivr-voice-bot-system` is doing. Worth confirming it is a leftover and
-deleting it along with the three below.
+`morning-check` and `afternoon-check` were also lost that day and have been
+recreated, now rooted at `data-jobs` rather than the repo root. The originals
+ran `npm --prefix data-jobs run cron:*` from a repo-root build of the root
+`Dockerfile`, which copies only `ivr-router/` — so the image never contained
+`data-jobs` and the schedule had nothing to execute. They built green and did
+nothing.
 
 ## Three services were removed on 31 Aug 2026
 
@@ -62,20 +80,9 @@ been built properly elsewhere:
 - The chatbot is `/apply` in `dsa-business-crm` (`lib/chat/`), with guardrails.
 - The backend is `dsa-business-crm` itself.
 
-**They still have Railway services pointing at the deleted folders**, each with a
-replica running and a public domain:
-
-| Railway service | Domain | Was rooted at |
-| --- | --- | --- |
-| `api` | `api-production-c082.up.railway.app` | `backend-api` |
-| `chatbot` | `chatbot-production-6845.up.railway.app` | `chatbot-api` |
-| `whatsapp` | `whatsapp-production-44e7.up.railway.app` | `whatsapp-bot` |
-
-Nothing in this repo or in `dsa-business-crm` calls any of those three domains.
-Their current containers keep serving until something triggers a redeploy, at
-which point the build fails on the missing folder. **Delete the three Railway
-services** — that is the point of removing the folders, and until it happens
-they are three replicas being paid for to answer `/health`.
+The Railway services that backed them — `api`, `chatbot` and `whatsapp` — were
+deleted on 1 Sep 2026, so nothing is left paying for a replica that answers
+only `/health`.
 
 ## Design mockups were removed too
 
@@ -90,14 +97,15 @@ from the working tree.
 
 ## Wiring a *new* service into Railway (one-time)
 
-The five services above are already wired; this is for adding another.
+The six services above are already wired; this is for adding another.
 
 1. Open the service in the **Automation Hub** project on railway.com.
 2. Settings → Source → connect this repo.
 3. Settings → Root Directory → the folder it should build from, **or leave it
-   at the repo root** if it needs `railway.toml`, the root `Dockerfile`, or
-   files from more than one folder. Check the table above before assuming a
-   subfolder is right — three of the five existing services build from the
-   repo root.
+   at the repo root** if it needs the root `railway.toml`, the root
+   `Dockerfile`, or files from more than one folder. If you root it at a
+   subfolder, that folder needs its own `railway.toml` — otherwise the
+   repo-root one applies and the build looks for a Dockerfile that is not
+   there. `data-jobs/railway.toml` exists for exactly this reason.
 4. Settings → Variables → the vars in that folder's `.env.example`.
 5. Deploy. Railway gives it a `*.up.railway.app` URL.
