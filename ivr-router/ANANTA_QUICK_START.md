@@ -211,6 +211,60 @@ curl -X POST "https://utilsapi.anantadot.com/waba/sendmessage" \
   }'
 ```
 
+### Shortening the link (`is_short_url`)
+
+The IVR keypress webhook sends the lender journey URL, and for Poonawalla
+Fincorp that is ~190 characters:
+
+```
+https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Partner_Name=BuddyLoan&UTM_Partner_Medium=BDLParameter&UTM_Partner_AgentCode=IVRSMS&UTM_Partner_ReferenceID=PK2002
+```
+
+On a phone that wraps over three lines, none of it means anything to the person
+reading it, and a wall of tracking parameters is what a scam message looks
+like. Setting `is_short_url` to `"1"` has Ananta rewrite it to
+`anantadot.com/l/<code>` — roughly 30 characters — before the message goes out.
+
+`lib/routes/ivrWhatsAppRoutes.js` sends `"1"` by default. To send links at full
+length again:
+
+```bash
+ANANTA_IS_SHORT_URL=0
+```
+
+**Two things to know.**
+
+*It is Ananta's redirect, so the click is recorded in their panel*, against
+their message id, and does not reach `whatsapp_messages`. Our send log still
+records the URL we handed them, so what a customer was sent stays answerable
+from our side — but whether they opened it does not. Their **Click URL**
+webhook is the way to close that: it is configured on the same screen as the
+DLR webhook (a bare URL field, no custom headers — so authenticate it with
+`?token=<secret>`, the way `/webhooks/ananta` does).
+
+*Confirm it applies to your template.* Ananta documents `is_short_url` on the
+send API but only shows it worked through in the example carrying a
+`buttons.button_url`. Our templates put the link in a **body placeholder**
+instead, and nothing in their documentation says outright whether the shortener
+rewrites those too. One test call settles it — send to your own number and look
+at what arrives:
+
+```bash
+curl -X POST "https://utilsapi.anantadot.com/waba/sendmessage" \
+  -H "Content-Type: application/json" \
+  -H "api_key: $ANANTA_API_KEY" \
+  -d '{
+    "template": "<your template id>",
+    "phone": "<your mobile>",
+    "is_short_url": "1",
+    "message": { "placeholders": [" ", "https://instant-pocket-loan.poonawallafincorp.com/?utm_DSA_Code=PKA00192&UTM_Partner_Name=BuddyLoan&UTM_Partner_Medium=BDLParameter&UTM_Partner_AgentCode=IVRSMS&UTM_Partner_ReferenceID=PK2002" ] }
+  }'
+```
+
+If the link arrives at full length, the shortener only covers button URLs, and
+shortening a body link needs either a template whose button carries the URL or
+a redirect of our own.
+
 ## 5. Integration with IVR Router
 
 ### Configuration
@@ -331,6 +385,9 @@ ANANTA_API_SECRET_KEY=your_api_secret_key_from_dashboard
 # Optional: override base URL if needed
 ANANTA_DATA_BASE_URL=https://data-api.anantadot.com
 ANANTA_UTILS_BASE_URL=https://utilsapi.anantadot.com
+
+# Shorten links in outgoing messages. Defaults to 1; set 0 to send full URLs.
+ANANTA_IS_SHORT_URL=1
 ```
 
 ## 8. Troubleshooting
