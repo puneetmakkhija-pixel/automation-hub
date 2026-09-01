@@ -167,7 +167,7 @@ Location: `/home/user/automation-hub/dashboard/index.html`
 
 #### Section 6: Settings
 - ✅ API Configuration display (Backend URL, API Version, Health Status)
-- ✅ Webhook Status display (Ananta, OBD, Chatsense, Poonawala)
+- ✅ Webhook Status display (Ananta, OBD, Poonawala)
 - ✅ Database Status display (Supabase connection, pool stats)
 - ✅ Health status connected to GET /api/health endpoint
 - ✅ Webhook status connected to real endpoint checks
