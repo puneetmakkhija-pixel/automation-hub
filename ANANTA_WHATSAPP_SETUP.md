@@ -177,20 +177,20 @@ INSERT INTO public.ivr_campaign_events (
 3. Click **Launch**
 
 ### 2. **Manual Test (API)**
+
+This step used to create a campaign through `POST /api/ivr-campaigns`. That
+endpoint was retired on 1 Sep 2026 (`docs/RETIRED_ENDPOINTS.md`) — campaigns
+live in the CRM now. To test the Ananta leg on its own, which is what this
+guide is about, send one message:
+
 ```bash
-curl -X POST http://localhost:3000/api/ivr-campaigns \
+curl -X POST http://localhost:3000/api/ananta/messages/send \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "FlexiLoans Test",
-    "leadCount": 1,
-    "dtmfOptions": {
-      "press1": {
-        "whatsapp_provider": "ananta",
-        "whatsapp_bot_endpoint": "https://s1.whistleloop.com/..."
-      }
-    }
-  }'
+  -d '{"phoneNumber": "919812345678", "templateId": "<approved template id>"}'
 ```
+
+(`phoneNumber` and `templateId` are both required — `lib/anantaRoutes.js` 400s
+without them.)
 
 ### 3. **Check Logs**
 ```bash
