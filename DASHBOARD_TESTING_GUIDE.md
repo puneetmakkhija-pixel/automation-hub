@@ -1,5 +1,9 @@
 # Dashboard API Integration Testing Guide
 
+> **The IVR, Lenders and Recordings tabs were removed on 1 Sep 2026.** Any
+> step below that exercises them no longer applies — see
+> `docs/RETIRED_ENDPOINTS.md`.
+
 **Status:** API Layer Complete ✅ | Ready for Production Testing  
 **Date:** August 28, 2026  
 **Dashboard:** `/home/user/automation-hub/dashboard/index.html`

@@ -1,5 +1,12 @@
 # Supabase Database Integration - Quick Start
 
+> **The `/api/db/*` endpoints in this guide were retired on 1 Sep 2026.**
+> They wrote to `customers` (which never took a row) and to `campaigns` and
+> `campaign_results`, which do not exist in the database. Customer and campaign
+> data lives in the CRM. The Supabase *setup* steps below are still accurate,
+> and `lib/supabaseClient.js` — which the state machine and webhook handlers
+> use — is untouched. See `docs/RETIRED_ENDPOINTS.md`.
+
 Complete guide to use Supabase for customer data, campaign tracking, and webhook event logging.
 
 ## 1. Set Up Supabase Project

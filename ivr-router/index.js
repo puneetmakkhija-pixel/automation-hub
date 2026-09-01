@@ -5,7 +5,6 @@ import createObdRoutes from "./lib/obdRoutes.js";
 import { routeWebhookEvent } from "./lib/webhookHandlers.js";
 import anantaRoutes from "./lib/anantaRoutes.js";
 import oriserveRoutes from "./lib/oriserveRoutes.js";
-import supabaseRoutes from "./lib/supabaseRoutes.js";
 import elevenLabsRoutes from "./lib/elevenLabsRoutes.js";
 import pincodeRoutes from "./lib/pincodeRoutes.js";
 import poonawalaaCampaignRoutes from "./lib/poonawalaaCampaignRoutes.js";
@@ -21,10 +20,7 @@ import suppressionAnalysisRoutes from "./lib/routes/suppressionAnalysisRoutes.js
 import reengagementRoutes from "./lib/routes/reengagementRoutes.js";
 import breShortlistingRoutes from "./lib/routes/breShortlistingRoutes.js";
 import ivrCampaignRouterRoutes from "./lib/routes/ivrCampaignRouterRoutes.js";
-import ivrCampaignsRoutes from "./lib/routes/ivrCampaignsRoutes.js";
-import lendersRoutes from "./lib/routes/lendersRoutes.js";
 import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.js";
-import recordingRoutes from "./lib/routes/recordingRoutes.js";
 import anantaConfigRoutes from "./lib/routes/anantaConfigRoutes.js";
 import whatsappFlowRoutes from "./lib/routes/whatsappFlowRoutes.js";
 import flexiloansDocumentRoutes from "./lib/routes/flexiloansDocumentRoutes.js";
@@ -76,8 +72,22 @@ app.use("/api/ananta", anantaRoutes);
 // ==================== Oriserve Voice Agent Routes ====================
 app.use("/api/oriserve", oriserveRoutes);
 
-// ==================== Supabase Database Routes ====================
-app.use("/api/db", supabaseRoutes);
+// ==================== Retired: /api/db, /api/ivr-campaigns, /api/lenders, /api/recordings
+//
+// Four CRUD routers came off on 1 Sep 2026. They were mounted and reachable —
+// this is not the "unreachable code" of PR #32 — but they wrote to tables that
+// are empty, absent, or owned by the CRM:
+//
+//   /api/db            customers (0 rows) + campaigns and campaign_results,
+//                      neither of which exists in the database at all
+//   /api/ivr-campaigns ivr_campaigns, 0 rows, read by nothing else here
+//   /api/lenders       public.lenders, 5 rows, against crm.lenders' 13
+//   /api/recordings    ivr_recordings, a table that has never existed
+//
+// Lenders live in the CRM (crm.lenders, crm.lender_bre, crm.lender_pincode and
+// the rest); campaigns are moving to crm.campaign. The dashboard tabs that
+// called these went with them, so nothing in this repo asks for them now.
+// See ../docs/RETIRED_ENDPOINTS.md.
 
 // ==================== Eleven Labs Voice Generation Routes ====================
 app.use("/api/voice", elevenLabsRoutes);
@@ -152,12 +162,6 @@ app.use(
   ivrCampaignRouterRoutes
 );
 
-// ==================== IVR Campaigns Management Routes (Campaign CRUD) ====================
-app.use("/api/ivr-campaigns", ivrCampaignsRoutes);
-
-// ==================== Lenders Management Routes ====================
-app.use("/api/lenders", lendersRoutes);
-
 // ==================== MIS Feedback Collector Routes (Lender Rejection Feedback) ====================
 // /webhook/poonawalla and /webhook/hero-fincorp are LENDER-FACING and stay
 // open: locking them would break the feedback those lenders post to us.
@@ -170,9 +174,6 @@ app.use(
   ]),
   misFeedbackCollectorRoutes
 );
-
-// ==================== Recording Management Routes ====================
-app.use("/api/recordings", recordingRoutes);
 
 // ==================== Ananta WhatsApp Configuration Routes ====================
 app.use("/api/ananta", anantaConfigRoutes);
