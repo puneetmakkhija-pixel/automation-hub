@@ -68,37 +68,107 @@ function parseJsonEnv(name) {
  * REQUIRE them, and the count must match exactly — Ananta returns 1325/1327
  * otherwise.
  *
- * Two campaigns can share a template and a digit but need different values —
- * typically the same message pointing at a different application link. So a
- * variant-scoped map wins over the digit-scoped one:
+ * Three sources, most specific first:
  *
- *   IVR_VARIANT_PLACEHOLDERS={"businessloans":{"1":[" ","https://crmbusinessloans.com/apply"]},
- *                              "herofincorp":{"1":[" ","https://loans.apps.herofincorp.com/…"]}}
- *   IVR_DTMF_PLACEHOLDERS={"1":[" ","https://instant-pocket-loan…"]}
+ *   1. IVR_LINK_<VARIANT>   one plain URL per lender — IVR_LINK_HEROFINCORP
+ *   2. IVR_VARIANT_PLACEHOLDERS  {"<variant>":{"<digit>":[...]}}
+ *   3. IVR_DTMF_PLACEHOLDERS     {"<digit>":[...]}, the default for every campaign
  *
- * Adding a lender is therefore config, not code: add its entry here and point a
- * new panel webhook at /whatsapp/<variant>. Nothing below needs to know the
- * lender exists.
+ * (1) exists because (2) is a nested JSON object that operators edit by hand in
+ * a web textarea, and its failure mode is silent and total: one stray comma and
+ * parseJsonEnv logs, returns null, and EVERY variant quietly falls back to the
+ * default link. That is indistinguishable, from the outside, from the variant
+ * never having been configured — a campaign for one lender sends another
+ * lender's application link and nothing anywhere says so. A plain URL in its
+ * own variable cannot be mispunctuated, and a mistake in it is contained to the
+ * one lender it names.
  *
- * The variant is either the URL suffix the panel posts to (/whatsapp/businessloans)
+ * (1) supplies only the LINK. The placeholder SHAPE — how many values the
+ * template wants, and any fixed ones like a leading " " — is borrowed from the
+ * digit map and its last entry replaced. So the count always matches the
+ * template that the default campaign already sends successfully, and the
+ * 1325/1327 mismatch is not reachable through this path.
+ *
+ * The variant is either the URL suffix the panel posts to (/whatsapp/herofincorp)
  * or, on the bare /whatsapp path, the campaign_id. The URL is the sturdier of the
  * two — one webhook per destination in the panel, and nothing depends on
  * campaign_id being included in the configured body — so prefer it; campaign_id
  * is there for panels that post everything to one URL.
  *
- * A variant with no entry falls back to the digit map, so a new campaign or a
- * mistyped suffix sends the default link rather than nothing.
+ * A variant with no entry in any source falls back to the digit map, so a new
+ * campaign or a mistyped suffix sends the default link rather than nothing.
+ */
+
+/**
+ * herofincorp -> IVR_LINK_HEROFINCORP.
+ *
+ * The variant comes off the request path, so this reads an environment variable
+ * named partly by the caller. Two things contain that: the IVR_LINK_ prefix,
+ * which confines it to a namespace that exists for exactly this, and the
+ * [A-Z0-9_] normalisation, which leaves no way to escape the prefix. Nothing
+ * outside that namespace is reachable whatever the caller sends.
+ */
+function variantEnvName(variant) {
+  const slug = String(variant || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!slug || slug.length > 64) return null;
+  return `IVR_LINK_${slug}`;
+}
+
+/** The per-variant URL, or null when unset or unusable. */
+function variantLink(variant) {
+  const name = variantEnvName(variant);
+  if (!name) return null;
+
+  const url = (process.env[name] || "").trim();
+  if (!url) return null;
+
+  // A value that is not an absolute URL is a paste error, not a link. Refusing
+  // it here falls back to the default rather than sending a customer something
+  // their phone will not open.
+  if (!/^https?:\/\//i.test(url)) {
+    console.error(
+      `[IVR_WA] ${name} is not an absolute http(s) URL — ignoring it and using ` +
+        "the placeholder maps instead"
+    );
+    return null;
+  }
+  return url;
+}
+
+/**
+ * @returns {{list: string[], source: string}} — `source` names which of the
+ * three the values came from, so a send can be traced to its configuration.
+ * Not having this is what let a Hero Fincorp campaign send Poonawalla links
+ * through a correctly-resolved variant without anything looking wrong.
  */
 function rawPlaceholders(digit, body, variant) {
   const key = String(variant || body.campaign_id || "").trim();
+  const digitList = parseJsonEnv("IVR_DTMF_PLACEHOLDERS")?.[String(digit)];
+
+  const link = key ? variantLink(key) : null;
+  if (link) {
+    // Borrow the shape, replace the link. An empty or missing digit map leaves
+    // nothing to borrow, so the template is assumed to take the link alone.
+    const list = Array.isArray(digitList) && digitList.length ? [...digitList] : [link];
+    list[list.length - 1] = link;
+    return { list, source: variantEnvName(key) };
+  }
+
   const perVariant = key
     ? parseJsonEnv("IVR_VARIANT_PLACEHOLDERS")?.[key]?.[String(digit)]
     : null;
-  const list = Array.isArray(perVariant)
-    ? perVariant
-    : parseJsonEnv("IVR_DTMF_PLACEHOLDERS")?.[String(digit)];
+  if (Array.isArray(perVariant)) {
+    return { list: perVariant, source: `IVR_VARIANT_PLACEHOLDERS[${key}]` };
+  }
 
-  return Array.isArray(list) ? list : [];
+  if (Array.isArray(digitList)) {
+    return { list: digitList, source: `IVR_DTMF_PLACEHOLDERS[${digit}]` };
+  }
+
+  return { list: [], source: "none" };
 }
 
 function interpolate(list, fields) {
@@ -223,6 +293,7 @@ function recordSend(row) {
           sso_minted: row.ssoMinted === true,
           sso_reason: row.ssoReason || null,
           link: row.link || null,
+          link_source: row.linkSource || null,
           message_id: row.messageId || null,
           error: row.error ?? null,
         },
@@ -340,7 +411,7 @@ async function handleKeypress(req, res) {
   // actually ask for one — otherwise every send would call the CRM for a value
   // nothing uses, and put a cross-service dependency on a path that does not
   // need it.
-  const raw = rawPlaceholders(digit, body, variant);
+  const { list: raw, source: linkSource } = rawPlaceholders(digit, body, variant);
   const wantsSso = raw.some((v) => String(v).includes("{{sso_link}}"));
   const sso = wantsSso
     ? await resolveSsoLink(phone.phone, database()?.client)
@@ -407,7 +478,10 @@ async function handleKeypress(req, res) {
     console.log(
       `[IVR_WA] Sent template=${template} digit=${digit} phone=${phone.phone} ` +
         `variant=${variant || "-"} campaign=${campaign_name || "-"} ` +
-        `message_id=${r.data?.message_id || "-"}`
+        // Which configuration produced the link. A variant that resolved from
+        // the URL but drew its link from IVR_DTMF_PLACEHOLDERS is a lender
+        // sending another lender's link, and this is the only place it shows.
+        `link_source=${linkSource} message_id=${r.data?.message_id || "-"}`
     );
 
     recordSend({
@@ -420,6 +494,7 @@ async function handleKeypress(req, res) {
       campaignName: campaign_name,
       uniqueId: unique_id,
       customerId,
+      linkSource,
       ssoMinted: sso.minted,
       ssoReason: sso.reason,
       // The link is the placeholder that differs between campaigns, so record
@@ -467,6 +542,7 @@ async function handleKeypress(req, res) {
       campaignName: campaign_name,
       uniqueId: unique_id,
       customerId,
+      linkSource,
       ssoMinted: sso.minted,
       ssoReason: sso.reason,
       link: placeholders[placeholders.length - 1],
