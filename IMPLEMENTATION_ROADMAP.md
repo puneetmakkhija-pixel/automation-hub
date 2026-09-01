@@ -134,7 +134,7 @@ CREATE TABLE crm.doc_requirements (
 
 **Key Features:**
 - Lender-specific requirements (different docs per lender)
-- Chatsense integration (send collection templates)
+- Ananta integration (send collection templates)
 - OCR verification (document validity check)
 - Compliance checking (name match, PAN match)
 - Completeness tracking (show progress to customer)
@@ -255,7 +255,7 @@ CREATE TABLE crm.settlements (
 ### Week 1-2: Phase 3 (Document Collection)
 **Deliverables:**
 - ✅ Document requirements mapped (all 4 lenders)
-- ✅ Chatsense template integration
+- ✅ Ananta template integration
 - ✅ OCR + compliance checking
 - ✅ Database schema created
 - ✅ API endpoints tested
@@ -265,7 +265,7 @@ CREATE TABLE crm.settlements (
 **Testing:**
 - Upload 1000 documents, verify OCR accuracy
 - Test all lender-specific requirement mappings
-- Verify Chatsense template delivery
+- Verify Ananta template delivery
 
 ---
 
@@ -386,7 +386,7 @@ CREATE TABLE crm.settlements (
 │  ↕️ EXTERNAL SYSTEMS ↕️                                              │
 │                                                                      │
 │  ├─ OBD API (outbound dialing)                                    │
-│  ├─ Chatsense (WhatsApp templates)                                │
+│  ├─ Ananta (WhatsApp templates)                                   │
 │  ├─ Ananta (bulk SMS/WhatsApp)                                    │
 │  ├─ Lender APIs (4 lenders)                                       │
 │  ├─ Payment Gateway (disbursal + collection)                      │
@@ -469,7 +469,7 @@ CREATE TABLE crm.settlements (
 
 ### Phase 3 (Ready to Build)
 - [ ] Lender-specific doc requirements mapped
-- [ ] Chatsense integration tested
+- [ ] Ananta integration tested
 - [ ] OCR accuracy > 95%
 - [ ] 1000 documents processed end-to-end
 - [ ] Monitoring dashboards active

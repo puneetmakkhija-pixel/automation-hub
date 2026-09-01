@@ -176,7 +176,7 @@ Day 2: Credit Scoring
 │ └─ Result: ZERO manual routing decisions
 
 Day 3: Document Collection
-├─ Chatsense WhatsApp templates (PHASE 3 - NEXT)
+├─ Ananta WhatsApp templates (PHASE 3 - NEXT)
 └─ Lender-specific doc collection automated
 
 Day 10: Credit Approval
@@ -209,7 +209,7 @@ Day 26-60: Billing
 
 **Objective:** Automated collection of lender-specific documents via WhatsApp  
 **Timeline:** 2-3 days from lead intake  
-**Automation:** Chatsense interactive templates + document upload
+**Automation:** Ananta interactive templates + document upload
 
 **Endpoints to Create:**
 ```
@@ -447,7 +447,7 @@ automation-hub/
    - Adjust lender config based on real data
 
 5. **Phase 3 Planning** (Week 2)
-   - Document Chatsense template structure
+   - Document the Ananta template structure
    - Define lender-specific doc requirements
    - Create document collection flow
 
