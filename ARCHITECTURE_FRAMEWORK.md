@@ -55,7 +55,7 @@
 
 **Does NOT own:**
 - Voice call management (owned by OBD)
-- Document upload UI (owned by customer portal / Chatsense)
+- Document upload UI (owned by the customer portal)
 - Credit decision logic (owned by bureau / internal engine)
 - Payment processing (owned by payment gateway)
 
@@ -120,7 +120,7 @@
 
 **Primary Responsibility:**
 - Define lender-specific doc requirements
-- Send collection requests via Chatsense
+- Send collection requests via Ananta WhatsApp
 - Verify uploaded documents
 - Track document completeness per lender
 
@@ -278,9 +278,9 @@ CRM State After Phase 2:
     ↓
 [IVR Router: /api/documents/send-collection]
     │ POST {applicationId, lenderId}
-    │ Triggers Chatsense interactive template
+    │ Triggers Ananta interactive template
     ↓
-[Chatsense Template] (WhatsApp Interactive)
+[Ananta Template] (WhatsApp Interactive)
     │ "📄 Documents Required for Poonawala Fincorp:"
     │ "1️⃣  ITR (last 2 years)"
     │ "2️⃣  Bank Statement (last 6 months)"
@@ -305,7 +305,7 @@ CRM State After Phase 2:
     │ ├─ crm.lead_events: {event_type: "document_uploaded", docType}
     │ └─ Track completeness (3/5 docs received)
     ↓
-[Chatsense Follow-up]
+[Ananta Follow-up]
     │ IF all_docs_received:
     │   └─ "✅ All documents received. Proceeding to credit review."
     │ ELSE:
@@ -389,7 +389,7 @@ CRM State After Phase 3:
     │ └─ Ready for Phase 5 (Disbursal)
     ↓
 [Customer Notification]
-    │ Chatsense WhatsApp: "🎉 Your loan of ₹5,00,000 has been approved!"
+    │ Ananta WhatsApp: "🎉 Your loan of ₹5,00,000 has been approved!"
     │ "Rate: 14.5% p.a. | Tenor: 36 months | EMI: ₹15,500"
     │ [Button: "View Sanction Letter"]
 
@@ -630,7 +630,7 @@ Phase 4: Lender Decision
 **Interfaces:**
 - Reads: crm.leads (to get assigned_lender_id)
 - Writes: crm.documents, crm.lead_events
-- External: Chatsense (template delivery)
+- External: Ananta (template delivery)
 
 ### Phase 4: Credit Submission & Approval
 **Depends On:** Phase 2 (has assigned_lender_id) + Phase 3 (has documents)  
@@ -662,7 +662,7 @@ Phase 4: Lender Decision
 | API | IVR Router | Express.js + Node.js | Route orchestration |
 | API | CRM | Supabase (PostgreSQL) | Data storage + RPC |
 | Message Queue | Webhooks | Express webhooks | Event handling |
-| External APIs | OBD/Chatsense | REST APIs | Voice + messaging |
+| External APIs | OBD/Chatsense (voice + DTMF), Ananta (WhatsApp) | REST APIs | Voice + messaging |
 | External APIs | Lenders | REST APIs | Loan processing |
 | External APIs | Bureau | REST APIs | Credit scores |
 | Database | CRM | PostgreSQL (Supabase) | Single source of truth |
