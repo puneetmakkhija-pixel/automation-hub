@@ -45,9 +45,6 @@ railway variables set OBD_SMS_WEBHOOK_URL "https://automation-hub-production.up.
 echo "Adding ANANTA_WEBHOOK_URL..."
 railway variables set ANANTA_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/ananta"
 
-echo "Adding CHATSENSE_WEBHOOK_URL..."
-railway variables set CHATSENSE_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/chatsense"
-
 echo "Adding SUPABASE_WEBHOOK_URL..."
 railway variables set SUPABASE_WEBHOOK_URL "https://automation-hub-production.up.railway.app/api/db/webhooks/log"
 

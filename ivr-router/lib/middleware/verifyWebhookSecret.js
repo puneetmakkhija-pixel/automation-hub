@@ -24,7 +24,7 @@ import crypto from "crypto";
  * offers a bare URL field plus a Verify button for DLR and Click URL — there is
  * no way to add a custom header. Register the webhook as
  *   https://<host>/webhooks/ananta?token=<secret>
- * Options 1 and 2 remain for the other providers (Oriserve, Chatsense, OBD).
+ * Options 1 and 2 remain for the other providers (Oriserve, OBD).
  *
  * ROLLOUT — this fails OPEN when unconfigured, deliberately.
  * If the env var is unset the request is allowed and a warning is logged, so

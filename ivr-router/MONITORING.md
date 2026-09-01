@@ -47,7 +47,6 @@ Every log entry contains:
 - **WHATSAPP_SEND**: WhatsApp message sent
 - **SMS_CONFIRMED**: SMS delivery confirmed
 - **ANANTA_MESSAGE**: Ananta WhatsApp event
-- **CHATSENSE_DELIVERY**: Chatsense message delivered
 
 ### Eligibility & Routing Events
 - **ELIGIBILITY_CHECK**: Multi-lender eligibility assessment
