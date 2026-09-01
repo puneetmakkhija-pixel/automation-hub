@@ -245,29 +245,34 @@ curl -X POST http://localhost:3000/api/db/webhooks/log \
 Update `index.js` webhook handlers to log events:
 
 ```javascript
-// In /webhooks/chatsense handler
-app.post("/webhooks/chatsense", async (req, res) => {
+// In /webhooks/ananta handler
+app.post("/webhooks/ananta", async (req, res) => {
   try {
     const payload = req.body;
-    
+
     // Log to Supabase
-    await dbClient.logWebhookEvent('chatsense', payload);
-    
+    await dbClient.logWebhookEvent('ananta', payload);
+
     // Log to campaign results
     await dbClient.logCampaignResult({
       campaignId: payload.campaignId,
       phone: payload.phone,
-      channel: 'chatsense',
+      channel: 'ananta',
       status: payload.status,
       result: payload
     });
-    
+
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 ```
+
+> This example used `/webhooks/chatsense` until 1 Sep 2026, when that route was
+> removed along with the rest of the Chatsense integration. The pattern is the
+> same for any provider webhook. `'chatsense'` remains a valid `channel` /
+> `source` value in the schema above — historical rows still carry it.
 
 ## 8. Common Workflows
 

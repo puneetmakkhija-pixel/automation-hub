@@ -370,7 +370,7 @@ Used for bulk eligibility checking during campaign processing (50K+/day).
 
 1. **Phase 1: Voice Call + Lead Intake**
    - OBD call completes → Chatsense DTMF capture
-   - `POST /api/chatsense/voice-disposition` → Application created in CRM
+   - `POST /api/crm/lead-intake-sync` → Application created in CRM
 
 2. **Phase 2a: Credit Score Fetch** (External - CIBIL/Hunter API)
    - Fetch CIBIL score from bureau
