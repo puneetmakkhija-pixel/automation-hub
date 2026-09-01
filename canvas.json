@@ -1,8 +1,0 @@
-{
-  "artboards": [
-    { "file": "Glassmorphism.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Glassmorphism" },
-    { "file": "Minimal.dc.html", "x": 1600, "y": 0, "w": 1440, "h": 900, "title": "Minimal" },
-    { "file": "DarkOptimized.dc.html", "x": 3200, "y": 0, "w": 1440, "h": 900, "title": "Dark Optimized" }
-  ],
-  "launch": { "view": "canvas" }
-}
