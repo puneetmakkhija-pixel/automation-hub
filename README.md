@@ -4,17 +4,47 @@ Two self-hosted services behind the BuddyLoan call centre: **`ivr-router`** (cal
 routing, OBD campaigns, the voice bot and the WhatsApp/ChatSense journeys) and
 **`data-jobs`** (scheduled ETL and the cron monitor).
 
-Deploys as **one GitHub repo → one Railway project ("Automation Hub")**, each
-service pointed at its subfolder via Railway's "Root Directory" setting.
+Deploys as **one GitHub repo → one Railway project ("Automation Hub")**. Each
+service sets Railway's "Root Directory" to the folder it builds from — or
+leaves it at the repo root, which three of the five do. See the table below
+before changing one.
 
 ## Services
 
-| Service | What it's for | Railway service | Root Directory |
-| --- | --- | --- | --- |
-| `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp/ChatSense journeys, lender routing | `ivr-voice-bot-system`, `ivr` | `ivr-router` |
-| `data-jobs` | Scheduled data processing and the twice-daily cron monitor | `jobs`, `morning-check`, `afternoon-check` | `data-jobs` |
+Two folders, five Railway services. The Root Directory column is what each
+service is actually set to today — it is not uniform, and three of them
+deliberately build from the repo root rather than from a subfolder.
+
+| Folder | What it's for | Railway service | Root Directory | How it starts |
+| --- | --- | --- | --- | --- |
+| `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp/ChatSense journeys, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
+| `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack |
+| `data-jobs` | Twice-daily cron monitor | `morning-check` (`0 5 * * *` UTC), `afternoon-check` (`30 8 * * *` UTC) | *(repo root)* | `npm --prefix data-jobs run cron:morning` / `cron:afternoon` |
 
 Env vars for each are in that folder's `.env.example`.
+
+### Leave `ivr-voice-bot-system` rooted at the repo root
+
+It holds the live IVR configuration — every `ANANTA_*`, `OBD_*`, `ORISERVE_*`
+and `SUPABASE_*` variable, plus `CONSOLE_SECRET` — and rooting it at the repo
+root is what makes Railway read the root `railway.toml` and build the root
+`Dockerfile`. That is the only build here that copies `ivr-router/public/`,
+which `GET /console` serves via `res.sendFile('public/console.html')`
+(`ivr-router/index.js`). Repointing it at `ivr-router` moves the build to
+`ivr-router/Dockerfile` and drops `railway.toml` out of scope, so change it
+only deliberately.
+
+`morning-check` and `afternoon-check` are rooted at the repo root for the same
+kind of reason: they reach into the folder with `npm --prefix data-jobs`
+instead.
+
+### The `ivr` service has no variables set
+
+There is a fifth service, `ivr` (`ivr-production-38c0.up.railway.app`), rooted
+at `ivr-router` with **zero environment variables** — no `SUPABASE_URL`, no
+`OBD_*`, no `CONSOLE_SECRET`. It cannot be doing the job
+`ivr-voice-bot-system` is doing. Worth confirming it is a leftover and
+deleting it along with the three below.
 
 ## Three services were removed on 31 Aug 2026
 
@@ -56,10 +86,16 @@ docs describe.
 Anything worth recovering is in git history; nothing is lost by their absence
 from the working tree.
 
-## Wiring a service into Railway (one-time)
+## Wiring a *new* service into Railway (one-time)
+
+The five services above are already wired; this is for adding another.
 
 1. Open the service in the **Automation Hub** project on railway.com.
 2. Settings → Source → connect this repo.
-3. Settings → Root Directory → the matching folder above.
+3. Settings → Root Directory → the folder it should build from, **or leave it
+   at the repo root** if it needs `railway.toml`, the root `Dockerfile`, or
+   files from more than one folder. Check the table above before assuming a
+   subfolder is right — three of the five existing services build from the
+   repo root.
 4. Settings → Variables → the vars in that folder's `.env.example`.
 5. Deploy. Railway gives it a `*.up.railway.app` URL.

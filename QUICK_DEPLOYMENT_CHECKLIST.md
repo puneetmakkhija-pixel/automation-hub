@@ -50,8 +50,15 @@ Access: https://your-railway-url/console?token=<CONSOLE_SECRET>
 ```
 
 It is auth-gated: the page stores the token on load and sends it as a header on
-every call it makes afterwards. Set `CONSOLE_SECRET` in the `ivr` service's
-Railway variables first.
+every call it makes afterwards. Set `CONSOLE_SECRET` in the
+**`ivr-voice-bot-system`** service's Railway variables first — that is the
+service running `ivr-router`, not the `ivr` service, which has no variables set.
+
+On first load the console prompts for an **API Base URL**. Enter the same origin
+you opened it from (`https://your-railway-url`, no trailing slash). It does not
+auto-detect: dismissing the prompt falls back to `http://localhost:3000`, and
+every action then goes to your own laptop while the status indicator reads
+offline. Fix it later from "Config" if you clicked past it.
 
 (The old instructions here copied a root-level `automation-console.html` into
 `ivr-router/public/`. That file was a design mockup, superseded by
