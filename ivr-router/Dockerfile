@@ -18,6 +18,10 @@ COPY --from=builder /app/package*.json ./
 # Copy application code
 COPY index.js ./
 COPY lib ./lib
+# GET /console does res.sendFile('public/console.html'), so the operator console
+# 404s at runtime if this is left out. The root Dockerfile gets it for free by
+# copying all of ivr-router/; this one names each path, so it has to be listed.
+COPY public ./public
 
 # Expose port
 EXPOSE 3000
