@@ -1,5 +1,9 @@
 # Dashboard API Contract
 
+> **The IVR Campaigns, Lenders and Recordings contracts below were retired on
+> 1 Sep 2026**, along with the dashboard tabs that called them. See
+> `docs/RETIRED_ENDPOINTS.md`. Every other contract here still holds.
+
 **Purpose:** Define expected request/response formats for all dashboard endpoints  
 **Status:** Complete - Dashboard expects these exact formats  
 **Last Updated:** August 28, 2026

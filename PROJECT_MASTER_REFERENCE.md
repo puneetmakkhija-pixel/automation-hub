@@ -153,8 +153,11 @@ Location: `/home/user/automation-hub/dashboard/index.html`
 - ✅ Poonawala Finance card (webhook status, API token field, approval rate %)
 - ✅ Hero FinCorp card (webhook status, API token field, approval rate %)
 - ✅ MIS Reports table (daily reports with approval/rejection stats)
-- ✅ Webhook status connected to /api/lenders/status endpoint
-- ✅ Approval rate connected to /api/lenders/{id}/stats endpoint
+- ⚠️ Webhook status and approval rate were listed as connected to
+  `/api/lenders/status` and `/api/lenders/{id}/stats`. **Neither endpoint ever
+  existed** — `/api/lenders` only ever had list/get/create/update/delete — and
+  the router itself was retired on 1 Sep 2026. Lenders live in the CRM
+  (`crm.lenders`, `crm.lender_bre`). See `docs/RETIRED_ENDPOINTS.md`.
 - ✅ MIS reports table connected to /api/mis/reports endpoint
 
 #### Section 5: Analytics & Reports
@@ -185,8 +188,8 @@ POST /api/campaigns/:id/launch - Launch campaign
 GET  /api/leads - List leads (with pagination)
 POST /api/leads/bulk - Upload CSV leads
 GET  /api/leads/search?phone=X - Search leads
-GET  /api/lenders/status - Lender webhook status
-GET  /api/lenders/{id}/stats - Lender stats
+GET  /api/lenders/status - RETIRED 1 Sep 2026 (and never implemented)
+GET  /api/lenders/{id}/stats - RETIRED 1 Sep 2026 (and never implemented)
 GET  /api/mis/reports - MIS reports list
 GET  /api/database/status - Database health
 ```

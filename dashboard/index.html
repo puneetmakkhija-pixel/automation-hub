@@ -984,13 +984,10 @@
         <div class="nav-tabs">
             <button class="nav-tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
             <button class="nav-tab" onclick="switchTab('campaigns')">🎯 Campaigns</button>
-            <button class="nav-tab" onclick="switchTab('ivr-campaigns')">☎️ IVR</button>
             <button class="nav-tab" onclick="switchTab('leads')">👥 Leads</button>
-            <button class="nav-tab" onclick="switchTab('lenders')">🏦 Lenders</button>
             <button class="nav-tab" onclick="switchTab('analytics')">📈 Analytics</button>
             <button class="nav-tab" onclick="switchTab('ananta-whatsapp')">💬 WhatsApp</button>
             <button class="nav-tab" onclick="switchTab('whatsapp-flow')">📱 Flow</button>
-            <button class="nav-tab" onclick="switchTab('recordings')">🎙️ Recordings</button>
             <button class="nav-tab" onclick="switchTab('flexiloans-documents')">📄 Docs</button>
             <button class="nav-tab" onclick="switchTab('settings')">⚙️ Settings</button>
         </div>
@@ -1105,35 +1102,6 @@
             </div>
         </section>
 
-        <!-- IVR CAMPAIGNS TAB -->
-        <section id="ivr-campaigns" class="section">
-            <div class="flex-between">
-                <h2>IVR Campaigns</h2>
-                <button class="btn btn-primary" onclick="openIVRCampaignModal()">+ New IVR Campaign</button>
-            </div>
-
-            <div class="card">
-                <table class="table" id="ivr-campaigns-table">
-                    <thead>
-                        <tr>
-                            <th>Campaign</th>
-                            <th>Options</th>
-                            <th>Leads</th>
-                            <th>Voice Bot</th>
-                            <th>Status</th>
-                            <th>Created</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="ivr-campaigns-body">
-                        <tr>
-                            <td colspan="7" style="text-align: center;">No IVR campaigns yet</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
         <!-- LEADS TAB -->
         <section id="leads" class="section">
             <div class="flex-between">
@@ -1164,35 +1132,6 @@
                             <td colspan="8" style="text-align: center;">No leads yet</td>
                         </tr>
                     </tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- LENDERS TAB -->
-        <section id="lenders" class="section">
-            <div class="flex-between">
-                <h2>Lender Integration</h2>
-                <button class="btn btn-primary" onclick="openAddLenderModal()">+ Add Lender</button>
-            </div>
-
-            <div class="grid grid-2" id="lenders-container"></div>
-
-            <div class="card mt-20">
-                <h3>Daily MIS Reports</h3>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Lender</th>
-                            <th>Date</th>
-                            <th>Applications</th>
-                            <th>Approved</th>
-                            <th>Rejected</th>
-                            <th>Pending</th>
-                            <th>Fallback</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody id="mis-reports-body"></tbody>
                 </table>
             </div>
         </section>
@@ -1437,34 +1376,6 @@
             </div>
         </section>
 
-        <!-- RECORDINGS TAB -->
-        <section id="recordings" class="section">
-            <div class="flex-between">
-                <h2>Recording Library</h2>
-                <button class="btn btn-primary" onclick="openRecordingModal()">+ Upload Recording</button>
-            </div>
-
-            <div class="card">
-                <table class="table" id="recordings-table">
-                    <thead>
-                        <tr>
-                            <th>Recording</th>
-                            <th>Duration</th>
-                            <th>Language</th>
-                            <th>Size</th>
-                            <th>Created</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="recordings-list">
-                        <tr>
-                            <td colspan="6" style="text-align: center;">Loading...</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
         <!-- FLEXILOANS DOCUMENTS TAB -->
         <section id="flexiloans-documents" class="section">
             <div class="flex-between">
@@ -1645,109 +1556,6 @@
         </div>
     </div>
 
-    <!-- Add Lender Modal -->
-    <div id="add-lender-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span>Add New Lender</span>
-                <button class="modal-close" onclick="closeAddLenderModal()">×</button>
-            </div>
-            <form onsubmit="submitAddLender(event)">
-                <div class="form-group">
-                    <label>Lender Name *</label>
-                    <input type="text" id="lender-name" placeholder="e.g., HDFC Bank" required>
-                </div>
-                <div class="form-group">
-                    <label>Webhook URL *</label>
-                    <input type="url" id="lender-webhook" placeholder="https://webhook.example.com" required>
-                </div>
-                <div class="form-group">
-                    <label>API Token *</label>
-                    <input type="password" id="lender-token" placeholder="Your API token" required>
-                </div>
-                <div class="form-group">
-                    <label>Approval Rate Target (%)</label>
-                    <input type="number" id="lender-target" placeholder="50" min="0" max="100" value="50">
-                </div>
-                <div class="form-group">
-                    <label>Fallback Lender</label>
-                    <select id="lender-fallback">
-                        <option value="">None - No fallback</option>
-                        <option value="poonawala">Poonawala Finance</option>
-                        <option value="hero_fincorp">Hero FinCorp</option>
-                    </select>
-                </div>
-                <div class="flex">
-                    <button type="submit" class="btn btn-primary btn-block">Add Lender</button>
-                    <button type="button" class="btn btn-secondary btn-block" onclick="closeAddLenderModal()">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- IVR Campaign Modal -->
-    <div id="ivr-campaign-modal" class="modal">
-        <div class="modal-content" style="max-height: 90vh; overflow-y: auto;">
-            <div class="modal-header">
-                <span>Create IVR Campaign</span>
-                <button class="modal-close" onclick="closeIVRCampaignModal()">×</button>
-            </div>
-            <form onsubmit="submitIVRCampaign(event)">
-                <div class="form-group">
-                    <label>Campaign Name *</label>
-                    <input type="text" id="ivr-campaign-name" placeholder="e.g., Bureau Eligibility Campaign" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Number of Leads *</label>
-                    <input type="number" id="ivr-campaign-leads" placeholder="1000" min="1" required>
-                </div>
-
-                <h3 style="margin-top: 24px; margin-bottom: 16px;">🔊 IVR Voice Flow</h3>
-
-                <div class="form-group">
-                    <label>Select Pre-Recorded IVR Greeting *</label>
-                    <select id="ivr-greeting-recording" required onchange="updateGreetingPreview()">
-                        <option value="">-- Select Recording --</option>
-                        <option value="greeting_1">Loan Eligibility Check (Standard)</option>
-                        <option value="greeting_2">Loan Eligibility Check (Urgent)</option>
-                        <option value="greeting_3">Pre-Approved Loan Offer</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Max Call Duration (seconds)</label>
-                    <input type="number" id="ivr-max-duration" placeholder="120" min="30" max="600" value="120">
-                </div>
-
-                <h3 style="margin-top: 24px; margin-bottom: 16px;">DTMF Press 1: Bureau-Based Loan Check</h3>
-
-                <div class="form-group">
-                    <label>Primary Lender *</label>
-                    <select id="ivr-dtmf1-primary" required>
-                        <option value="">Select Primary Lender</option>
-                        <option value="flexiloans">FlexiLoans</option>
-                        <option value="poonawala">Poonawala Finance</option>
-                    </select>
-                </div>
-
-                <div class="form-group">
-                    <label>Fallback Lender</label>
-                    <select id="ivr-dtmf1-fallback">
-                        <option value="">None</option>
-                        <option value="flexiloans">FlexiLoans</option>
-                        <option value="poonawala">Poonawala Finance</option>
-                    </select>
-                </div>
-
-                <div class="flex">
-                    <button type="submit" class="btn btn-primary btn-block">Create & Launch</button>
-                    <button type="button" class="btn btn-secondary btn-block" onclick="closeIVRCampaignModal()">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <!-- Ananta Config Modal -->
     <div id="ananta-config-modal" class="modal">
         <div class="modal-content">
@@ -1803,39 +1611,6 @@
                 <div class="flex">
                     <button type="submit" class="btn btn-primary btn-block">Create Template</button>
                     <button type="button" class="btn btn-secondary btn-block" onclick="closeTemplateModal()">Cancel</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Recording Modal -->
-    <div id="recording-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span>Upload Recording</span>
-                <button class="modal-close" onclick="closeRecordingModal()">×</button>
-            </div>
-            <form onsubmit="uploadRecording(event)">
-                <div class="form-group">
-                    <label>Recording Name *</label>
-                    <input type="text" id="new-recording-name" placeholder="e.g., Greeting - English" required>
-                </div>
-                <div class="form-group">
-                    <label>Audio File *</label>
-                    <input type="file" id="new-recording-file" accept="audio/mpeg,audio/wav,audio/ogg" required>
-                    <p style="font-size: 12px; color: var(--text-tertiary); margin-top: 8px;">Max 30MB • MP3, WAV, OGG</p>
-                </div>
-                <div class="form-group">
-                    <label>Language</label>
-                    <select id="recording-language">
-                        <option value="en">English</option>
-                        <option value="hi">Hindi</option>
-                        <option value="ta">Tamil</option>
-                    </select>
-                </div>
-                <div class="flex">
-                    <button type="submit" class="btn btn-primary btn-block">Upload</button>
-                    <button type="button" class="btn btn-secondary btn-block" onclick="closeRecordingModal()">Cancel</button>
                 </div>
             </form>
         </div>
@@ -1911,16 +1686,10 @@
         function closeCampaignModal() { document.getElementById('campaign-modal').classList.remove('active'); }
         function openUploadModal() { document.getElementById('upload-modal').classList.add('active'); }
         function closeUploadModal() { document.getElementById('upload-modal').classList.remove('active'); }
-        function openAddLenderModal() { document.getElementById('add-lender-modal').classList.add('active'); }
-        function closeAddLenderModal() { document.getElementById('add-lender-modal').classList.remove('active'); }
-        function openIVRCampaignModal() { document.getElementById('ivr-campaign-modal').classList.add('active'); }
-        function closeIVRCampaignModal() { document.getElementById('ivr-campaign-modal').classList.remove('active'); }
         function openAnantaConfigModal() { document.getElementById('ananta-config-modal').classList.add('active'); }
         function closeAnantaConfigModal() { document.getElementById('ananta-config-modal').classList.remove('active'); }
         function openTemplateModal() { document.getElementById('template-modal').classList.add('active'); }
         function closeTemplateModal() { document.getElementById('template-modal').classList.remove('active'); }
-        function openRecordingModal() { document.getElementById('recording-modal').classList.add('active'); }
-        function closeRecordingModal() { document.getElementById('recording-modal').classList.remove('active'); }
         function openFlexiLoansDocModal() { document.getElementById('flexiloans-doc-modal').classList.add('active'); }
         function closeFlexiLoansDocModal() { document.getElementById('flexiloans-doc-modal').classList.remove('active'); }
 
@@ -1975,59 +1744,6 @@
             }
         }
 
-        async function submitAddLender(e) {
-            e.preventDefault();
-            try {
-                const res = await fetch(`${API_BASE}/lenders`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: document.getElementById('lender-name').value,
-                        webhook_url: document.getElementById('lender-webhook').value,
-                        api_token: document.getElementById('lender-token').value,
-                        approval_rate_target: parseInt(document.getElementById('lender-target').value),
-                        fallback_lender: document.getElementById('lender-fallback').value
-                    })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showAlert('Lender added successfully!');
-                    closeAddLenderModal();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (err) {
-                showAlert('Error adding lender: ' + err.message, 'error');
-            }
-        }
-
-        async function submitIVRCampaign(e) {
-            e.preventDefault();
-            try {
-                const res = await fetch(`${API_BASE}/ivr-campaigns`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        name: document.getElementById('ivr-campaign-name').value,
-                        leads: parseInt(document.getElementById('ivr-campaign-leads').value),
-                        greeting_recording: document.getElementById('ivr-greeting-recording').value,
-                        primary_lender: document.getElementById('ivr-dtmf1-primary').value,
-                        fallback_lender: document.getElementById('ivr-dtmf1-fallback').value,
-                        max_duration: parseInt(document.getElementById('ivr-max-duration').value)
-                    })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showAlert('IVR campaign created!');
-                    closeIVRCampaignModal();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (err) {
-                showAlert('Error creating IVR campaign: ' + err.message, 'error');
-            }
-        }
-
         async function saveAnantaConfig(e) {
             e.preventDefault();
             try {
@@ -2069,33 +1785,6 @@
                     showAlert('Template created!');
                     closeTemplateModal();
                     loadAnantaTemplates();
-                } else {
-                    showAlert('Error: ' + data.error, 'error');
-                }
-            } catch (err) {
-                showAlert('Error: ' + err.message, 'error');
-            }
-        }
-
-        async function uploadRecording(e) {
-            e.preventDefault();
-            const file = document.getElementById('new-recording-file').files[0];
-            if (!file) return;
-
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('name', document.getElementById('new-recording-name').value);
-            formData.append('language', document.getElementById('recording-language').value);
-
-            try {
-                const res = await fetch(`${API_BASE}/recordings`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const data = await res.json();
-                if (data.success) {
-                    showAlert('Recording uploaded!');
-                    closeRecordingModal();
                 } else {
                     showAlert('Error: ' + data.error, 'error');
                 }
