@@ -113,11 +113,15 @@ SELECT created_at,
 `link` is the URL handed to Ananta, always full length — the shortening happens
 on their side, so the log stays readable.
 
-## What this flow does *not* use
+## Where the link is *not* configured
 
-`lib/ivr/ivrRouter.js` carries a hardcoded `poonawala` config with a
-`fallback_url` for Hero Fincorp on an older campaign (`utm_medium=588`,
-`utm_campaignid=IVRSMS`). It is **dead code** — reached only through
-`lib/services/voiceBotService.js`, which nothing imports. It is not what a
-caller receives, and editing it changes nothing. The live path is
-`IVR_VARIANT_PLACEHOLDERS` plus the webhook above.
+Nowhere but the three sources above. A hardcoded `poonawala` config in
+`lib/ivr/ivrRouter.js` used to carry a `fallback_url` for Hero Fincorp on an
+older campaign (`utm_medium=588`, `utm_campaignid=IVRSMS`), which read like live
+configuration and was not — nothing a caller received ever came from it. That
+file and the unreachable cluster around it were deleted in PR #32.
+
+If you find a lender URL anywhere in the source, it is not what gets sent. The
+link a caller receives is always one of `IVR_LINK_<VARIANT>`,
+`IVR_VARIANT_PLACEHOLDERS`, or `IVR_DTMF_PLACEHOLDERS`, and `link_source` on the
+send row names which.
