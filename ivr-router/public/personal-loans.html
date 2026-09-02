@@ -88,6 +88,7 @@
     <thead><tr>
       <th>Lender</th><th>Campaign</th>
       <th class="n">Presses today</th><th class="n">Presses MTD</th><th class="n">Distinct phones</th>
+      <th class="n">Delivered</th><th class="n">Read</th>
       <th>First</th><th>Last</th>
     </tr></thead>
     <tbody></tbody>
@@ -98,7 +99,7 @@
 
   <h3>Not shown here, and why</h3>
   <div class="note">
-    <p style="margin-top:0"><b>Delivered and read counts.</b> Ananta posts a delivery receipt for every message to <code>/webhooks/ananta</code>, and that handler currently logs it and discards it — nothing is stored, so a sent → delivered → read funnel cannot be drawn. Persisting those receipts is a small change to the IVR service; it will only capture receipts from the moment it ships.</p>
+    <p style="margin-top:0"><b>Delivered and read counts start from 2 Sep.</b> <code>/webhooks/ananta</code> used to log each delivery receipt and discard it — roughly 6,700 a day. It now records them, but only from the moment that change deployed: every press before it has no receipt and never will. A zero on an older day is an absence of records, not an absence of deliveries, which is why the cards show how many sends actually carry a receipt rather than a percentage.</p>
     <p><b>Lender MIS outcomes.</b> There is no key to join a press to a lender outcome. <code>crm.mis_poon</code> holds 2,051 rows of which 14 carry a phone number and none carry a client reference, and its newest MIS date is 26 Aug — before these campaigns ran. <code>crm.mis_hero</code> holds one row. The durable fix is upstream: the <code>customer_id</code> already minted for every presser should ride the lender link so it comes back in the MIS as the client reference.</p>
   </div>
 </div>
@@ -158,9 +159,18 @@
         '<div class="metrics">' +
           '<div class="metric"><div class="n">' + n(l.ftd_presses) + '</div><div class="k">Press 1 today</div></div>' +
           '<div class="metric"><div class="n">' + n(l.mtd_presses) + '</div><div class="k">Month to date</div></div>' +
+          (Number(l.mtd_receipts_seen)
+            ? '<div class="metric"><div class="n">' + n(l.mtd_delivered) + '</div><div class="k">Delivered MTD</div></div>' +
+              '<div class="metric"><div class="n">' + n(l.mtd_read) + '</div><div class="k">Read MTD</div></div>'
+            : '') +
         '</div>' +
         '<div class="meta">' + n(l.mtd_phones) + ' distinct numbers this month' +
           (Number(l.mtd_failed) ? ' · ' + n(l.mtd_failed) + ' failed sends' : '') +
+          // A zero delivered count means one of two very different things.
+          // Saying which is the difference between a metric and a rumour.
+          (Number(l.mtd_receipts_seen)
+            ? ' · receipts on ' + n(l.mtd_receipts_seen) + ' of ' + n(l.mtd_presses) + ' sends'
+            : ' · no delivery receipts recorded yet') +
         '</div></div>';
     }).join('');
   }
@@ -184,12 +194,14 @@
         '<td class="n">' + n(c.ftd_presses) + '</td>' +
         '<td class="n">' + n(c.presses) + '</td>' +
         '<td class="n">' + n(c.phones) + '</td>' +
+        '<td class="n">' + n(c.delivered) + '</td>' +
+        '<td class="n">' + n(c.read_count) + '</td>' +
         '<td>' + String(c.first_at || '').replace('T', ' ') + '</td>' +
         '<td>' + String(c.last_at || '').replace('T', ' ') + '</td>' +
         '</tr>';
     }).join('');
     el('campaigns').querySelector('tbody').innerHTML =
-      body || '<tr><td colspan="7" style="color:#66727f">No campaigns this month.</td></tr>';
+      body || '<tr><td colspan="9" style="color:#66727f">No campaigns this month.</td></tr>';
   }
 
   function renderDaily(s) {
