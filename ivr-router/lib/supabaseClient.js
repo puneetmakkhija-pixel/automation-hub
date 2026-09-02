@@ -3,10 +3,15 @@
  * Stores and retrieves customer data, campaign records, and webhook events
  *
  * Database Tables:
- *   customers - Customer profiles with demographics
- *   campaigns - Campaign records and metadata
  *   webhook_events - Log of all incoming webhooks
- *   campaign_results - Results and metrics from each campaign
+ *   crm.voice_call_events - Typed voice-provider call outcomes
+ *
+ * Not every method here targets a table that exists. `campaigns` and
+ * `campaign_results` (createCampaign, logCampaignResult, getCampaignResults,
+ * getCampaignStats) are absent from the live database, and `customers` holds
+ * no rows — see docs/RETIRED_ENDPOINTS.md. Those methods fail at the request
+ * and return { success: false }, so a caller sees no exception. Check a table
+ * exists before reaching for the method that writes to it.
  *
  * Environment Variables:
  *   SUPABASE_URL - Your Supabase project URL
@@ -24,7 +29,7 @@
  *     state: 'Maharashtra'
  *   });
  *
- *   // Log webhook event
+ *   // Log webhook event — phone becomes ext_ref, status becomes event
  *   await db.logWebhookEvent('ananta', {
  *     phone: '919876543210',
  *     status: 'delivered',
@@ -187,9 +192,18 @@ class SupabaseClient {
   }
 
   /**
-   * Log webhook event
+   * Log a webhook event to public.webhook_events.
+   *
+   * The table holds the body in `payload` and names what happened in `event`.
+   * `ext_ref` is the reference that ties the row back to something — every row
+   * written so far puts the mobile there — and it is what makes the log
+   * joinable rather than just readable. Pass `event` and `extRef` explicitly,
+   * or let them be read out of the payload, which is what most callers want.
+   *
+   * `id` is GENERATED ALWAYS AS IDENTITY and `received_at` defaults to now(),
+   * so neither is supplied here: sending `id` is rejected outright.
    */
-  async logWebhookEvent(source, eventData) {
+  async logWebhookEvent(source, payload = {}, { event, extRef } = {}) {
     if (!source) {
       throw new SupabaseError('source is required', null, null);
     }
@@ -199,8 +213,9 @@ class SupabaseClient {
         .from('webhook_events')
         .insert({
           source,
-          event_data: eventData,
-          received_at: new Date().toISOString(),
+          event: event || payload.event || payload.status || 'unknown',
+          ext_ref: extRef || payload.ext_ref || payload.mobile || payload.phone || null,
+          payload,
         })
         .select();
 
