@@ -45,6 +45,9 @@ router.get('/health', async (req, res) => {
  * Trigger a single voice agent campaign
  * POST /api/oriserve/campaigns/trigger
  * Body: { campaign_id, mobile, metadata }
+ *
+ * campaign_id may be omitted when ORISERVE_CAMPAIGN_ID is set — see
+ * ivr-router/ORI_VOICE_BOT_CAMPAIGN.md.
  */
 router.post('/campaigns/trigger', async (req, res) => {
   try {
@@ -55,12 +58,20 @@ router.post('/campaigns/trigger', async (req, res) => {
       });
     }
 
-    const { campaign_id, mobile, metadata = {} } = req.body;
+    const { mobile, metadata = {} } = req.body;
+    const campaign_id = req.body.campaign_id || oriserveClient.defaultCampaignId;
 
-    if (!campaign_id || !mobile) {
+    if (!campaign_id) {
       return res.status(400).json({
         success: false,
-        error: 'campaign_id and mobile are required',
+        error: 'campaign_id is required (pass it, or set ORISERVE_CAMPAIGN_ID)',
+      });
+    }
+
+    if (!mobile) {
+      return res.status(400).json({
+        success: false,
+        error: 'mobile is required',
       });
     }
 

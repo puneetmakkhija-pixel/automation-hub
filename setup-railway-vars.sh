@@ -22,12 +22,24 @@ echo ""
 echo "📝 Adding CRITICAL variables..."
 echo ""
 
-# Oriserve Variables
-echo "Adding ORISERVE_API_KEY..."
-railway variables set ORISERVE_API_KEY "vx_iJvvN0WWVUU1nwja8pczVrSgwA4LGqk6"
+# Oriserve (ORI voice bot) Variables
+# The API key is a live credential and is never stored in this repo. Supply it
+# on the command line for this run:
+#   ORISERVE_API_KEY=vx_... ./setup-railway-vars.sh
+if [ -n "$ORISERVE_API_KEY" ]; then
+    echo "Adding ORISERVE_API_KEY..."
+    railway variables set ORISERVE_API_KEY "$ORISERVE_API_KEY"
+else
+    echo "⏭️  Skipping ORISERVE_API_KEY — not set in this shell."
+    echo "   Re-run as: ORISERVE_API_KEY=vx_... ./setup-railway-vars.sh"
+    echo "   Or set it directly: railway variables set ORISERVE_API_KEY 'vx_...'"
+fi
 
 echo "Adding ORISERVE_BASE_URL..."
-railway variables set ORISERVE_BASE_URL "https://api-voice-agent.oriserve.com/api/v1"
+railway variables set ORISERVE_BASE_URL "https://api-buddy-loan-vox.oriserve.com/api/v1"
+
+echo "Adding ORISERVE_CAMPAIGN_ID..."
+railway variables set ORISERVE_CAMPAIGN_ID "6a969a1c91b08220629d6b88"
 
 echo "Adding ORISERVE_WEBHOOK_URL..."
 railway variables set ORISERVE_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/oriserve"
