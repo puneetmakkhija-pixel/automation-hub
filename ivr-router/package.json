@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "node index.js",
+    "test:press-forward": "node test-press-forward.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
