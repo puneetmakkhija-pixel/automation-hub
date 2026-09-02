@@ -4,6 +4,7 @@ import { verifyWebhookSecret } from "../middleware/verifyWebhookSecret.js";
 import SupabaseClient from "../supabaseClient.js";
 import { resolveCustomerId } from "../customerIds.js";
 import { resolveSsoLink } from "../crmSsoLink.js";
+import { forwardPressToCrm } from "../crmPressForward.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -353,6 +354,13 @@ async function handleKeypress(req, res) {
     dtmf != null && String(dtmf).trim() !== ""
       ? String(dtmf).trim()
       : String(dtmf_sequence || "").trim().slice(-1);
+
+  // The CRM gets every press, before any of the decisions below. A digit with
+  // no template, an unreadable number and a duplicate delivery all return early
+  // from this handler, and all three are facts the funnel wants: the press is
+  // what the customer did, the message is only what we did about it. Not
+  // awaited — see lib/crmPressForward.js on why this can never fail the send.
+  forwardPressToCrm(body, { digit, variant });
 
   const template = templateMap()[digit];
 
