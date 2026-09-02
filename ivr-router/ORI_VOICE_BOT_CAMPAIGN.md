@@ -125,7 +125,7 @@ that Oriserve is down.
 The key is **not** committed. Set it on Railway and nowhere else:
 
 ```bash
-railway variables set ORISERVE_API_KEY "vx_..."
+railway variables --set "ORISERVE_API_KEY=vx_..."
 ```
 
 `setup-railway-vars.sh` reads it from your shell rather than carrying a copy:
@@ -177,7 +177,7 @@ the order you have to do this in:
    `[ORISERVE] ORISERVE_WEBHOOK_SECRET is not set — webhook is UNAUTHENTICATED`
    once per process.
 2. Configure the secret at Oriserve, on the notification webhook URL.
-3. Only then `railway variables set ORISERVE_WEBHOOK_SECRET "..."`.
+3. Only then `railway variables --set "ORISERVE_WEBHOOK_SECRET=..."`.
 
 Setting the variable before step 2 rejects genuine callbacks with `401` and
 loses the outcomes, because a callback is not replayable. The fail-open default
