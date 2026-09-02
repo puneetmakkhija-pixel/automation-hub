@@ -49,6 +49,14 @@ which `GET /console` serves via `res.sendFile('public/console.html')`
 `ivr-router/Dockerfile` and drops `railway.toml` out of scope, so change it
 only deliberately.
 
+### The ORI voice bot
+
+BuddyLoan's Oriserve tenant, the campaign it triggers and the shape of the
+trigger call are in
+[`ivr-router/ORI_VOICE_BOT_CAMPAIGN.md`](ivr-router/ORI_VOICE_BOT_CAMPAIGN.md).
+`ORISERVE_API_KEY` is a live credential and is not in this repo — it is set on
+the Railway service only.
+
 ### Four Railway services were deleted on 1 Sep 2026
 
 `api`, `chatbot` and `whatsapp` backed the three stub folders removed below.
