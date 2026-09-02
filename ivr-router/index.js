@@ -412,6 +412,42 @@ app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANT
 });
 
 // ==================== Oriserve Webhook Handlers ====================
+
+/**
+ * Verification probe.
+ *
+ * Provider panels commonly GET a webhook URL before they will save it, and
+ * this one answered 404 to that — four such probes arrived on 2 Sep. A 404
+ * reads to a panel as "there is nothing here", which can block the URL from
+ * being accepted at all.
+ *
+ * It is deliberately unauthenticated: it accepts nothing, writes nothing, and
+ * discloses nothing a caller did not already know by holding the URL. Requiring
+ * the secret here would defeat the point, since a panel that probes before
+ * saving has not been given the token yet. POST — the only method that carries
+ * data — keeps its shared secret.
+ *
+ * `challenge` / `hub.challenge` is echoed back as plain text when present,
+ * which is the convention most panels use to confirm they reached the right
+ * endpoint. It is bounded and character-restricted so the echo cannot be used
+ * to reflect arbitrary content.
+ */
+app.get("/webhooks/oriserve", (req, res) => {
+  const challenge = req.query.challenge ?? req.query["hub.challenge"];
+
+  if (typeof challenge === "string" && /^[\w.-]{1,256}$/.test(challenge)) {
+    return res.type("text/plain").send(challenge);
+  }
+
+  res.json({
+    success: true,
+    service: "oriserve_voice_callback",
+    message: "Endpoint is live. Send call outcomes as POST with Content-Type: application/json.",
+    method: "POST",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Oriserve voice agent campaign callbacks
 app.post("/webhooks/oriserve", verifyWebhookSecret("ORISERVE_WEBHOOK_SECRET", "ORISERVE"), async (req, res) => {
   try {
