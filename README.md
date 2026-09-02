@@ -2,7 +2,7 @@
 
 Two self-hosted services behind the BuddyLoan call centre: **`ivr-router`** (call
 routing, OBD campaigns, the voice bot and the WhatsApp flows) and
-**`data-jobs`** (scheduled ETL and the cron monitor).
+**`data-jobs`** (scheduled ETL).
 
 Deploys as **one GitHub repo → one Railway project ("Automation Hub")**. Each
 service sets Railway's "Root Directory" to the folder it builds from — except
@@ -11,7 +11,7 @@ before changing one.
 
 ## Services
 
-Six Railway services: four built from this repo, plus two Railway-provisioned
+Four Railway services: two built from this repo, plus two Railway-provisioned
 databases. The Root Directory column is what each service is actually set to
 today.
 
@@ -19,8 +19,6 @@ today.
 | --- | --- | --- | --- | --- |
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
 | `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack, `npm start` |
-| `data-jobs` | Morning cron monitor, `0 5 * * *` UTC | `morning-check` | `data-jobs` | Railpack, `npm run cron:morning` |
-| `data-jobs` | Afternoon cron monitor, `30 8 * * *` UTC | `afternoon-check` | `data-jobs` | Railpack, `npm run cron:afternoon` |
 | — | Cache | `redis` | — | `redis:7` image |
 | — | Database | `postgresql` | — | `postgres:16` image |
 
@@ -65,12 +63,24 @@ no `SUPABASE_URL`, no `OBD_*`, no `CONSOLE_SECRET` — so it could not have been
 doing the job `ivr-voice-bot-system` does. Nothing in this repo or in
 `dsa-business-crm` called any of their domains, and nothing broke.
 
-`morning-check` and `afternoon-check` were also lost that day and have been
-recreated, now rooted at `data-jobs` rather than the repo root. The originals
-ran `npm --prefix data-jobs run cron:*` from a repo-root build of the root
-`Dockerfile`, which copies only `ivr-router/` — so the image never contained
-`data-jobs` and the schedule had nothing to execute. They built green and did
-nothing.
+### The twice-daily cron monitor was retired on 2 Sep 2026
+
+`morning-check` and `afternoon-check` are gone, along with `status-monitor.js`,
+`setup-monitoring.js` and their config.
+
+Nothing ever wrote to the tables the monitor read. `setup-monitoring.js` seeded
+one placeholder row per job in `public.cron_job_status`; no production code
+path in this repo or in `dsa-business-crm` ever recorded a run against it. The
+eleven monitored jobs were therefore reported `NEVER_RUN` for as long as the
+monitor existed, which was accurate — it was reporting that nothing reported to
+it. `cron_job_executions` and `cron_status_reports` never held a single row.
+
+Enrichment already logs to `crm.enrich_run_log`, which is live, and
+`crm.rpt_api_error_daily` and `crm.rpt_api_error_recent` already read it. That
+is the surviving monitoring surface.
+
+`data-jobs/migrations/002_drop_cron_monitoring_tables.sql` drops the three
+tables. It is **not applied** — run it once the two services are gone.
 
 ## Three services were removed on 31 Aug 2026
 
