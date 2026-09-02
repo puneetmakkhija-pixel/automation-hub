@@ -355,7 +355,8 @@ curl -X GET "http://localhost:3000/api/poonawala/campaign/campaign/{campaignId}/
 ### Issue: Low Voice Delivery (<80%)
 **Symptoms:** Only 80% or fewer voice calls delivered
 **Solutions:**
-1. Check OBD API health: `curl http://localhost:3000/api/obd/health`
+1. Check OBD API health: `curl -H "x-webhook-secret: $CONSOLE_SECRET" http://localhost:3000/api/obd/health`
+   (all of /api/obd is behind the console secret — it can stop live campaigns)
 2. Verify phone numbers are valid Indian format
 3. Check OBD rate limiting (50K/day should be fine)
 4. Review firewall/IP whitelist rules
