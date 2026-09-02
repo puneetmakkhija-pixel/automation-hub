@@ -21,6 +21,10 @@ const SOURCES = {
     file: join(__dirname, "..", "database", "data", "poonawalla_stpl_pincodes.csv"),
     description: "Poonawalla Fincorp STPL / InstaPL (bureau-based PL, RT1 master)",
   },
+  herofincorp: {
+    file: join(__dirname, "..", "database", "data", "hero_pincodes_2026-07-28.csv"),
+    description: "Hero FinCorp updated pincode list, issued 28 Jul 2026",
+  },
 };
 
 function validateEnvironment() {
