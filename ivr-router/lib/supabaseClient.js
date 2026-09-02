@@ -292,6 +292,11 @@ class SupabaseClient {
         .insert({
           provider,
           call_id: callId,
+          // The mobile was already read for webhook_events.ext_ref above and
+          // then dropped here, which left the row unable to name its caller.
+          // Stored as the provider sent it; crm.voice_call_events.mobile10 is
+          // generated from it and is what joins to a lead.
+          mobile,
           event_status: status,
           duration_sec: duration,
           raw: payload,
