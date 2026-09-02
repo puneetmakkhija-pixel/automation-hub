@@ -46,7 +46,8 @@ Single unified platform for IVR voice & WhatsApp automation that consolidates 5+
    - POST /webhooks/obd/connect - CONNECTED_CALLS webhook
    - POST /webhooks/obd/dtmf - DTMF input capture (Webhook ID 540)
    - POST /webhooks/obd/hangup - Call end/failure tracking (Webhook ID 541)
-   - GET /api/obd/health - Health check
+   - GET /api/obd/health - Health check (needs the console secret, like the
+     rest of /api/obd; use the top-level GET /health for uptime probes)
    - Webhook IDs: 539 (connect), 540 (DTMF), 541 (hangup)
 
 5. ⚠️ **Disposition Tracking (Chatsense)** — endpoints removed 1 Sep 2026
