@@ -9,6 +9,7 @@
     "test:press-forward": "node test-press-forward.mjs",
     "test:voice-outcome": "node test-voice-outcome.mjs",
     "test:pl-tracker": "node test-pl-tracker.mjs",
+    "test:ananta-receipt": "node test-ananta-receipt.mjs",
     "test:obd-guard": "node test-obd-guard.mjs"
   },
   "dependencies": {
