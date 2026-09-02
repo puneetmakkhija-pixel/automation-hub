@@ -147,12 +147,53 @@ arrives later on `POST /webhooks/oriserve`, handled in `index.js` — carrying
 `campaign_id`, `mobile`, `status`, `call_duration`, `result` and the `metadata`
 you sent. Watch the service log for the `ORISERVE_CALLBACK` line.
 
-That handler currently only logs. It does not write the disposition to Supabase
-and does not forward `metadata`, so nothing joins the call outcome back to the
-lead yet — that wiring is still to be built. `lib/oriserveRoutes.js` carries a
-second copy of the same handler at `/api/oriserve/webhooks/oriserve`; the
-webhook URL configured above hits the `index.js` one, so that is the copy to
-change.
+### Where the outcome is stored
+
+The handler writes two rows through `db.logVoiceCallOutcome()`
+(`lib/supabaseClient.js`), because they answer different questions:
+
+| Table | What it holds | Why |
+| --- | --- | --- |
+| `public.webhook_events` | `source='oriserve_voice'`, `event`=the status, `ext_ref`=the mobile, `payload`=the whole callback | `ext_ref` is what joins an outcome back to a lead — the callback carries no lead ID of its own. Same shape the existing `onclickx_ivr` rows use. |
+| `crm.voice_call_events` | `provider='oriserve'`, `call_id`, `event_status`, `duration_sec`, `raw` | The typed row reporting reads, with `provider` set so Oriserve and Deepcall sit side by side. |
+
+`metadata` survives whole in both (`payload` and `raw`), so whatever you put in
+it at trigger time — `account_id` especially — is what you join on later:
+
+```sql
+SELECT received_at,
+       ext_ref                        AS mobile,
+       event                          AS status,
+       payload->>'result'             AS result,
+       payload->'metadata'->>'account_id' AS account_id
+  FROM public.webhook_events
+ WHERE source = 'oriserve_voice'
+ ORDER BY received_at DESC
+ LIMIT 20;
+```
+
+**A storage failure never fails the request.** The call already happened and
+Oriserve cannot usefully replay the callback, so a 500 would only buy a retry
+that helps nobody. The route answers `200` either way and reports what landed:
+
+```json
+"saved": { "webhook_events": true, "voice_call_events": true }
+```
+
+When either insert fails the response carries an `errors` array and the service
+logs `ORISERVE_CALLBACK_NOT_SAVED` — grep that context to find outcomes that
+were received but not persisted. `saved` reading `false` for both with a
+`supabase client not configured` error means `SUPABASE_URL` or
+`SUPABASE_SERVICE_ROLE_KEY` is missing on the service.
+
+Both target tables are in the `smecircle` project, and `crm` is exposed through
+PostgREST — hence `.schema('crm')` rather than a `crm.`-prefixed table name,
+which PostgREST reads as a literal table called `crm.voice_call_events` in
+`public` and does not find.
+
+`lib/oriserveRoutes.js` carries a second, log-only copy of the handler at
+`/api/oriserve/webhooks/oriserve`. The webhook URL configured above hits the
+`index.js` one, so that is the copy that persists.
 
 A quick liveness check on the credentials:
 
