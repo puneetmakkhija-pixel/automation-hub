@@ -387,14 +387,43 @@ app.post("/webhooks/sms/confirmation", (req, res) => {
 // Ananta WhatsApp delivery webhook
 // Delivery receipts from Ananta. Gated on ANANTA_WEBHOOK_SECRET; unauthenticated
 // while that variable is unset (see lib/middleware/verifyWebhookSecret.js).
-app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANTA"), (req, res) => {
+app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANTA"), async (req, res) => {
   try {
     const payload = req.body;
     logger.logAnantaMessage(payload.phone, payload.status, payload.msgid);
 
+    // Record it. This handler logged the receipt and dropped it, so the send
+    // log could say a message was SENT and nothing about whether it arrived —
+    // roughly 6,700 receipts a day, gone. Awaited rather than floated so a
+    // burst cannot outrun the database, but it can never fail the response:
+    // recordWhatsAppReceipt swallows its own errors, and a provider handed a
+    // 500 retries the same payload for hours.
+    let saved = { ok: false, error: "database not configured" };
+    if (db) {
+      saved = await db.recordWhatsAppReceipt({
+        messageId: payload.msgid,
+        phone: payload.phone,
+        status: payload.status,
+      });
+    }
+    // matched: 0 is not a fault — a receipt can arrive for a message this
+    // table never recorded, or arrive out of order and be correctly refused.
+    // Logged only when the row was genuinely not found, so an ordinary
+    // out-of-order receipt does not fill the log.
+    if (saved.ok && saved.matched === 0) {
+      logger.log('info', 'ANANTA_RECEIPT_UNMATCHED',
+        'Delivery receipt matched no send row, or did not advance its state', {
+          phone: payload.phone,
+          status: payload.status,
+          messageId: payload.msgid,
+          type: 'sms_provider',
+        });
+    }
+
     res.json({
       success: true,
       message: "Ananta webhook received and processed",
+      recorded: saved.ok === true && saved.matched > 0,
       data: {
         phone: payload.phone,
         status: payload.status,

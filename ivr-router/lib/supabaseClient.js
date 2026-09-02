@@ -256,6 +256,38 @@ class SupabaseClient {
    * callback cannot be replayed, so answering the provider with a 500 buys a
    * retry that helps nobody. Failures are returned and logged instead.
    */
+  /**
+   * An Ananta delivery receipt, recorded against the send it belongs to.
+   *
+   * /webhooks/ananta logged these and threw them away — roughly 6,700 a day —
+   * which is why the send log could say a message was SENT and nothing at all
+   * about whether a handset received it. "Sent" is Ananta accepting the
+   * request; it is not a phone buzzing.
+   *
+   * public.wa_record_receipt does the work, because the update has to advance
+   * the state monotonically: WhatsApp emits sent, delivered and read, and does
+   * not promise that order, so a late 'delivered' must not walk a row back from
+   * 'read'. It also leaves metadata.status alone — that is the SEND outcome and
+   * several readers count failures from it.
+   *
+   * Never throws. A receipt is worth less than the 200 the provider is waiting
+   * for, and a provider that gets a 500 retries the same payload for hours.
+   */
+  async recordWhatsAppReceipt({ messageId, phone = null, status = null }) {
+    try {
+      const { data, error } = await this.client.rpc("wa_record_receipt", {
+        p_message_id: messageId ?? null,
+        p_phone: phone,
+        p_status: status,
+      });
+      if (error) throw new Error(error.message);
+      return data ?? { ok: false, error: "no reply" };
+    } catch (error) {
+      console.error(`[ANANTA] Receipt not recorded (${status}): ${error.message}`);
+      return { ok: false, error: error.message };
+    }
+  }
+
   async logVoiceCallOutcome({ provider, payload = {} }) {
     if (!provider) {
       throw new SupabaseError('provider is required', null, null);
