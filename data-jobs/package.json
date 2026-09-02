@@ -9,7 +9,8 @@
     "monitor:twice-daily": "node status-monitor.js",
     "cron:morning": "node status-monitor.js",
     "cron:afternoon": "node status-monitor.js",
-    "setup": "node setup-monitoring.js"
+    "setup": "node setup-monitoring.js",
+    "load:pincodes": "node load-serviceable-pincodes.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4"
