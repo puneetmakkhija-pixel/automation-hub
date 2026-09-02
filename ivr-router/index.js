@@ -24,6 +24,7 @@ import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.
 import anantaConfigRoutes from "./lib/routes/anantaConfigRoutes.js";
 import whatsappFlowRoutes from "./lib/routes/whatsappFlowRoutes.js";
 import flexiloansDocumentRoutes from "./lib/routes/flexiloansDocumentRoutes.js";
+import SupabaseClient from "./lib/supabaseClient.js";
 import logger from "./lib/logging.js";
 
 dotenv.config();
@@ -45,6 +46,15 @@ try {
 } catch (error) {
   console.warn('⚠️ OBD API Client initialization failed:', error.message);
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
+}
+
+// Initialize Supabase client (used to persist voice call outcomes)
+let db = null;
+try {
+  db = new SupabaseClient();
+} catch (error) {
+  console.warn('⚠️ Supabase client initialization failed:', error.message);
+  console.warn('   Voice call outcomes will be logged but not persisted');
 }
 
 // ==================== Health Check ====================
@@ -380,7 +390,7 @@ app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANT
 
 // ==================== Oriserve Webhook Handlers ====================
 // Oriserve voice agent campaign callbacks
-app.post("/webhooks/oriserve", (req, res) => {
+app.post("/webhooks/oriserve", async (req, res) => {
   try {
     const payload = req.body;
     logger.logOriserveCall(payload.mobile, payload.campaign_id, payload.status);
@@ -394,9 +404,30 @@ app.post("/webhooks/oriserve", (req, res) => {
       type: 'voice_provider_callback',
     });
 
+    // Persist the outcome. A storage failure is reported, never thrown: the
+    // call already happened and Oriserve cannot usefully replay the callback.
+    let saved = { success: false, errors: ['supabase client not configured'] };
+    if (db) {
+      saved = await db.logVoiceCallOutcome({ provider: 'oriserve', payload });
+    }
+
+    if (!saved.success) {
+      logger.log('error', 'ORISERVE_CALLBACK_NOT_SAVED', 'Oriserve callback could not be persisted', {
+        campaignId: payload.campaign_id,
+        phone: payload.mobile,
+        errors: saved.errors,
+        type: 'voice_provider_callback',
+      });
+    }
+
     res.json({
       success: true,
       message: "Oriserve webhook received and processed",
+      saved: {
+        webhook_events: saved.webhookEvent === true,
+        voice_call_events: saved.voiceCallEvent === true,
+        errors: saved.errors?.length ? saved.errors : undefined,
+      },
       data: {
         campaign_id: payload.campaign_id,
         mobile: payload.mobile,

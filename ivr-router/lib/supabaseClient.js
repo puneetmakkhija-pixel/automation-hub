@@ -224,6 +224,79 @@ class SupabaseClient {
   }
 
   /**
+   * Persist a voice-provider call outcome.
+   *
+   * Two rows, because they answer different questions and neither substitutes
+   * for the other:
+   *
+   *   public.webhook_events  - the callback as it arrived, with the mobile in
+   *                            ext_ref. That column is what joins an outcome
+   *                            back to a lead, since the callback carries no
+   *                            lead id of its own. Matches the shape the
+   *                            onclickx_ivr rows already use.
+   *   crm.voice_call_events  - the typed row for reporting, with `provider`
+   *                            set so Oriserve and Deepcall sit side by side.
+   *
+   * Neither insert may fail the request. The call already happened and the
+   * callback cannot be replayed, so answering the provider with a 500 buys a
+   * retry that helps nobody. Failures are returned and logged instead.
+   */
+  async logVoiceCallOutcome({ provider, payload = {} }) {
+    if (!provider) {
+      throw new SupabaseError('provider is required', null, null);
+    }
+
+    // Providers disagree on these key names, and the raw payload keeps whatever
+    // we fail to recognise, so read generously rather than insisting on one.
+    const mobile = payload.mobile || payload.phone || null;
+    const callId = payload.call_id || payload.campaign_call_id || payload.callId || null;
+    const rawDuration = payload.call_duration ?? payload.duration_sec ?? payload.duration;
+    const duration = Number.isFinite(Number(rawDuration)) ? Math.trunc(Number(rawDuration)) : null;
+    const status = payload.status || payload.event_status || null;
+
+    const saved = { webhookEvent: false, voiceCallEvent: false, errors: [] };
+
+    try {
+      const { error } = await this.client.from('webhook_events').insert({
+        source: `${provider}_voice`,
+        event: status || 'unknown',
+        ext_ref: mobile,
+        payload,
+      });
+      if (error) throw new Error(error.message);
+      saved.webhookEvent = true;
+    } catch (error) {
+      saved.errors.push(`webhook_events: ${error.message}`);
+      console.error('Log voice call outcome (webhook_events) error:', error.message);
+    }
+
+    try {
+      const { error } = await this.client
+        .schema('crm')
+        .from('voice_call_events')
+        .insert({
+          provider,
+          call_id: callId,
+          event_status: status,
+          duration_sec: duration,
+          raw: payload,
+        });
+      if (error) throw new Error(error.message);
+      saved.voiceCallEvent = true;
+    } catch (error) {
+      saved.errors.push(`crm.voice_call_events: ${error.message}`);
+      console.error('Log voice call outcome (crm.voice_call_events) error:', error.message);
+    }
+
+    return {
+      success: saved.webhookEvent || saved.voiceCallEvent,
+      ...saved,
+      mobile,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
    * Create campaign record
    */
   async createCampaign(campaignData) {
