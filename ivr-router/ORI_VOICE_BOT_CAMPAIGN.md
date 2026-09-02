@@ -159,6 +159,33 @@ a 404 from the service itself would not carry a `request_id`. Every webhook URL
 in this repo pointed at it until Sep 2026, so a callback configured from an
 older copy of these files never arrived.
 
+## Securing the callback
+
+`/webhooks/oriserve` runs `verifyWebhookSecret("ORISERVE_WEBHOOK_SECRET",
+"ORISERVE")`. Oriserve does not sign its callbacks, so this is a shared secret,
+accepted three ways — a header, a bearer token, or `?token=` on the URL for a
+panel that offers only a URL field:
+
+```
+https://ivr-voice-bot-system-production.up.railway.app/webhooks/oriserve?token=<secret>
+```
+
+**The check fails open while `ORISERVE_WEBHOOK_SECRET` is unset**, which sets
+the order you have to do this in:
+
+1. Deploy. The webhook keeps accepting every caller; the service logs
+   `[ORISERVE] ORISERVE_WEBHOOK_SECRET is not set — webhook is UNAUTHENTICATED`
+   once per process.
+2. Configure the secret at Oriserve, on the notification webhook URL.
+3. Only then `railway variables set ORISERVE_WEBHOOK_SECRET "..."`.
+
+Setting the variable before step 2 rejects genuine callbacks with `401` and
+loses the outcomes, because a callback is not replayable. The fail-open default
+exists for exactly this window; it is not an invitation to leave it unset.
+
+Rejections log `[ORISERVE] Rejected request: missing secret` or `bad secret`
+with the caller's IP.
+
 ## Checking it worked
 
 The trigger response is only Oriserve's acceptance of the request. The outcome

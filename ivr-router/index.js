@@ -390,7 +390,7 @@ app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANT
 
 // ==================== Oriserve Webhook Handlers ====================
 // Oriserve voice agent campaign callbacks
-app.post("/webhooks/oriserve", async (req, res) => {
+app.post("/webhooks/oriserve", verifyWebhookSecret("ORISERVE_WEBHOOK_SECRET", "ORISERVE"), async (req, res) => {
   try {
     const payload = req.body;
     logger.logOriserveCall(payload.mobile, payload.campaign_id, payload.status);
