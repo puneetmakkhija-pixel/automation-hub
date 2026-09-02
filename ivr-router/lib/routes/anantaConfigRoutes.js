@@ -43,7 +43,7 @@ router.get('/config', async (req, res) => {
       api_token: process.env.ANANTA_API_TOKEN || '',
       phone_number: process.env.ANANTA_PHONE_NUMBER || '',
       status: 'configured',
-      webhook_url: `${process.env.WEBHOOK_BASE_URL || 'https://automation-hub-production.up.railway.app'}/webhooks/ananta`,
+      webhook_url: `${process.env.WEBHOOK_BASE_URL || 'https://ivr-voice-bot-system-production.up.railway.app'}/webhooks/ananta`,
     };
 
     return res.json({

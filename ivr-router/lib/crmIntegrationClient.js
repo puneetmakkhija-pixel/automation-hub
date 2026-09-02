@@ -4,6 +4,16 @@ import { createClient } from "@supabase/supabase-js";
  * CRM Integration Client
  * Handles all communication between IVR Router and Business Loans CRM
  * Phase 1: Lead intake pipeline (voice → disposition → application creation)
+ *
+ * Schema note: `.schema("crm").from(...)` is the only form that reaches the crm
+ * schema. `.from("crm.leads")` — which this file used until Sep 2026 — reads as
+ * a literal table named "crm.leads" in public, which does not exist.
+ *
+ * Most methods below still do not work after that fix, because the columns they
+ * name are not the columns crm.leads and crm.lead_events have. Only
+ * healthCheck() is correct today. CRM_CLIENT_SCHEMA_GAPS.md records exactly
+ * which column each method gets wrong, and what has to be decided before the
+ * rest can be repaired. Do not assume a method here works because it returns.
  */
 class CrmIntegrationClient {
   constructor() {
@@ -103,7 +113,7 @@ class CrmIntegrationClient {
       }
 
       const { data, error } = await this.supabase
-        .from("crm.leads")
+        .schema("crm").from("leads")
         .update({
           call_duration: callMetrics.duration || null,
           call_disposition: callMetrics.disposition || null,
@@ -140,7 +150,7 @@ class CrmIntegrationClient {
         throw new Error("Supabase not configured");
       }
 
-      const { data, error } = await this.supabase.from("crm.lead_events").insert({
+      const { data, error } = await this.supabase.schema("crm").from("lead_events").insert({
         application_id: applicationId,
         event_type: "voice_disposition",
         event_data: JSON.stringify({
@@ -176,7 +186,7 @@ class CrmIntegrationClient {
       }
 
       const { data, error } = await this.supabase
-        .from("crm.leads")
+        .schema("crm").from("leads")
         .select("application_id, phone, name, stage, substage, eligible_lenders, best_lender, created_at")
         .eq("application_id", applicationId)
         .single();
@@ -216,7 +226,7 @@ class CrmIntegrationClient {
       }
 
       const { data, error } = await this.supabase
-        .from("crm.leads")
+        .schema("crm").from("leads")
         .update(updateData)
         .eq("application_id", applicationId);
 
@@ -249,7 +259,7 @@ class CrmIntegrationClient {
         };
       }
 
-      const { error } = await this.supabase.from("crm.leads").select("count()", { count: "exact" }).limit(1);
+      const { error } = await this.supabase.schema("crm").from("leads").select("count()", { count: "exact" }).limit(1);
 
       if (error) throw error;
 
