@@ -37,19 +37,23 @@ const CHUNK_SIZE = 1000;
 //
 // ADDING A LENDER
 //
-// One line — `Hero: "herofincorp",` — but not before the list is confirmed to
-// be the right product's. Upstream carries 5,794 Hero pincodes with no product
-// tag, drawn from an internal consolidated master rather than from Hero; that
-// is a serviceability claim nobody has checked, and syncing it would gate live
-// traffic on it. Confirmed means a list issued by the lender, naming the
-// product it covers.
+// One line, but not before the list is confirmed: issued by the lender, not
+// drawn from an internal consolidated master. The 5,794 Hero pincodes that sat
+// upstream before July were the latter — a serviceability claim nobody had
+// checked — and syncing those would have gated live traffic on it.
 //
-// For Hero specifically that is necessary but not sufficient:
+// Hero was added on the strength of the list its team sent on 28 Jul 2026
+// (15,227 pincodes, from a herofincorp.com address), which contains 98.2% of
+// that older set. The mail did not name the product it covers, so that much is
+// still taken on trust.
+//
+// Its pincodes do not make Hero live on their own:
 // _checkHeroFincorpEligibility() in ivr-router/lib/pincodeGatingClient.js still
-// returns "not yet implemented" and rejects every applicant, so a synced list
-// would sit unused until that engine exists.
+// returns "not yet implemented" and rejects every applicant, so the list sits
+// unused until that engine exists.
 const LENDER_MAP = {
   Poonawalla: "poonawala",
+  Hero: "herofincorp",
 };
 
 function parseArgs(argv) {
