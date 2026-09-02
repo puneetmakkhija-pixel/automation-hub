@@ -1,6 +1,24 @@
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 
+// The codebase spells the lender both ways ("poonawala" here and in
+// lenderRoutingRoutes, "poonawalla" in breShortlistingRoutes), and lender
+// webhooks send their own casing. serviceable_pincodes is keyed on the spelling
+// below, so normalise before every lookup rather than missing the row.
+const LENDER_TYPE_ALIASES = {
+  poonawalla: "poonawala",
+  poonawalafincorp: "poonawala",
+  poonawallafincorp: "poonawala",
+  hero: "herofincorp",
+  herofincorp: "herofincorp",
+  hero_fincorp: "herofincorp",
+};
+
+function normalizeLenderType(lenderType = "poonawala") {
+  const key = String(lenderType).trim().toLowerCase();
+  return LENDER_TYPE_ALIASES[key] || key;
+}
+
 class PincodeGatingClient {
   constructor() {
     this.supabaseUrl = process.env.SUPABASE_URL;
@@ -18,8 +36,8 @@ class PincodeGatingClient {
       const { data, error } = await this.supabase
         .from("serviceable_pincodes")
         .select("*")
-        .eq("pincode", pincode)
-        .eq("lender_type", lenderType)
+        .eq("pincode", String(pincode).trim().padStart(6, "0"))
+        .eq("lender_type", normalizeLenderType(lenderType))
         .single();
 
       if (error) return { valid: false, reason: "Pincode not serviceable" };
@@ -43,9 +61,11 @@ class PincodeGatingClient {
 
     if (!customerData) throw new Error("Customer data is required");
 
-    if (lenderType === "poonawala") {
+    const lender = normalizeLenderType(lenderType);
+
+    if (lender === "poonawala") {
       return this._checkPoonawalaEligibility(customerData, checks);
-    } else if (lenderType === "herofincorp") {
+    } else if (lender === "herofincorp") {
       return this._checkHeroFincorpEligibility(customerData, checks);
     }
 
@@ -153,7 +173,7 @@ class PincodeGatingClient {
     try {
       const records = pincodes.map((pincode) => ({
         pincode: String(pincode).padStart(6, "0"),
-        lender_type: lenderType,
+        lender_type: normalizeLenderType(lenderType),
         created_at: new Date().toISOString(),
       }));
 
@@ -172,7 +192,7 @@ class PincodeGatingClient {
       const { data, error } = await this.supabase
         .from("serviceable_pincodes")
         .select("count(*) as total", { count: "exact" })
-        .eq("lender_type", lenderType);
+        .eq("lender_type", normalizeLenderType(lenderType));
 
       if (error) throw error;
 
@@ -186,7 +206,7 @@ class PincodeGatingClient {
     try {
       const { error } = await this.supabase.from("gating_logs").insert({
         phone,
-        lender_type: lenderType,
+        lender_type: normalizeLenderType(lenderType),
         eligible: eligibilityResult.eligible,
         checks_passed: {
           pincode: eligibilityResult.pincode,
@@ -219,4 +239,5 @@ class PincodeGatingClient {
   }
 }
 
+export { normalizeLenderType };
 export default PincodeGatingClient;
