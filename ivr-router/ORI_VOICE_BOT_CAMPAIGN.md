@@ -159,6 +159,31 @@ a 404 from the service itself would not carry a `request_id`. Every webhook URL
 in this repo pointed at it until Sep 2026, so a callback configured from an
 older copy of these files never arrived.
 
+## The verification probe
+
+Provider panels commonly `GET` a webhook URL before they will save it. This one
+answered `404` to that until Sep 2026 — four such probes arrived on 2 Sep from
+AWS addresses — and a `404` reads to a panel as "there is nothing here", which
+can stop the URL being accepted at all.
+
+`GET /webhooks/oriserve` now answers `200`:
+
+```json
+{ "success": true, "service": "oriserve_voice_callback",
+  "message": "Endpoint is live. Send call outcomes as POST with Content-Type: application/json." }
+```
+
+`?challenge=` or `?hub.challenge=` is echoed back as plain text, which is the
+convention most panels use to confirm they reached the right endpoint. The echo
+is capped at 256 characters of `[\w.-]` and ignored otherwise, so it cannot
+reflect arbitrary content.
+
+The `GET` is deliberately unauthenticated. It accepts nothing, writes nothing,
+and discloses nothing a caller did not already know by holding the URL — and a
+panel that probes *before* saving has not been given the token yet, so requiring
+it would defeat the purpose. `POST`, the only method that carries data, keeps
+its shared secret.
+
 ## Securing the callback
 
 `/webhooks/oriserve` runs `verifyWebhookSecret("ORISERVE_WEBHOOK_SECRET",

@@ -75,7 +75,29 @@ app.get("/health", (_req, res) => {
 });
 
 // ==================== OBD API Routes ====================
-app.use("/api/obd", createObdRoutes(obdClient));
+// GUARDED. This router drives the dialler: it can create campaigns, upload lead
+// bases, repoint the panel's webhooks, and pause or STOP a campaign that is
+// mid-flight. It was reachable by anyone who knew the URL — the same exposure
+// the console guards below were added to close, on the one router that can
+// spend money and halt live traffic. /api/obd was simply missed in that pass.
+//
+// Two details worth keeping:
+//
+// NO onlyPaths, so the whole router is locked rather than a named list of
+// paths. Everywhere else in this file the guard names what to lock, and a route
+// added later inherits no protection — which is exactly how this hole stayed
+// open. On this router the default has to be locked.
+//
+// MOUNTED HERE, not down with the other guarded mounts, because "/api"
+// (whatsappBotRoutes) is a broader prefix registered below: moving this line
+// past it would let that router see /api/obd/* first. consoleAuth is a function
+// declaration and so is hoisted — it is defined further down, next to the other
+// guards, and reading it there is the point.
+//
+// Nothing external calls this. The /api/obd/* paths in lib/obdApiClient.js are
+// the VENDOR's own surface on obdapi2.ivrsms.com, a coincidence of naming, not
+// a caller of ours.
+app.use("/api/obd", consoleAuth("CONSOLE_OBD"), createObdRoutes(obdClient));
 
 // ==================== Ananta API Routes ====================
 app.use("/api/ananta", anantaRoutes);
@@ -419,6 +441,42 @@ app.post("/webhooks/ananta", verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "ANANT
 });
 
 // ==================== Oriserve Webhook Handlers ====================
+
+/**
+ * Verification probe.
+ *
+ * Provider panels commonly GET a webhook URL before they will save it, and
+ * this one answered 404 to that — four such probes arrived on 2 Sep. A 404
+ * reads to a panel as "there is nothing here", which can block the URL from
+ * being accepted at all.
+ *
+ * It is deliberately unauthenticated: it accepts nothing, writes nothing, and
+ * discloses nothing a caller did not already know by holding the URL. Requiring
+ * the secret here would defeat the point, since a panel that probes before
+ * saving has not been given the token yet. POST — the only method that carries
+ * data — keeps its shared secret.
+ *
+ * `challenge` / `hub.challenge` is echoed back as plain text when present,
+ * which is the convention most panels use to confirm they reached the right
+ * endpoint. It is bounded and character-restricted so the echo cannot be used
+ * to reflect arbitrary content.
+ */
+app.get("/webhooks/oriserve", (req, res) => {
+  const challenge = req.query.challenge ?? req.query["hub.challenge"];
+
+  if (typeof challenge === "string" && /^[\w.-]{1,256}$/.test(challenge)) {
+    return res.type("text/plain").send(challenge);
+  }
+
+  res.json({
+    success: true,
+    service: "oriserve_voice_callback",
+    message: "Endpoint is live. Send call outcomes as POST with Content-Type: application/json.",
+    method: "POST",
+    timestamp: new Date().toISOString(),
+  });
+});
+
 // Oriserve voice agent campaign callbacks
 app.post("/webhooks/oriserve", verifyWebhookSecret("ORISERVE_WEBHOOK_SECRET", "ORISERVE"), async (req, res) => {
   try {
