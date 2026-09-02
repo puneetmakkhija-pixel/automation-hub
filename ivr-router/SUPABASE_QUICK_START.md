@@ -369,7 +369,7 @@ await db.getCampaignResults(campaignId)
 await db.getCampaignStats(campaignId)
 
 // Webhooks
-await db.logWebhookEvent(source, eventData)
+await db.logWebhookEvent(source, payload, { event, extRef })
 
 // Utilities
 await db.healthCheck()
