@@ -1,64 +1,89 @@
-# `crmIntegrationClient.js` vs. the real CRM schema
+# The voice side of the CRM
 
 `lib/crmIntegrationClient.js` was written against a CRM that does not exist as
-described. Correcting `.from("crm.leads")` to `.schema("crm").from("leads")`
-made the client reach the right tables; it did not make most of its methods
-work, because the columns underneath are different too.
+described: every method keyed on an `application_id`, and the intake method
+called an RPC whose signature it had invented. None of it worked, and because
+each method catches its own error and returns `{ success: false }`, nothing ever
+said so out loud.
 
-This page records what was checked against the live `smecircle` database so the
-remaining work can be scoped without re-deriving it.
+It is now keyed on the **lead**. This page records why, and what is left.
 
-## What `crm.leads` actually has
+## Why the lead and not the application
 
-```
-id, channel, dsa_partner_id, agent_user_id, lender_id, application_number,
-client_reference_id, lan_id, customer_name, phone, pincode, gst_no,
-business_name, stage, lender_status, rejection_reason, loan_amount_req,
-approved_amount, disbursed_amount, loan_case_id, score, grade, score_json,
-scored_at, next_action, source, created_by, created_at, updated_at,
-stage_substate, sanction_amount, pan
-```
+Checked against the live `smecircle` database:
 
-There is **no `application_id`**, and no call-metric columns at all. `stage` and
-`channel` are enums:
-
-- `lead_stage`: `new, contacted, docs_pending, docs_received, digitap_submitted, bre_review, lender_assigned, logged_in, move_to_credit, approved, disbursed, rejected, dropped`
-- `lead_channel`: `call_center, dsa`
-
-`crm.lead_events` is `id, lead_id (bigint NOT NULL), type (lead_event_type NOT
-NULL), from_stage, to_stage, note, actor, created_at, from_substate,
-to_substate`, where `lead_event_type` is `created, stage_change, call, note,
-doc_update, status_sync, assignment`.
-
-## Method by method
-
-| Method | State | What is wrong |
+| Table | Rows | |
 | --- | --- | --- |
-| `healthCheck` | **works now** | Only needed the schema fix. |
-| `leadIntakeSyncFromVoice` | broken | Calls `lead_intake_sync` with fifteen scalar `p_*` arguments. The real function is `crm.lead_intake_sync(p_secret text, p_rows jsonb)` — a different signature, and in the `crm` schema, so a default-schema `.rpc()` would not find it either. |
-| `updateApplicationWithCallMetrics` | broken | Writes `call_duration`, `call_disposition`, `dtmf_choice`, `answered`, `call_recording_url` — none exist on `crm.leads`. Filters on `application_id`, which does not exist. Only `updated_at` is real. |
-| `logVoiceDisposition` | broken | Inserts `application_id`, `event_type`, `event_data` into `crm.lead_events`. None of the three exist; the table wants `lead_id` and an enum `type`, with free text in `note`. |
-| `getApplication` | broken | Selects `application_id`, `name`, `substage`, `eligible_lenders`, `best_lender` — none exist. `phone`, `stage` and `created_at` do; `name` is `customer_name` and `substage` is `stage_substate`. |
-| `updateApplicationStage` | broken | `substage` should be `stage_substate`, and the `application_id` filter does not exist. |
+| `crm.leads` | 80,034 | the book of business |
+| `crm.lead_events` | 10,981 | append-only audit trail, in active use |
+| `crm.applications` | **0** | has `application_id`, holds nothing |
+| `crm.pbx_calls` | 0 | purpose-built for call detail, unused so far |
 
-All six are reachable over HTTP through `lib/crmIntegrationRoutes.js`, so these
-are live endpoints returning `{ success: false }`, not dead code.
+`crm.applications` is the only table with an `application_id`, and it is empty.
+Nothing on the voice side has ever held one — the callback from a voice provider
+carries a phone number, not an application. So `:ref` on every route is either a
+`crm.leads.id` or a phone number, and `resolveLead()` accepts both.
 
-## What has to be decided before fixing the rest
+Phone matching is on the **last ten digits**. The same subscriber arrives as
+`9876543210`, `919876543210` and `+91 98765 43210` depending on the door, and
+one phone can legitimately match several leads — the most recently updated wins,
+with `matchCount` returned alongside so a caller can tell it was ambiguous.
 
-1. **What is `applicationId`?** Callers pass it to four methods. `crm.leads` has
-   `id` (bigint), `application_number` (text) and `client_reference_id` (text).
-   Which one the IVR side holds decides every filter and the `lead_events.lead_id`
-   foreign key.
-2. **Where do call metrics go?** There is no home for duration, disposition,
-   DTMF choice or a recording URL on `crm.leads`. `crm.voice_call_events` now
-   takes exactly this shape per provider, and `crm.call_outcome` and
-   `crm.pbx_calls` also exist. Either the metrics move to one of those, or
-   `crm.leads` needs the columns added.
-3. **Where does the `lead_intake_sync` secret come from?** The real function
-   takes `p_secret` and a `p_rows` batch. Nothing in this repo holds that
-   secret or builds that batch.
+## What each method writes
 
-Until those are settled the honest state is: the schema prefix is right, the
-health check works, and the other five methods fail with a precise column error
-instead of a misleading "relation does not exist".
+| Method | Table | Notes |
+| --- | --- | --- |
+| `getLead(ref)` | `crm.leads` | Read. |
+| `logVoiceDisposition({ref, disposition, details, type})` | `crm.lead_events` | `type` is an enum, default `'call'`. The disposition and details are serialised into `note` — the table has no column for either, and inventing one was the original bug. |
+| `recordVoiceCall({ref, providerCallId, metrics})` | `crm.pbx_calls` | Keyed on the provider's own call id, so a redelivered callback updates that call rather than adding a second. This is where duration, disposition and recording url live; `crm.leads` has no columns for them. |
+| `updateLeadStage({ref, stage, substate})` | `crm.leads` + `crm.lead_events` | Reads first so the `stage_change` event can carry `from_stage`. A failed audit row is reported, not thrown — the stage really did move. |
+| `healthCheck()` | `crm.leads` | |
+
+The enums are exported as `LEAD_STAGES` and `LEAD_EVENT_TYPES`, and served at
+`GET /api/crm/vocabulary`, so a rejected value can be looked up rather than
+guessed. Note that `"Documents"` — the stage the old route documentation used as
+its example — is not one of them.
+
+## Lead creation is deliberately not implemented
+
+`POST /api/crm/lead-intake-sync` and `/batch-lead-intake` answer `501`.
+
+`crm.lead_intake_sync` is real, but it is not what the code assumed. Its actual
+signature is:
+
+```sql
+crm.lead_intake_sync(p_secret text, p_rows jsonb) returns jsonb
+```
+
+It authorises against `crm.app_config` (keys `sync_secret` / `sync_secret_next`),
+takes an **array** of rows carrying `mobile`, `agent_name`, `agent_ecode`,
+`tl_name`, `source` and `entry_date`, upserts them into `crm.lead_intake` keyed
+on (mobile, entry_date), and returns
+`{ok, received, upserted, skipped_no_mobile}`. It is a **bulk agent-attribution
+importer**, it creates no application, and it returns no identifier of any kind.
+
+The old code called it with fifteen scalar `p_*` arguments, so it never ran.
+
+Creating leads from voice therefore needs a decision that is not this module's
+to make: what may write into an 80,034-row book of business, on what
+deduplication rule. Until that is settled the endpoints say so rather than
+silently failing.
+
+## The `/application/...` routes
+
+They answer `410` with the replacement path rather than `404`, so a caller that
+still has one learns where to go. They are gone for the reason above: there is
+no application to address.
+
+## Not the same thing as `DSA_CRM_Data_Model.pdf`
+
+That document models **"Grid"** — the BuddyLoan / Paisabazaar DSA CRM user
+interface — reverse-engineered from three screen captures with, in its own
+words, "no schema access", and marked draft pending validation. Its entities
+(`LEAD_CUSTOMER`, `APPOINTMENT` keyed on a per-bank `ref_number`,
+`LENDER_QUOTE`) are not the tables in this Supabase project, and its field
+lists do not match `crm.leads`.
+
+It is useful here for one thing only, and it agrees with the decision above:
+there is no `application_id` in that model either. Its keys are the customer and
+the per-bank case.
