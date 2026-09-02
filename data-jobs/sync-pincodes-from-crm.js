@@ -34,6 +34,20 @@ const CHUNK_SIZE = 1000;
 // into pincodeGatingClient.js. Only lenders listed here are ever synced: a
 // lender whose list has not been confirmed as the right product must not reach
 // live gating just because a row exists for it upstream.
+//
+// ADDING A LENDER
+//
+// One line — `Hero: "herofincorp",` — but not before the list is confirmed to
+// be the right product's. Upstream carries 5,794 Hero pincodes with no product
+// tag, drawn from an internal consolidated master rather than from Hero; that
+// is a serviceability claim nobody has checked, and syncing it would gate live
+// traffic on it. Confirmed means a list issued by the lender, naming the
+// product it covers.
+//
+// For Hero specifically that is necessary but not sufficient:
+// _checkHeroFincorpEligibility() in ivr-router/lib/pincodeGatingClient.js still
+// returns "not yet implemented" and rejects every applicant, so a synced list
+// would sit unused until that engine exists.
 const LENDER_MAP = {
   Poonawalla: "poonawala",
 };
