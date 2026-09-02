@@ -277,7 +277,7 @@ async function main() {
     `[status-monitor] Report Summary: ${report.summary.healthy} healthy, ${report.summary.errors} errors, ${report.summary.overdue} overdue`
   );
 
-  if (report.summary.alerts.length > 0) {
+  if (report.alerts.length > 0) {
     console.log("[status-monitor] ALERTS:");
     report.alerts.forEach((alert) => {
       console.log(`  - ${alert.job_name}: ${alert.error_message}`);
