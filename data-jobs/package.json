@@ -4,12 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node run.js",
-    "monitor:status": "node status-monitor.js",
-    "monitor:twice-daily": "node status-monitor.js",
-    "cron:morning": "node status-monitor.js",
-    "cron:afternoon": "node status-monitor.js",
-    "setup": "node setup-monitoring.js"
+    "start": "node run.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4"
