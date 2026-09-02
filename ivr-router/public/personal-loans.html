@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Personal Loans — IVR Press 1</title>
+<style>
+  :root {
+    --ink: #10151c; --muted: #66727f; --hair: #e3e7ec; --bg: #f6f7f9;
+    --card: #fff; --accent: #1f6feb; --warn: #b45309; --warnbg: #fef6e7;
+    --poon: #7c3aed; --hero: #0d9488;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    font-size: 14px; line-height: 1.45;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 20px; }
+  label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+  input, select, button {
+    font: inherit; padding: 7px 11px; border: 1px solid var(--hair);
+    border-radius: 8px; background: #fff; color: var(--ink);
+  }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-bottom: 22px; }
+  .card { background: var(--card); border: 1px solid var(--hair); border-radius: 14px; padding: 16px 18px; }
+  .card h2 { margin: 0 0 2px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .metrics { display: flex; gap: 26px; margin-top: 12px; }
+  .metric .n { font-size: 26px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .metric .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; }
+  .meta { margin-top: 12px; font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--hair); border-radius: 12px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--hair); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: #fbfcfd; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:last-child td { border-bottom: none; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 28px 0 10px; }
+  .scroll { overflow-x: auto; }
+  .warn { background: var(--warnbg); border: 1px solid #f4d9a8; color: var(--warn); border-radius: 10px; padding: 11px 14px; margin-bottom: 18px; font-size: 13px; }
+  .note { background: var(--card); border: 1px dashed var(--hair); border-radius: 12px; padding: 16px 18px; color: var(--muted); font-size: 13px; }
+  .note b { color: var(--ink); }
+  .err { background: #fdeeee; border: 1px solid #f3c9c9; color: #991b1b; border-radius: 10px; padding: 11px 14px; margin-bottom: 18px; }
+  .bars { margin-top: 6px; }
+  .bar { display: flex; align-items: center; gap: 10px; margin: 5px 0; font-size: 12px; }
+  .bar .lbl { width: 92px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar .track { flex: 1; height: 16px; background: #eef1f4; border-radius: 4px; overflow: hidden; display: flex; }
+  .bar .seg { height: 100%; }
+  .bar .val { width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Personal Loans — IVR Press 1</h1>
+  </header>
+  <p class="sub">Poonawalla Fincorp and Hero Fincorp. These presses send the customer into the lender's own journey, so they never reach the Business Loans CRM — this send log is the only record that the call happened.</p>
+
+  <div id="error" class="err" hidden></div>
+  <div id="mismatch" class="warn" hidden></div>
+
+  <div class="controls">
+    <label for="day">Day</label>
+    <input type="date" id="day" />
+    <button id="reload" class="primary">Refresh</button>
+    <span style="flex:1"></span>
+    <label for="lender">Export</label>
+    <select id="lender">
+      <option value="all">Both lenders</option>
+      <option value="poonawalla">Poonawalla only</option>
+      <option value="herofincorp">Hero Fincorp only</option>
+    </select>
+    <button id="dl-summary">Summary (Excel)</button>
+    <button id="dl-detail">Presses for the day (Excel)</button>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <h3>By campaign</h3>
+  <div class="scroll"><table id="campaigns">
+    <thead><tr>
+      <th>Lender</th><th>Campaign</th>
+      <th class="n">Presses today</th><th class="n">Presses MTD</th><th class="n">Distinct phones</th>
+      <th>First</th><th>Last</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table></div>
+
+  <h3>Presses per day this month</h3>
+  <div class="card"><div class="bars" id="daily"></div></div>
+
+  <h3>Not shown here, and why</h3>
+  <div class="note">
+    <p style="margin-top:0"><b>Delivered and read counts.</b> Ananta posts a delivery receipt for every message to <code>/webhooks/ananta</code>, and that handler currently logs it and discards it — nothing is stored, so a sent → delivered → read funnel cannot be drawn. Persisting those receipts is a small change to the IVR service; it will only capture receipts from the moment it ships.</p>
+    <p><b>Lender MIS outcomes.</b> There is no key to join a press to a lender outcome. <code>crm.mis_poon</code> holds 2,051 rows of which 14 carry a phone number and none carry a client reference, and its newest MIS date is 26 Aug — before these campaigns ran. <code>crm.mis_hero</code> holds one row. The durable fix is upstream: the <code>customer_id</code> already minted for every presser should ride the lender link so it comes back in the MIS as the client reference.</p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var TOKEN_KEY = 'plTrackerToken';
+
+  // Served as /personal-loans?token=<CONSOLE_SECRET>. Keep the token, then take
+  // it out of the address bar so it does not end up in a screenshot or a
+  // pasted link. Same handling as the operator console.
+  (function captureToken() {
+    var url = new URL(window.location.href);
+    var token = url.searchParams.get('token');
+    if (!token) return;
+    try { localStorage.setItem(TOKEN_KEY, token); }
+    catch (e) { window.__plToken = token; }   // private browsing
+    url.searchParams.delete('token');
+    window.history.replaceState({}, '', url.toString());
+  })();
+
+  function token() {
+    try { return localStorage.getItem(TOKEN_KEY) || window.__plToken || ''; }
+    catch (e) { return window.__plToken || ''; }
+  }
+
+  var COLOURS = { poonawalla: '#7c3aed', herofincorp: '#0d9488', unknown: '#94a3b8' };
+  var NAMES = { poonawalla: 'Poonawalla Fincorp', herofincorp: 'Hero Fincorp', unknown: 'Unrecognised link' };
+  var n = function (v) { return Number(v || 0).toLocaleString('en-IN'); };
+  var el = function (id) { return document.getElementById(id); };
+
+  function showError(msg) {
+    var e = el('error');
+    if (!msg) { e.hidden = true; return; }
+    e.textContent = msg;
+    e.hidden = false;
+  }
+
+  async function api(path) {
+    var res = await fetch(path, { headers: { 'X-Webhook-Secret': token() } });
+    if (res.status === 401) throw new Error('Unauthorised — reopen this page as /personal-loans?token=<CONSOLE_SECRET>');
+    if (res.status === 503) throw new Error('The service has no database configured, or CONSOLE_SECRET is unset.');
+    if (!res.ok) throw new Error('Request failed (' + res.status + ')');
+    return res.json();
+  }
+
+  function renderCards(s) {
+    var lenders = s.lenders || [];
+    if (!lenders.length) {
+      el('cards').innerHTML = '<div class="note">No personal-loan presses in this month yet.</div>';
+      return;
+    }
+    el('cards').innerHTML = lenders.map(function (l) {
+      return '<div class="card">' +
+        '<h2><span class="dot" style="background:' + (COLOURS[l.lender] || '#999') + '"></span>' +
+        (NAMES[l.lender] || l.lender) + '</h2>' +
+        '<div class="metrics">' +
+          '<div class="metric"><div class="n">' + n(l.ftd_presses) + '</div><div class="k">Press 1 today</div></div>' +
+          '<div class="metric"><div class="n">' + n(l.mtd_presses) + '</div><div class="k">Month to date</div></div>' +
+        '</div>' +
+        '<div class="meta">' + n(l.mtd_phones) + ' distinct numbers this month' +
+          (Number(l.mtd_failed) ? ' · ' + n(l.mtd_failed) + ' failed sends' : '') +
+        '</div></div>';
+    }).join('');
+  }
+
+  function renderMismatch(s) {
+    var total = (s.lenders || []).reduce(function (a, l) { return a + Number(l.mtd_variant_mismatch || 0); }, 0);
+    var w = el('mismatch');
+    if (!total) { w.hidden = true; return; }
+    w.innerHTML = '<b>' + n(total) + ' press' + (total === 1 ? '' : 'es') +
+      ' went to a lender the URL did not name.</b> The panel posted to one variant while the message carried another lender’s link. ' +
+      'These are counted under the lender the customer actually reached. Worth checking the placeholder config before the next run.';
+    w.hidden = false;
+  }
+
+  function renderCampaigns(s) {
+    var rows = s.campaigns || [];
+    var body = rows.map(function (c) {
+      return '<tr>' +
+        '<td>' + (NAMES[c.lender] || c.lender) + '</td>' +
+        '<td>' + escapeHtml(c.campaign) + '</td>' +
+        '<td class="n">' + n(c.ftd_presses) + '</td>' +
+        '<td class="n">' + n(c.presses) + '</td>' +
+        '<td class="n">' + n(c.phones) + '</td>' +
+        '<td>' + String(c.first_at || '').replace('T', ' ') + '</td>' +
+        '<td>' + String(c.last_at || '').replace('T', ' ') + '</td>' +
+        '</tr>';
+    }).join('');
+    el('campaigns').querySelector('tbody').innerHTML =
+      body || '<tr><td colspan="7" style="color:#66727f">No campaigns this month.</td></tr>';
+  }
+
+  function renderDaily(s) {
+    var rows = s.daily || [];
+    if (!rows.length) { el('daily').innerHTML = '<span style="color:#66727f">Nothing yet this month.</span>'; return; }
+    var byDay = {};
+    rows.forEach(function (r) {
+      byDay[r.ist_day] = byDay[r.ist_day] || {};
+      byDay[r.ist_day][r.lender] = Number(r.presses || 0);
+    });
+    var days = Object.keys(byDay).sort();
+    var max = 0;
+    days.forEach(function (d) {
+      var t = 0; Object.keys(byDay[d]).forEach(function (k) { t += byDay[d][k]; });
+      if (t > max) max = t;
+    });
+    el('daily').innerHTML = days.map(function (d) {
+      var day = byDay[d];
+      var total = 0; Object.keys(day).forEach(function (k) { total += day[k]; });
+      var segs = Object.keys(day).sort().map(function (k) {
+        return '<span class="seg" style="width:' + (day[k] / max * 100) + '%;background:' + (COLOURS[k] || '#999') + '" title="' +
+          (NAMES[k] || k) + ': ' + n(day[k]) + '"></span>';
+      }).join('');
+      return '<div class="bar"><span class="lbl">' + d + '</span>' +
+        '<span class="track">' + segs + '</span><span class="val">' + n(total) + '</span></div>';
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  async function load() {
+    showError('');
+    var day = el('day').value;
+    try {
+      var out = await api('/api/pl-tracker/summary' + (day ? '?day=' + day : ''));
+      var s = out.summary || {};
+      if (!el('day').value && s.day) el('day').value = s.day;
+      renderMismatch(s);
+      renderCards(s);
+      renderCampaigns(s);
+      renderDaily(s);
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+
+  // The token is a header, so a plain <a download> cannot carry it. Fetch the
+  // CSV, then hand the browser a blob.
+  async function download(scope) {
+    showError('');
+    var day = el('day').value;
+    var lender = el('lender').value;
+    var qs = [];
+    if (day) qs.push('day=' + day);
+    if (scope === 'detail' && lender !== 'all') qs.push('lender=' + lender);
+    qs.push('scope=' + scope);
+    try {
+      var res = await fetch('/api/pl-tracker/export.csv?' + qs.join('&'), {
+        headers: { 'X-Webhook-Secret': token() },
+      });
+      if (!res.ok) throw new Error('Export failed (' + res.status + ')');
+      var blob = await res.blob();
+      var name = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name ? name[1] : 'pl-ivr.csv';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    } catch (e) {
+      showError(e.message);
+    }
+  }
+
+  el('reload').addEventListener('click', load);
+  el('day').addEventListener('change', load);
+  el('dl-summary').addEventListener('click', function () { download('summary'); });
+  el('dl-detail').addEventListener('click', function () { download('detail'); });
+  load();
+  setInterval(load, 60000);   // live enough for a campaign in flight
+})();
+</script>
+</body>
+</html>

@@ -13,6 +13,7 @@ import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
 import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import { verifyWebhookSecret } from "./lib/middleware/verifyWebhookSecret.js";
 import ivrWhatsAppRoutes from "./lib/routes/ivrWhatsAppRoutes.js";
+import plTrackerRoutes from "./lib/routes/plTrackerRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
@@ -500,6 +501,21 @@ const __dirname = dirname(__filename);
 app.get('/console', consoleAuth('CONSOLE_PAGE', null), (req, res) => {
   res.sendFile('public/console.html', { root: __dirname });
 });
+
+// ==================== Personal Loans — IVR press-1 tracker ====================
+//
+// Poonawalla and Hero Fincorp are a different product from Business Loans: the
+// press sends the customer into that lender's own journey, so nothing reaches
+// the CRM and no cockpit screen reports on it. public.whatsapp_messages — this
+// service's own send log — is the only record, and until now nothing read it.
+//
+// Behind CONSOLE_SECRET, and failClosed, because every row is a customer's
+// mobile number. Load it as /personal-loans?token=<CONSOLE_SECRET>; the page
+// keeps the token and sends it as a header, the same way the console does.
+app.get('/personal-loans', consoleAuth('CONSOLE_PL_PAGE', null), (req, res) => {
+  res.sendFile('public/personal-loans.html', { root: __dirname });
+});
+app.use('/api/pl-tracker', consoleAuth('CONSOLE_PL_API', null), plTrackerRoutes);
 
 const server = app.listen(PORT, () => {
   logger.log('info', 'SERVICE_START', 'IVR Router service started', {
