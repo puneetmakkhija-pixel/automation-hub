@@ -48,7 +48,7 @@ curl -X POST "https://api-buddy-loan-vox.oriserve.com/api/v1/campaigns/trigger" 
   -d '{
     "campaign_id": "6a969a1c91b08220629d6b88",
     "mobile": "+91XXXXXXXXXX",
-    "notification_webhook_url": "https://automation-hub-production.up.railway.app/webhooks/oriserve",
+    "notification_webhook_url": "https://ivr-voice-bot-system-production.up.railway.app/webhooks/oriserve",
     "metadata": {
       "customer_name": "<name>",
       "account_id": "<account_id>"
@@ -87,7 +87,7 @@ through the client is a genuine second call, not a safe replay.
 Same call, with the key, host and campaign coming from the environment:
 
 ```bash
-curl -X POST "https://automation-hub-production.up.railway.app/api/oriserve/campaigns/trigger" \
+curl -X POST "https://ivr-voice-bot-system-production.up.railway.app/api/oriserve/campaigns/trigger" \
   -H "Content-Type: application/json" \
   -d '{
     "mobile": "+91XXXXXXXXXX",
@@ -109,7 +109,7 @@ On the `ivr-voice-bot-system` service:
 ORISERVE_API_KEY=vx_...                                              # secret, Railway only
 ORISERVE_BASE_URL=https://api-buddy-loan-vox.oriserve.com/api/v1
 ORISERVE_CAMPAIGN_ID=6a969a1c91b08220629d6b88
-ORISERVE_WEBHOOK_URL=https://automation-hub-production.up.railway.app/webhooks/oriserve
+ORISERVE_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/oriserve
 ```
 
 `ORISERVE_BASE_URL` is also the client's compiled-in default, so a service that
@@ -139,6 +139,25 @@ Run without it, the script sets everything else and skips the key with a note.
 An earlier key, `vx_iJvvN0WW…`, was committed to this repo in `.env.railway`
 and `setup-railway-vars.sh` and is in the git history. It should be treated as
 compromised and rotated at Oriserve, whether or not it is still the live key.
+
+## The service domain
+
+Callback and API URLs here use:
+
+```
+https://ivr-voice-bot-system-production.up.railway.app
+```
+
+That is the Railway service domain for `ivr-voice-bot-system`, pointed at port
+8080, which is the port the service logs on startup.
+
+**Not `automation-hub-production.up.railway.app`.** That host is the project's
+name, not a domain that exists — nothing serves it, and Railway's edge answers
+every request to it with `{"status":"error","code":404,"message":"Application
+not found"}` and a `request_id`. That 404 shape is the edge, not this service:
+a 404 from the service itself would not carry a `request_id`. Every webhook URL
+in this repo pointed at it until Sep 2026, so a callback configured from an
+older copy of these files never arrived.
 
 ## Checking it worked
 
@@ -198,7 +217,7 @@ which PostgREST reads as a literal table called `crm.voice_call_events` in
 A quick liveness check on the credentials:
 
 ```bash
-curl -s https://automation-hub-production.up.railway.app/api/oriserve/health
+curl -s https://ivr-voice-bot-system-production.up.railway.app/api/oriserve/health
 ```
 
 `{"success": false, ... "Missing ORISERVE_API_KEY"}` is a configuration

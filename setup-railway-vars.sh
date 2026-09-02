@@ -42,23 +42,24 @@ echo "Adding ORISERVE_CAMPAIGN_ID..."
 railway variables set ORISERVE_CAMPAIGN_ID "6a969a1c91b08220629d6b88"
 
 echo "Adding ORISERVE_WEBHOOK_URL..."
-railway variables set ORISERVE_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/oriserve"
+railway variables set ORISERVE_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/oriserve"
 
 echo ""
 echo "📝 Adding Webhook URLs..."
 echo ""
 
 echo "Adding OBD_WEBHOOK_URL..."
-railway variables set OBD_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/obd"
+railway variables set OBD_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/obd"
 
 echo "Adding OBD_SMS_WEBHOOK_URL..."
-railway variables set OBD_SMS_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/sms"
+railway variables set OBD_SMS_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/sms"
 
 echo "Adding ANANTA_WEBHOOK_URL..."
-railway variables set ANANTA_WEBHOOK_URL "https://automation-hub-production.up.railway.app/webhooks/ananta"
+railway variables set ANANTA_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/ananta"
 
-echo "Adding SUPABASE_WEBHOOK_URL..."
-railway variables set SUPABASE_WEBHOOK_URL "https://automation-hub-production.up.railway.app/api/db/webhooks/log"
+# SUPABASE_WEBHOOK_URL is deliberately not set: it pointed at
+# /api/db/webhooks/log, which PR #40 retired with the rest of /api/db, so there
+# is nothing at the other end. See docs/RETIRED_ENDPOINTS.md.
 
 echo ""
 echo "📝 Adding Logging Configuration..."
