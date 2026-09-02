@@ -19,9 +19,17 @@ function normalizeLenderType(lenderType = "poonawala") {
   return LENDER_TYPE_ALIASES[key] || key;
 }
 
-// Poonawalla Fincorp's STPL gating criteria, as issued by their InstaPL
-// partnership team (mail of 02 Feb 2026, reproduced in POONAWALA_GATING_GUIDE.md).
-const STPL_GATING_CRITERIA = {
+// Each lender's criteria, and the ordered rules that read them.
+//
+// A rule returns a reject reason, or null to pass, or undefined when the input
+// it needs is absent — undefined is recorded in checksSkipped rather than
+// treated as a pass or a failure, because a lead screened on eight of thirteen
+// rules is not the same as a lead that cleared thirteen.
+
+// ── Poonawalla Fincorp — STPL ────────────────────────────────────────────────
+// Issued by their InstaPL partnership team, mail of 02 Feb 2026, reproduced in
+// POONAWALA_GATING_GUIDE.md.
+const POONAWALA_CRITERIA = {
   minAge: 24,
   maxAge: 55,
   minAnnualIncome: 300000,
@@ -33,22 +41,181 @@ const STPL_GATING_CRITERIA = {
   maxEnquiriesLast1Day: 3,
 };
 
-// Which criteria each lender is gated on.
+// Reject strings are load-bearing: they reach the applicant and are stored in
+// gating_logs, so they are reproduced here exactly as the original per-lender
+// implementation emitted them. test-gating-criteria.mjs pins them.
+const POONAWALA_RULES = [
+  { id: "age", flag: "age", severity: "HARD",
+    run: (c, k) => (!c.age || c.age < k.minAge || c.age > k.maxAge)
+      ? `Age not in range ${k.minAge}-${k.maxAge}` : null },
+  { id: "income", flag: "income", severity: "HARD",
+    run: (c, k) => (!c.income || c.income < k.minAnnualIncome)
+      ? `Annual income < ${k.minAnnualIncome / 100000} lakh` : null },
+  { id: "cibil", flag: "cibilScore", severity: "HARD",
+    run: (c, k) => (c.cibilScore !== undefined && c.cibilScore < k.minCibilScore)
+      ? `CIBIL Score < ${k.minCibilScore}` : null },
+  { id: "hunter", flag: "hunterScore", severity: "HARD",
+    run: (c, k) => (c.hunterScore !== undefined && c.hunterScore < k.minHunterScore)
+      ? `Hunter Score < ${k.minHunterScore}` : null },
+  { id: "overdue", severity: "HARD",
+    run: (c) => c.currentOverdue ? "Current overdue present - automatic reject" : null },
+  { id: "dpd6m", severity: "HARD",
+    run: (c) => c.dpdData && c.dpdData.dpdLatest6m > 0 ? "0+ DPD in Latest 6 Months" : null },
+  { id: "dpd12m", severity: "HARD",
+    run: (c) => c.dpdData && c.dpdData.dpdLatest12m >= 30
+      ? "30+ DPD in Latest 12 Months (Bureau)" : null },
+  { id: "vintage", severity: "HARD",
+    run: (c, k) => (c.bureauVintage && c.bureauVintage < k.minBureauVintageMonths)
+      ? `Bureau vintage < ${k.minBureauVintageMonths} months` : null },
+  { id: "derog", severity: "HARD",
+    run: (c) => (c.derogFlags && c.derogFlags.length > 0)
+      ? `Derog flags present: ${c.derogFlags.join(", ")}` : null },
+  { id: "liveLoans", severity: "HARD",
+    run: (c, k) => (c.liveLoans && c.liveLoans > k.maxLiveUnsecuredLoans)
+      ? `Live unsecured loans > ${k.maxLiveUnsecuredLoans}` : null },
+  { id: "enquiries1d", severity: "HARD",
+    run: (c, k) => (c.enquiriesCount && c.enquiriesCount >= k.maxEnquiriesLast1Day)
+      ? `Unsecured enquiries in last 1 day >= ${k.maxEnquiriesLast1Day}` : null },
+  { id: "mfi", severity: "HARD",
+    run: (c) => (c.mfiStatus === "active" || c.mfiStatus === "closed_recent")
+      ? "Active or recent MFI tradeline" : null },
+  { id: "identity", severity: "HARD",
+    run: (c) => (!c.mobileInBureau || !c.panInBureau)
+      ? "Mobile number or PAN not available in bureau" : null },
+  { id: "dualPan", severity: "HARD",
+    run: (c) => c.dualPan ? "Dual PAN not allowed" : null },
+  { id: "vintageSoft", severity: "SOFT",
+    run: (c, k) => (c.bureauVintage && c.bureauVintage <= k.softBureauVintageMonths)
+      ? `Bureau vintage <= ${k.softBureauVintageMonths} months (soft negative)` : null },
+];
+
+// ── Hero FinCorp — bureau-based PL ───────────────────────────────────────────
+// From Hero's "Revised Policy Cuts - Hero" sheet, which gives Currently Live
+// and Revised Cuts side by side. The operator's decision is REVISED where a
+// revised cut is given, Currently Live where the revised cell is blank, so both
+// values are carried below and `effective` says which one is in force.
 //
-// Hero FinCorp has not issued its own. Rather than leave its engine returning
-// "not yet implemented" — which rejected every applicant regardless of the
-// 15,227 pincodes they sent on 28 Jul 2026 — it runs on Poonawalla's numbers as
-// a deliberate stand-in, per the operator's instruction.
-//
-// These are NOT Hero's underwriting rules, and `borrowedFrom` says so in every
-// result and every gating_logs row, so a pass here is never mistaken for Hero
-// having approved the criteria. Hero still underwrites independently on the
-// leads it receives, so the risk of the stand-in is commercial, not compliance:
-// where Poonawalla is stricter than Hero we withhold leads Hero would have
-// taken. Replace with Hero's own criteria as soon as their team sends them.
+// Salary is MONTHLY here. Poonawalla's income cut is annual household income;
+// reading one as the other would be a 12x error in either direction, so the
+// field is deliberately named differently from Poonawalla's.
+const HERO_CRITERIA = {
+  minAge: 21,                       // revised, was 18
+  maxAge: 58,                       // revised, was 55
+  minMonthlySalary: 15000,          // revised, was 20000
+  minCibilScore: 725,               // revised, was 730
+  allowNewToCredit: false,
+  maxActivePlForHighDecile: 5,      // revised: >5 active PL at decile 3+ rejects
+  highDecileFrom: 3,
+  maxUnsecTradelines1m: 4,          // currently live
+  maxUnsecTradelines3m: 1,          // currently live
+  maxStpl3m: 3,                     // currently live
+  maxDpd3m: 29,                     // currently live
+  maxDpd12m: 59,
+  maxDpd24m: 89,
+  foirBands: [                      // currently live, banded on monthly income
+    { belowIncome: 20000, maxFoirPct: 45 },
+    { belowIncome: 30000, maxFoirPct: 55 },
+    { belowIncome: Infinity, maxFoirPct: 70 },
+  ],
+  maxOverdueOverall: 5000,          // currently live, strict <
+  maxOverdueCreditCard: 10000,
+  maxEnquiries3mTotal: 2,           // currently live
+  maxEnquiries3mUnsecured: 2,
+  enquiry6mScoreBelow: 750,         // revised: >4 unsecured >50k enquiries when score < 750
+  maxEnquiries6mAbove50k: 4,
+  noIncredPlWithinYears: 3,         // revised
+};
+
+const HERO_RULES = [
+  { id: "age", flag: "age", severity: "HARD",
+    run: (c, k) => c.age === undefined ? undefined
+      : (c.age < k.minAge || c.age > k.maxAge) ? `Age not in range ${k.minAge}-${k.maxAge}` : null },
+  { id: "employment", severity: "HARD",
+    run: (c) => c.employmentType === undefined ? undefined
+      : ["salaried", "professional", "professionals"].includes(String(c.employmentType).trim().toLowerCase())
+        ? null : "Employment type not Salaried or Professional" },
+  { id: "salary", flag: "income", severity: "HARD",
+    run: (c, k) => c.monthlySalary === undefined ? undefined
+      : c.monthlySalary < k.minMonthlySalary ? `Monthly salary < ${k.minMonthlySalary}` : null },
+  { id: "cibil", flag: "cibilScore", severity: "HARD",
+    run: (c, k) => c.cibilScore === undefined ? undefined
+      : c.cibilScore < k.minCibilScore ? `CIBIL Score < ${k.minCibilScore}` : null },
+  { id: "ntc", severity: "HARD",
+    run: (c, k) => c.newToCredit === undefined ? undefined
+      : (c.newToCredit && !k.allowNewToCredit) ? "New to credit not allowed" : null },
+  { id: "activePlDecile", severity: "HARD",
+    run: (c, k) => (c.activeUnsecuredPl === undefined || c.decile === undefined) ? undefined
+      : (c.decile >= k.highDecileFrom && c.activeUnsecuredPl > k.maxActivePlForHighDecile)
+        ? `> ${k.maxActivePlForHighDecile} active PL at decile ${k.highDecileFrom}+` : null },
+  { id: "unsecTradelines1m", severity: "HARD",
+    run: (c, k) => c.unsecTradelines1m === undefined ? undefined
+      : c.unsecTradelines1m > k.maxUnsecTradelines1m
+        ? `Unsecured tradelines in last 1m > ${k.maxUnsecTradelines1m}` : null },
+  { id: "unsecTradelines3m", severity: "HARD",
+    run: (c, k) => c.unsecTradelines3m === undefined ? undefined
+      : c.unsecTradelines3m > k.maxUnsecTradelines3m
+        ? `Unsecured tradelines in last 3m > ${k.maxUnsecTradelines3m}` : null },
+  { id: "stpl3m", severity: "HARD",
+    run: (c, k) => c.stpl3m === undefined ? undefined
+      : c.stpl3m > k.maxStpl3m ? `STPL in last 3m > ${k.maxStpl3m}` : null },
+  { id: "dpd", severity: "HARD",
+    run: (c, k) => {
+      const d = c.dpdData;
+      if (!d) return undefined;
+      if (d.maxDpd3m !== undefined && d.maxDpd3m > k.maxDpd3m) return `Max DPD in last 3m > ${k.maxDpd3m}`;
+      if (d.maxDpd12m !== undefined && d.maxDpd12m > k.maxDpd12m) return `Max DPD in last 12m > ${k.maxDpd12m}`;
+      if (d.maxDpd24m !== undefined && d.maxDpd24m > k.maxDpd24m) return `Max DPD in last 24m > ${k.maxDpd24m}`;
+      return (d.maxDpd3m === undefined && d.maxDpd12m === undefined && d.maxDpd24m === undefined)
+        ? undefined : null;
+    } },
+  { id: "derog", severity: "HARD",
+    run: (c) => c.derogFlags === undefined ? undefined
+      : (c.derogFlags && c.derogFlags.length > 0)
+        ? `Suit-filed / written-off / settled / wilful default present: ${c.derogFlags.join(", ")}` : null },
+  { id: "foir", severity: "HARD",
+    run: (c, k) => (c.foirPct === undefined || c.monthlySalary === undefined) ? undefined
+      : (() => {
+          const band = k.foirBands.find((b) => c.monthlySalary < b.belowIncome);
+          return c.foirPct > band.maxFoirPct
+            ? `FOIR ${c.foirPct}% over ${band.maxFoirPct}% for this income band` : null;
+        })() },
+  { id: "overdueOverall", severity: "HARD",
+    run: (c, k) => c.maxOverdueOverall === undefined ? undefined
+      : c.maxOverdueOverall >= k.maxOverdueOverall
+        ? `Max overdue overall >= ${k.maxOverdueOverall}` : null },
+  { id: "overdueCard", severity: "HARD",
+    run: (c, k) => c.maxOverdueCreditCard === undefined ? undefined
+      : c.maxOverdueCreditCard >= k.maxOverdueCreditCard
+        ? `Max credit-card overdue >= ${k.maxOverdueCreditCard}` : null },
+  { id: "enquiries6m", severity: "HARD",
+    run: (c, k) => (c.unsecEnquiries6mAbove50k === undefined || c.cibilScore === undefined) ? undefined
+      : (c.cibilScore < k.enquiry6mScoreBelow && c.unsecEnquiries6mAbove50k > k.maxEnquiries6mAbove50k)
+        ? `> ${k.maxEnquiries6mAbove50k} unsecured enquiries over 50k in 6m with score < ${k.enquiry6mScoreBelow}` : null },
+  { id: "enquiries3mTotal", severity: "HARD",
+    run: (c, k) => c.enquiries3mTotal === undefined ? undefined
+      : c.enquiries3mTotal > k.maxEnquiries3mTotal
+        ? `Enquiries in last 3m > ${k.maxEnquiries3mTotal}` : null },
+  { id: "enquiries3mUnsec", severity: "HARD",
+    run: (c, k) => c.enquiries3mUnsecured === undefined ? undefined
+      : c.enquiries3mUnsecured > k.maxEnquiries3mUnsecured
+        ? `Unsecured enquiries in last 3m > ${k.maxEnquiries3mUnsecured}` : null },
+  { id: "incredPl", severity: "HARD",
+    run: (c, k) => c.incredPlWithinYears === undefined ? undefined
+      : c.incredPlWithinYears <= k.noIncredPlWithinYears
+        ? `InCred PL opened within last ${k.noIncredPlWithinYears} years` : null },
+];
+
 const LENDER_CRITERIA = {
-  poonawala: { criteria: STPL_GATING_CRITERIA, borrowedFrom: null },
-  herofincorp: { criteria: STPL_GATING_CRITERIA, borrowedFrom: "poonawala" },
+  poonawala: {
+    criteria: POONAWALA_CRITERIA,
+    rules: POONAWALA_RULES,
+    source: "Poonawalla InstaPL partnership mail, 02 Feb 2026",
+  },
+  herofincorp: {
+    criteria: HERO_CRITERIA,
+    rules: HERO_RULES,
+    source: "Hero 'Revised Policy Cuts - Hero' — revised cuts, falling back to currently live",
+  },
 };
 
 class PincodeGatingClient {
@@ -110,102 +277,39 @@ class PincodeGatingClient {
    * written out, so a reason can never contradict the number that produced it.
    */
   async _evaluate(customer, checks, lenderType, config) {
-    const { criteria, borrowedFrom } = config;
-    const {
-      pincode, age, income, cibilScore, hunterScore, dpdData, bureauVintage,
-      derogFlags, currentOverdue, liveLoans, enquiriesCount, mfiStatus,
-      mobileInBureau, panInBureau, dualPan,
-    } = customer;
+    const { criteria, rules, source } = config;
 
-    // Surfaced on every result and written to gating_logs, so an eligible=true
-    // for a lender on borrowed criteria is never read as that lender's own call.
-    checks.criteriaSource = borrowedFrom ?? lenderType;
-    checks.criteriaBorrowed = borrowedFrom !== null;
+    checks.criteriaSource = source;
+    checks.checksSkipped = [];
 
-    if (!pincode) return { ...checks, reason: "Pincode not provided" };
+    if (!customer.pincode) return { ...checks, reason: "Pincode not provided" };
 
-    const pincodeValidation = await this.validatePincode(pincode, lenderType);
+    const pincodeValidation = await this.validatePincode(customer.pincode, lenderType);
     checks.pincode = pincodeValidation.valid;
     if (!checks.pincode) {
       checks.hardRejects.push("Pincode not in serviceable list");
       return { ...checks, eligible: false, reason: "Pincode not serviceable" };
     }
 
-    if (!age || age < criteria.minAge || age > criteria.maxAge) {
-      checks.age = false;
-      checks.hardRejects.push(`Age not in range ${criteria.minAge}-${criteria.maxAge}`);
-    } else {
-      checks.age = true;
-    }
+    for (const rule of rules) {
+      const reason = rule.run(customer, criteria);
 
-    if (!income || income < criteria.minAnnualIncome) {
-      checks.income = false;
-      checks.hardRejects.push(`Annual income < ${criteria.minAnnualIncome / 100000} lakh`);
-    } else {
-      checks.income = true;
-    }
-
-    if (cibilScore !== undefined && cibilScore < criteria.minCibilScore) {
-      checks.cibilScore = false;
-      checks.hardRejects.push(`CIBIL Score < ${criteria.minCibilScore}`);
-    } else {
-      checks.cibilScore = true;
-    }
-
-    if (hunterScore !== undefined && hunterScore < criteria.minHunterScore) {
-      checks.hunterScore = false;
-      checks.hardRejects.push(`Hunter Score < ${criteria.minHunterScore}`);
-    } else {
-      checks.hunterScore = true;
-    }
-
-    if (currentOverdue) {
-      checks.hardRejects.push("Current overdue present - automatic reject");
-    }
-
-    if (dpdData) {
-      const { dpdLatest6m, dpdLatest12m } = dpdData;
-      if (dpdLatest6m > 0) {
-        checks.hardRejects.push("0+ DPD in Latest 6 Months");
+      // undefined means the input the rule needs was absent. Recorded, never
+      // scored: counting it as a pass would report a lead as having cleared a
+      // rule nobody ran, and counting it as a failure would decline everyone
+      // whose file simply lacks that bureau field.
+      if (reason === undefined) {
+        checks.checksSkipped.push(rule.id);
+        continue;
       }
-      if (dpdLatest12m >= 30) {
-        checks.hardRejects.push("30+ DPD in Latest 12 Months (Bureau)");
+
+      if (rule.flag) checks[rule.flag] = !reason;
+      if (reason) {
+        (rule.severity === "HARD" ? checks.hardRejects : checks.softRejects).push(reason);
       }
     }
 
-    if (bureauVintage && bureauVintage < criteria.minBureauVintageMonths) {
-      checks.hardRejects.push(`Bureau vintage < ${criteria.minBureauVintageMonths} months`);
-    }
-
-    if (derogFlags && derogFlags.length > 0) {
-      checks.hardRejects.push(`Derog flags present: ${derogFlags.join(", ")}`);
-    }
-
-    if (liveLoans && liveLoans > criteria.maxLiveUnsecuredLoans) {
-      checks.hardRejects.push(`Live unsecured loans > ${criteria.maxLiveUnsecuredLoans}`);
-    }
-
-    if (enquiriesCount && enquiriesCount >= criteria.maxEnquiriesLast1Day) {
-      checks.hardRejects.push(`Unsecured enquiries in last 1 day >= ${criteria.maxEnquiriesLast1Day}`);
-    }
-
-    if (mfiStatus === "active" || mfiStatus === "closed_recent") {
-      checks.hardRejects.push("Active or recent MFI tradeline");
-    }
-
-    if (!mobileInBureau || !panInBureau) {
-      checks.hardRejects.push("Mobile number or PAN not available in bureau");
-    }
-
-    if (dualPan) {
-      checks.hardRejects.push("Dual PAN not allowed");
-    }
-
-    if (bureauVintage && bureauVintage <= criteria.softBureauVintageMonths) {
-      checks.softRejects.push(`Bureau vintage <= ${criteria.softBureauVintageMonths} months (soft negative)`);
-    }
-
-    checks.eligible = checks.hardRejects.length === 0 && checks.age && checks.income && checks.pincode && checks.cibilScore && checks.hunterScore;
+    checks.eligible = checks.hardRejects.length === 0 && checks.pincode;
 
     return checks;
   }
@@ -259,7 +363,7 @@ class PincodeGatingClient {
           // running on borrowed criteria is auditable after the fact, not only
           // while the borrowing lasts.
           criteriaSource: eligibilityResult.criteriaSource,
-          criteriaBorrowed: eligibilityResult.criteriaBorrowed,
+          checksSkipped: eligibilityResult.checksSkipped,
         },
         hard_rejects: eligibilityResult.hardRejects,
         soft_rejects: eligibilityResult.softRejects,
