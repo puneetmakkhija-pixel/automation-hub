@@ -355,11 +355,15 @@ async function handleKeypress(req, res) {
       ? String(dtmf).trim()
       : String(dtmf_sequence || "").trim().slice(-1);
 
-  // The CRM gets every press, before any of the decisions below. A digit with
-  // no template, an unreadable number and a duplicate delivery all return early
+  // The CRM gets the press before any of the decisions below. A digit with no
+  // template, an unreadable number and a duplicate delivery all return early
   // from this handler, and all three are facts the funnel wants: the press is
-  // what the customer did, the message is only what we did about it. Not
-  // awaited — see lib/crmPressForward.js on why this can never fail the send.
+  // what the customer did, the message is only what we did about it.
+  //
+  // Only for the variants that belong to that CRM's book — this webhook also
+  // carries another lender's traffic, several times the volume. Not awaited.
+  // lib/crmPressForward.js has both: why it can never fail the send, and which
+  // variants it forwards.
   forwardPressToCrm(body, { digit, variant });
 
   const template = templateMap()[digit];
