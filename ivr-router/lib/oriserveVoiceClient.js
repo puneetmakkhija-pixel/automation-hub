@@ -3,21 +3,25 @@
  * Triggers voice agent campaigns for outbound calls
  *
  * API Documentation:
- * Base URL: https://api-voice-agent.oriserve.com/api/v1
+ * Base URL: https://api-buddy-loan-vox.oriserve.com/api/v1
  * Authentication: X-API-Key header
+ *
+ * BuddyLoan runs on its own Oriserve tenant, api-buddy-loan-vox, not the
+ * shared api-voice-agent host. See ivr-router/ORI_VOICE_BOT_CAMPAIGN.md.
  *
  * Environment Variables:
  *   ORISERVE_API_KEY - Your Oriserve API key
- *   ORISERVE_BASE_URL - API base URL (optional, defaults to production)
+ *   ORISERVE_BASE_URL - API base URL (optional, defaults to the BuddyLoan tenant)
+ *   ORISERVE_CAMPAIGN_ID - Default campaign to trigger when a caller omits one
  *   ORISERVE_WEBHOOK_URL - Your webhook URL for campaign callbacks
  *
  * Usage:
  *   import OriserveVoiceClient from './oriserveVoiceClient.js';
  *   const client = new OriserveVoiceClient();
  *   const result = await client.triggerCampaign({
- *     campaign_id: '6a54899dba2741b80ae58acd',
+ *     campaign_id: '6a969a1c91b08220629d6b88',
  *     mobile: '+919876543210',
- *     metadata: { customer_name: 'John Doe' }
+ *     metadata: { customer_name: 'John Doe', account_id: 'BDL-10233' }
  *   });
  */
 
@@ -35,8 +39,9 @@ class OriserveAPIError extends Error {
 class OriserveVoiceClient {
   constructor(apiKey, baseUrl, webhookUrl, timeout = 30000) {
     this.apiKey = apiKey || process.env.ORISERVE_API_KEY;
-    this.baseUrl = baseUrl || process.env.ORISERVE_BASE_URL || 'https://api-voice-agent.oriserve.com/api/v1';
+    this.baseUrl = baseUrl || process.env.ORISERVE_BASE_URL || 'https://api-buddy-loan-vox.oriserve.com/api/v1';
     this.webhookUrl = webhookUrl || process.env.ORISERVE_WEBHOOK_URL;
+    this.defaultCampaignId = process.env.ORISERVE_CAMPAIGN_ID;
     this.timeout = timeout;
 
     if (!this.apiKey) {
@@ -136,17 +141,22 @@ class OriserveVoiceClient {
    * Trigger a voice agent campaign
    *
    * @param {Object} options - Campaign options
-   * @param {string} options.campaign_id - Oriserve campaign ID
+   * @param {string} options.campaign_id - Oriserve campaign ID (defaults to ORISERVE_CAMPAIGN_ID)
    * @param {string} options.mobile - Customer phone number (+91XXXXXXXXXX)
    * @param {string} options.notification_webhook_url - Webhook URL for callbacks (optional)
    * @param {Object} options.metadata - Custom metadata (customer_name, account_id, etc.)
    * @returns {Promise<Object>} Campaign trigger response
    */
   async triggerCampaign(options) {
-    const { campaign_id, mobile, notification_webhook_url, metadata = {} } = options;
+    const { mobile, notification_webhook_url, metadata = {} } = options;
+    const campaign_id = options.campaign_id || this.defaultCampaignId;
 
     if (!campaign_id) {
-      throw new OriserveAPIError('campaign_id is required', null, null);
+      throw new OriserveAPIError(
+        'campaign_id is required (pass it, or set ORISERVE_CAMPAIGN_ID)',
+        null,
+        null
+      );
     }
 
     if (!mobile) {
