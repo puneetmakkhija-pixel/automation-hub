@@ -7,7 +7,8 @@
     "start": "node index.js",
     "dev": "node index.js",
     "test:press-forward": "node test-press-forward.mjs",
-    "test:voice-outcome": "node test-voice-outcome.mjs"
+    "test:voice-outcome": "node test-voice-outcome.mjs",
+    "test:pl-tracker": "node test-pl-tracker.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
