@@ -58,11 +58,12 @@ echo ""
 echo "📝 Adding Webhook URLs..."
 echo ""
 
+# Base urls, no path: the OBD setup scripts append /webhooks/obd/... themselves.
 echo "Adding OBD_WEBHOOK_URL..."
-railway variables --set "OBD_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/obd"
+railway variables --set "OBD_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app"
 
 echo "Adding OBD_SMS_WEBHOOK_URL..."
-railway variables --set "OBD_SMS_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/sms"
+railway variables --set "OBD_SMS_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app"
 
 echo "Adding ANANTA_WEBHOOK_URL..."
 railway variables --set "ANANTA_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/ananta"
