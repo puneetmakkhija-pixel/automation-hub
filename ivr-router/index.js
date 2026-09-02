@@ -75,7 +75,29 @@ app.get("/health", (_req, res) => {
 });
 
 // ==================== OBD API Routes ====================
-app.use("/api/obd", createObdRoutes(obdClient));
+// GUARDED. This router drives the dialler: it can create campaigns, upload lead
+// bases, repoint the panel's webhooks, and pause or STOP a campaign that is
+// mid-flight. It was reachable by anyone who knew the URL — the same exposure
+// the console guards below were added to close, on the one router that can
+// spend money and halt live traffic. /api/obd was simply missed in that pass.
+//
+// Two details worth keeping:
+//
+// NO onlyPaths, so the whole router is locked rather than a named list of
+// paths. Everywhere else in this file the guard names what to lock, and a route
+// added later inherits no protection — which is exactly how this hole stayed
+// open. On this router the default has to be locked.
+//
+// MOUNTED HERE, not down with the other guarded mounts, because "/api"
+// (whatsappBotRoutes) is a broader prefix registered below: moving this line
+// past it would let that router see /api/obd/* first. consoleAuth is a function
+// declaration and so is hoisted — it is defined further down, next to the other
+// guards, and reading it there is the point.
+//
+// Nothing external calls this. The /api/obd/* paths in lib/obdApiClient.js are
+// the VENDOR's own surface on obdapi2.ivrsms.com, a coincidence of naming, not
+// a caller of ours.
+app.use("/api/obd", consoleAuth("CONSOLE_OBD"), createObdRoutes(obdClient));
 
 // ==================== Ananta API Routes ====================
 app.use("/api/ananta", anantaRoutes);
