@@ -3,6 +3,16 @@
 # Railway Environment Variables Setup Script
 # Run this from your local machine where Railway CLI is installed
 # Usage: ./setup-railway-vars.sh
+#
+# Syntax note: this uses `railway variables --set "NAME=value"`. The older
+# `railway variables set NAME "value"` was removed in Railway CLI v3, which
+# reads positional arguments as NAME=value and fails with
+# "Invalid variable format".
+#
+# These variables belong to the ivr-voice-bot-system service in the Automation
+# Hub project. `railway variables` acts on whatever project the current
+# directory is linked to, so run `railway link` below and pick that project —
+# running this from another repo's directory silently configures the wrong one.
 
 echo "🚀 Adding environment variables to Railway..."
 echo ""
@@ -28,34 +38,34 @@ echo ""
 #   ORISERVE_API_KEY=vx_... ./setup-railway-vars.sh
 if [ -n "$ORISERVE_API_KEY" ]; then
     echo "Adding ORISERVE_API_KEY..."
-    railway variables set ORISERVE_API_KEY "$ORISERVE_API_KEY"
+    railway variables --set "ORISERVE_API_KEY=$ORISERVE_API_KEY"
 else
     echo "⏭️  Skipping ORISERVE_API_KEY — not set in this shell."
     echo "   Re-run as: ORISERVE_API_KEY=vx_... ./setup-railway-vars.sh"
-    echo "   Or set it directly: railway variables set ORISERVE_API_KEY 'vx_...'"
+    echo '   Or set it directly: railway variables --set "ORISERVE_API_KEY=vx_..."'
 fi
 
 echo "Adding ORISERVE_BASE_URL..."
-railway variables set ORISERVE_BASE_URL "https://api-buddy-loan-vox.oriserve.com/api/v1"
+railway variables --set "ORISERVE_BASE_URL=https://api-buddy-loan-vox.oriserve.com/api/v1"
 
 echo "Adding ORISERVE_CAMPAIGN_ID..."
-railway variables set ORISERVE_CAMPAIGN_ID "6a969a1c91b08220629d6b88"
+railway variables --set "ORISERVE_CAMPAIGN_ID=6a969a1c91b08220629d6b88"
 
 echo "Adding ORISERVE_WEBHOOK_URL..."
-railway variables set ORISERVE_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/oriserve"
+railway variables --set "ORISERVE_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/oriserve"
 
 echo ""
 echo "📝 Adding Webhook URLs..."
 echo ""
 
 echo "Adding OBD_WEBHOOK_URL..."
-railway variables set OBD_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/obd"
+railway variables --set "OBD_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/obd"
 
 echo "Adding OBD_SMS_WEBHOOK_URL..."
-railway variables set OBD_SMS_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/sms"
+railway variables --set "OBD_SMS_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/sms"
 
 echo "Adding ANANTA_WEBHOOK_URL..."
-railway variables set ANANTA_WEBHOOK_URL "https://ivr-voice-bot-system-production.up.railway.app/webhooks/ananta"
+railway variables --set "ANANTA_WEBHOOK_URL=https://ivr-voice-bot-system-production.up.railway.app/webhooks/ananta"
 
 # SUPABASE_WEBHOOK_URL is deliberately not set: it pointed at
 # /api/db/webhooks/log, which PR #40 retired with the rest of /api/db, so there
@@ -66,10 +76,10 @@ echo "📝 Adding Logging Configuration..."
 echo ""
 
 echo "Adding LOG_LEVEL..."
-railway variables set LOG_LEVEL "debug"
+railway variables --set "LOG_LEVEL=debug"
 
 echo "Adding NODE_ENV..."
-railway variables set NODE_ENV "production"
+railway variables --set "NODE_ENV=production"
 
 echo ""
 echo "📝 Ananta WhatsApp (requires your actual values)..."
@@ -79,9 +89,9 @@ echo "   - ANANTA_API_TOKEN"
 echo "   - ANANTA_API_SECRET_KEY"
 echo "   - ANANTA_PHONE_NUMBER"
 echo ""
-echo "Run: railway variables set ANANTA_API_TOKEN 'your_token'"
-echo "Run: railway variables set ANANTA_API_SECRET_KEY 'your_secret'"
-echo "Run: railway variables set ANANTA_PHONE_NUMBER 'your_phone'"
+echo "Run: railway variables --set "ANANTA_API_TOKEN=your_token""
+echo "Run: railway variables --set "ANANTA_API_SECRET_KEY=your_secret""
+echo "Run: railway variables --set "ANANTA_PHONE_NUMBER=your_phone""
 
 echo ""
 echo "✅ Core variables added!"
