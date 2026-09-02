@@ -77,17 +77,17 @@ async function forwarderSuite() {
   });
 
   await check("sends the resolved digit as dtmf when only dtmf_sequence was posted", async () => {
-    await forwardPressToCrm({ mobile: "9812345678", dtmf_sequence: "91" }, { digit: "1" });
+    await forwardPressToCrm({ mobile: "9812345678", dtmf_sequence: "91" }, { digit: "1", variant: "businessloans" });
     assert.equal(seen[0].body.dtmf, "1", `dtmf was ${JSON.stringify(seen[0].body.dtmf)}`);
   });
 
   await check("maps unique_id to call_id", async () => {
-    await forwardPressToCrm({ mobile: "9812345678", unique_id: "u-77" }, { digit: "1" });
+    await forwardPressToCrm({ mobile: "9812345678", unique_id: "u-77" }, { digit: "1", variant: "businessloans" });
     assert.equal(seen[0].body.call_id, "u-77");
   });
 
   await check("never overwrites a call_id the body already carries", async () => {
-    await forwardPressToCrm({ mobile: "9812345678", unique_id: "u-77", call_id: "real-1" }, { digit: "1" });
+    await forwardPressToCrm({ mobile: "9812345678", unique_id: "u-77", call_id: "real-1" }, { digit: "1", variant: "businessloans" });
     assert.equal(seen[0].body.call_id, "real-1");
   });
 
@@ -103,7 +103,7 @@ async function forwarderSuite() {
   });
 
   await check("forwards a press with no digit at all", async () => {
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, {});
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { variant: "businessloans" });
     assert.equal(r.forwarded, true);
     assert.equal("dtmf" in seen[0].body, false);
   });
@@ -112,13 +112,13 @@ async function forwarderSuite() {
   // unhandled rejection, which takes the whole IVR service down.
   await check("a 401 resolves with a reason instead of throwing", async () => {
     reply = { status: 401, body: { ok: false, error: "unauthorized" } };
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     assert.deepEqual(r, { forwarded: false, reason: "http_401" });
   });
 
   await check("a 502 resolves with a reason", async () => {
     reply = { status: 502, body: { ok: false, error: "intake_failed" } };
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     assert.deepEqual(r, { forwarded: false, reason: "http_502" });
   });
 
@@ -126,7 +126,7 @@ async function forwarderSuite() {
     reply = { status: 200, body: { ok: true, created: false } };
     const good = process.env.CRM_BASE_URL;
     process.env.CRM_BASE_URL = "http://127.0.0.1:1";
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     process.env.CRM_BASE_URL = good;
     assert.equal(r.forwarded, false);
   });
@@ -137,7 +137,7 @@ async function forwarderSuite() {
     let unhandled = null;
     const onUnhandled = (e) => (unhandled = e);
     process.on("unhandledRejection", onUnhandled);
-    forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" }); // deliberately not awaited
+    forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" }); // deliberately not awaited
     await settle(500);
     process.off("unhandledRejection", onUnhandled);
     process.env.CRM_BASE_URL = good;
@@ -145,13 +145,13 @@ async function forwarderSuite() {
   });
 
   await check("a null body does not throw", async () => {
-    const r = await forwardPressToCrm(null, { digit: "1" });
+    const r = await forwardPressToCrm(null, { digit: "1", variant: "businessloans" });
     assert.equal(typeof r.forwarded, "boolean");
   });
 
   await check("CRM_PRESS_FORWARD=0 sends nothing", async () => {
     process.env.CRM_PRESS_FORWARD = "0";
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     delete process.env.CRM_PRESS_FORWARD;
     assert.deepEqual(r, { forwarded: false, reason: "disabled" });
     assert.equal(seen.length, 0);
@@ -159,7 +159,7 @@ async function forwarderSuite() {
 
   await check("no secret sends nothing", async () => {
     delete process.env.CRM_SYNC_SECRET;
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     process.env.CRM_SYNC_SECRET = "s3cret";
     assert.deepEqual(r, { forwarded: false, reason: "no_secret" });
     assert.equal(seen.length, 0);
@@ -167,7 +167,7 @@ async function forwarderSuite() {
 
   await check("a secret that is only whitespace counts as unset", async () => {
     process.env.CRM_SYNC_SECRET = "  \n";
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     process.env.CRM_SYNC_SECRET = "s3cret";
     assert.deepEqual(r, { forwarded: false, reason: "no_secret" });
     assert.equal(seen.length, 0, "a blank secret must not be sent to the CRM");
@@ -176,16 +176,58 @@ async function forwarderSuite() {
   await check("falls back to CRM_SSO_SECRET", async () => {
     delete process.env.CRM_SYNC_SECRET;
     process.env.CRM_SSO_SECRET = "sso-only";
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     process.env.CRM_SYNC_SECRET = "s3cret";
     delete process.env.CRM_SSO_SECRET;
     assert.equal(r.forwarded, true);
     assert.equal(seen[0].headers["x-sync-secret"], "sso-only");
   });
 
+  // ── which book the press belongs to ────────────────────────────────────
+  await check("forwards a businessloans press", async () => {
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
+    assert.equal(r.forwarded, true);
+    assert.equal(seen.length, 1);
+  });
+
+  await check("does NOT forward another lender's press", async () => {
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "herofincorp" });
+    assert.deepEqual(r, { forwarded: false, reason: "variant_not_forwarded" });
+    assert.equal(seen.length, 0, "herofincorp must not reach this CRM");
+  });
+
+  await check("does NOT forward an unnamed press", async () => {
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    assert.deepEqual(r, { forwarded: false, reason: "variant_not_forwarded" });
+    assert.equal(seen.length, 0);
+  });
+
+  await check("matches the variant whatever its case or padding", async () => {
+    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: " BusinessLoans " });
+    assert.equal(r.forwarded, true);
+  });
+
+  await check("CRM_PRESS_VARIANTS names the books that forward", async () => {
+    process.env.CRM_PRESS_VARIANTS = "businessloans, herofincorp";
+    const a = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "herofincorp" });
+    delete process.env.CRM_PRESS_VARIANTS;
+    assert.equal(a.forwarded, true);
+    const b = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "herofincorp" });
+    assert.equal(b.forwarded, false, "and stops again once the variable is back to its default");
+  });
+
+  await check('CRM_PRESS_VARIANTS="*" forwards every press, unnamed included', async () => {
+    process.env.CRM_PRESS_VARIANTS = "*";
+    const a = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "herofincorp" });
+    const b = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    delete process.env.CRM_PRESS_VARIANTS;
+    assert.equal(a.forwarded, true);
+    assert.equal(b.forwarded, true);
+  });
+
   await check("CRM_PRESS_PATH overrides the path", async () => {
     process.env.CRM_PRESS_PATH = "/api/ivr/press-v2";
-    await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1" });
+    await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
     delete process.env.CRM_PRESS_PATH;
     assert.equal(seen[0].url, "/api/ivr/press-v2");
   });
@@ -273,7 +315,7 @@ async function webhookSuite() {
   });
 
   await check("an unusable caller number is still forwarded", async () => {
-    const r = await post("/whatsapp", { mobile: "12", dtmf: "1", unique_id: "c-3" });
+    const r = await post("/whatsapp/businessloans", { mobile: "12", dtmf: "1", unique_id: "c-3" });
     await settle();
     assert.equal(r.status, 200);
     assert.equal(r.body.sent, false);
@@ -282,16 +324,25 @@ async function webhookSuite() {
   });
 
   await check("a menu sequence forwards the digit the route resolved", async () => {
-    await post("/whatsapp", { mobile: "9811100004", dtmf_sequence: "91", unique_id: "c-4" });
+    await post("/whatsapp/businessloans", { mobile: "9811100004", dtmf_sequence: "91", unique_id: "c-4" });
     await settle();
     assert.equal(crmHits.length, 1);
     assert.equal(crmHits[0].body.dtmf, "1", "the CRM reader does not know dtmf_sequence");
   });
 
+  await check("another lender's press is sent but not forwarded", async () => {
+    const r = await post("/whatsapp/herofincorp", { mobile: "9811100007", dtmf: "1", unique_id: "c-7" });
+    await settle();
+    assert.equal(r.status, 200);
+    assert.equal(r.body.sent, true, "herofincorp must still get its WhatsApp");
+    assert.equal(anantaHits.length, 1);
+    assert.equal(crmHits.length, 0, "but its press must not enter this CRM's book");
+  });
+
   await check("a slow CRM does not delay the send or the response", async () => {
     crmDelayMs = 3000;
     const started = Date.now();
-    const r = await post("/whatsapp", { mobile: "9811100005", dtmf: "1", unique_id: "c-5" });
+    const r = await post("/whatsapp/businessloans", { mobile: "9811100005", dtmf: "1", unique_id: "c-5" });
     const elapsed = Date.now() - started;
     assert.equal(r.body.sent, true, "the message must go out while the CRM is still thinking");
     assert.ok(elapsed < 1000, `the webhook answered in ${elapsed}ms — it waited on the CRM`);
@@ -301,7 +352,7 @@ async function webhookSuite() {
   await check("a CRM that is down does not stop the send", async () => {
     const good = process.env.CRM_BASE_URL;
     process.env.CRM_BASE_URL = "http://127.0.0.1:1";
-    const r = await post("/whatsapp", { mobile: "9811100006", dtmf: "1", unique_id: "c-6" });
+    const r = await post("/whatsapp/businessloans", { mobile: "9811100006", dtmf: "1", unique_id: "c-6" });
     await settle();
     process.env.CRM_BASE_URL = good;
     assert.equal(r.status, 200);

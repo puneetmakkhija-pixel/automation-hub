@@ -35,7 +35,25 @@ import { applyBaseUrl } from "./crmSsoLink.js";
  * Turning that switch on without turning the digit's template off here is what
  * would put two identical messages on one customer's phone.
  *
+ * ── One book, not every book ───────────────────────────────────────────────
+ *
+ * This webhook serves more than one lender. On 02 Sep it took 692 presses on
+ * the businessloans variant and 6,047 on herofincorp, and only the first of
+ * those belongs in this CRM's funnel: bdl_leads is the Business Loans book,
+ * and promoting another lender's callers into it would put six thousand rows
+ * a day in front of the wrong call centre. So the forward is scoped by
+ * variant, and the variant is the one the panel puts in the URL.
+ *
+ * An unnamed press — one posted to the bare /whatsapp path — is NOT forwarded.
+ * It carries nothing that says which book it belongs to, and guessing wrong is
+ * the expensive direction. If the businessloans panel is ever repointed at the
+ * bare path the forward goes quiet, so it says so in the log, once per variant
+ * per process rather than once per press.
+ *
  * Config:
+ *   CRM_PRESS_VARIANTS  comma-separated variants to forward, default
+ *                     "businessloans". "*" forwards every press, whatever
+ *                     variant it carries, including an unnamed one.
  *   CRM_BASE_URL      default https://crmbusinessloans.com (shared with the
  *                     SSO link, so one variable moves both)
  *   CRM_PRESS_PATH    default /api/ivr/press
@@ -47,6 +65,21 @@ import { applyBaseUrl } from "./crmSsoLink.js";
  */
 
 let warnedNoSecret = false;
+const warnedVariants = new Set();
+
+/** Variants whose presses belong in this CRM. */
+function forwardedVariants() {
+  return (process.env.CRM_PRESS_VARIANTS ?? "businessloans")
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function forwards(variant) {
+  const allowed = forwardedVariants();
+  if (allowed.includes("*")) return true;
+  return allowed.includes(String(variant || "").trim().toLowerCase());
+}
 
 function pressUrl() {
   const path = process.env.CRM_PRESS_PATH || "/api/ivr/press";
@@ -78,6 +111,21 @@ export function forwardPressToCrm(body, context = {}) {
 async function postPress(body, { digit, variant } = {}) {
   if (String(process.env.CRM_PRESS_FORWARD || "1").trim() === "0") {
     return { forwarded: false, reason: "disabled" };
+  }
+
+  if (!forwards(variant)) {
+    // Once per variant per process. Every press would be 6,000 lines a day
+    // for a decision that is the same every time, and none at all would make
+    // a mis-pointed panel look identical to a quiet one.
+    const key = String(variant || "").trim().toLowerCase() || "(unnamed)";
+    if (!warnedVariants.has(key)) {
+      warnedVariants.add(key);
+      console.log(
+        `[IVR_PRESS] Not forwarding presses from variant=${key} — ` +
+          `CRM_PRESS_VARIANTS is "${forwardedVariants().join(",")}".`
+      );
+    }
+    return { forwarded: false, reason: "variant_not_forwarded" };
   }
 
   // Trimmed for the same reason the Ananta key is: a value pasted into the
