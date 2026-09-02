@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node run.js"
+    "start": "node run.js",
+    "load:pincodes": "node load-serviceable-pincodes.js",
+    "sync:pincodes": "node sync-pincodes-from-crm.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4"
