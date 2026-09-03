@@ -64,6 +64,7 @@ import { applyBaseUrl } from "./crmSsoLink.js";
  *   CRM_PRESS_FORWARD=0 turns the forward off without a deploy.
  */
 
+let warnedDisabled = false;
 let warnedNoSecret = false;
 const warnedVariants = new Set();
 
@@ -110,6 +111,21 @@ export function forwardPressToCrm(body, context = {}) {
 
 async function postPress(body, { digit, variant } = {}) {
   if (String(process.env.CRM_PRESS_FORWARD || "1").trim() === "0") {
+    // Once per process, like the two warnings below it. This branch used to
+    // return in silence, and silence here is indistinguishable from the forward
+    // working: crm.ivr_campaign_events simply stays empty, the cockpit simply
+    // never shows a press, and nothing anywhere says why. Finding that out on
+    // 3 Sep 2026 took reading a container's logs press by press to establish
+    // that no HTTP call was being made at all. One line would have said it.
+    if (!warnedDisabled) {
+      warnedDisabled = true;
+      console.warn(
+        "[IVR_PRESS] CRM_PRESS_FORWARD=0 — presses are NOT being recorded in the " +
+          "CRM. Nothing will reach crm.ivr_campaign_events or public.bdl_leads, " +
+          "and no press will appear in the cockpit funnel. Unset it, or set it to " +
+          "1, to turn the forward back on."
+      );
+    }
     return { forwarded: false, reason: "disabled" };
   }
 
