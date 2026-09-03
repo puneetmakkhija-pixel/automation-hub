@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { aliasFor } from "../mobileAlias.js";
 
 const ANANTA_API_ENDPOINT = process.env.ANANTA_API_ENDPOINT || 'https://api.ananta.io/v1/messages/send';
 const ANANTA_API_KEY = process.env.ANANTA_API_KEY;
@@ -137,7 +138,24 @@ class AnantaWhatsAppService {
    * @returns {string} - Formatted message
    */
   static formatFlexiLoansMessage(lead, campaignId) {
-    const flexiLoansLink = `https://s1.whistleloop.com/?linkid=1710&offerid=178&publisher_id=259&parentid=259&pub_name=BuddyAdsIndia&sub_id1=PTest_alias_${lead.phone}&loop_id=${campaignId}`;
+    // sub_id1 travels through whistleloop, a publisher account and every
+    // redirect in between, and lands in all of their logs permanently. The raw
+    // mobile used to be interpolated here; it is PII and it does not go in.
+    // aliasFor() is the same reversible transform the live Poonawalla sends
+    // use, so recon against the lender MIS still works by lookup or formula.
+    const alias = aliasFor(lead.phone);
+    // Refusing beats sending. On 01 Sep 5,707 Poonawalla messages went out with
+    // an empty alias in sub_id1 and every one of them came back from the lender
+    // looking identical — the whole batch is unattributable to a person, and
+    // nothing downstream can repair it. A message that cannot be reconciled is
+    // worse than a message not sent, so this is a hard stop, not a warning.
+    if (!alias) {
+      throw new Error(
+        `formatFlexiLoansMessage: no alias for ${String(lead.phone ?? "").length} -digit phone; ` +
+          "refusing to send a link that cannot be reconciled",
+      );
+    }
+    const flexiLoansLink = `https://s1.whistleloop.com/?linkid=1710&offerid=178&publisher_id=259&parentid=259&pub_name=BuddyAdsIndia&sub_id1=alias_${alias}&loop_id=${campaignId}`;
 
     return `Hi ${lead.name || 'User'} 🎉
 

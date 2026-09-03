@@ -13,8 +13,14 @@
  */
 import assert from "node:assert/strict";
 import { aliasFor, ALIAS_MOD } from "./lib/mobileAlias.js";
+import AnantaWhatsAppService from "./lib/services/anantaWhatsAppService.js";
 
-const KEY = "4729183465";
+// Deliberately NOT the production key. The whole point of the alias is that
+// whistleloop's logs cannot be turned back into phone numbers by whoever reads
+// them, and a key committed here hands that back to anyone with repo access.
+// Every property below holds for any key, so the test has no reason to know
+// the real one.
+const KEY = "1234509876";
 
 /** =TEXT(MOD(DECIMAL(UPPER(RIGHT(A2,7)),36)-$B$1,10^10),"0000000000") */
 const excelDecode = (alias, key) =>
@@ -97,6 +103,34 @@ check("a nonsense key falls back to zero rather than NaN", () => {
 
 check("the Excel formula agrees with the encoder, at scale", () => {
   for (const m of mobiles(50000)) assert.equal(excelDecode(aliasFor(m), KEY), m);
+});
+
+// The FlexiLoans template used to interpolate lead.phone straight into sub_id1
+// of an affiliate URL. It is unreferenced today, which is exactly why nothing
+// would have caught it: the leak would ship the first time someone wired it up.
+check("the FlexiLoans link carries an alias, never the mobile", () => {
+  const phone = "9310300800";
+  const msg = AnantaWhatsAppService.formatFlexiLoansMessage({ phone, name: "A" }, "camp1");
+
+  assert.ok(!msg.includes(phone), "the raw mobile is in the affiliate link");
+  assert.ok(!msg.includes(phone.slice(-8)), "part of the mobile is in the affiliate link");
+
+  const alias = msg.match(/sub_id1=alias_([0-9a-z]{7})&/)?.[1];
+  assert.ok(alias, "no seven-character alias in sub_id1");
+  assert.equal(excelDecode(alias, KEY), phone);
+});
+
+// An empty alias is what 5,707 sends went out with on 01 Sep, and it is
+// unreconcilable: every one of them came back looking identical. If aliasFor
+// ever returns "" the link must not be built as if nothing happened.
+check("an unusable mobile is refused rather than sent with an empty alias", () => {
+  for (const phone of ["12345", "", null, undefined, "not-a-phone"]) {
+    assert.throws(
+      () => AnantaWhatsAppService.formatFlexiLoansMessage({ phone, name: "A" }, "camp1"),
+      /cannot be reconciled/,
+      `sent a link for ${JSON.stringify(phone)}`,
+    );
+  }
 });
 
 console.log(failed ? `\n${failed} failed\n` : "\nall passed\n");
