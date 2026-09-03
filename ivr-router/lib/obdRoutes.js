@@ -297,8 +297,17 @@ export function createObdRoutes(obdClient) {
   router.put('/webhooks/:webhookId', async (req, res) => {
     try {
       const { webhookId } = req.params;
-      const { webhookName, url, event } = req.body;
-      const result = await obdClient.editWebhook(webhookId, webhookName, url, event);
+      // headerJson and bodyJson are accepted now, so a header can be set here
+      // rather than only in the panel. Anything omitted keeps its current value
+      // — see editWebhook, which reads the webhook and merges over it.
+      const { webhookName, url, event, headerJson, bodyJson } = req.body;
+      const result = await obdClient.editWebhook(webhookId, {
+        webhookName,
+        url,
+        event,
+        headerJson,
+        bodyJson,
+      });
 
       res.json({
         success: true,

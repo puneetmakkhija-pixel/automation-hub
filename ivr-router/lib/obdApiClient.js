@@ -299,31 +299,87 @@ class OBDApiClient {
     }
   }
 
-  async editWebhook(id, webhookName, url, event) {
+  /**
+   * Change some fields of a webhook, and leave the rest exactly as they were.
+   *
+   * This used to send only { id, webhookName, url, event }. A webhook also
+   * carries headerJson and bodyJson, and those are the load-bearing parts:
+   * bodyJson names which fields the panel posts to us (mobile, dtmf, unique_id
+   * and the rest), and headerJson carries the shared secret our /webhooks/ivr
+   * routes check. Editing a URL through this method risked clearing both, which
+   * would turn a live campaign into 401s or into presses with no mobile in them
+   * — and nothing would have said so.
+   *
+   * So: read the webhook first, merge the caller's changes over it, and send
+   * the whole thing back. An edit of one field is then an edit of one field.
+   *
+   * `changes` is an object rather than positional arguments, so that omitting a
+   * field means "leave it alone" instead of "set it to undefined". The old
+   * positional form is still accepted; see the shim below.
+   */
+  async editWebhook(id, changes = {}) {
     await this.ensureToken();
+
+    const patch =
+      typeof changes === 'string' || arguments.length > 2
+        ? { webhookName: arguments[1], url: arguments[2], event: arguments[3] }
+        : changes;
+
+    const wanted = Object.fromEntries(
+      Object.entries(patch).filter(([, v]) => v !== undefined && v !== null)
+    );
+    if (!Object.keys(wanted).length) {
+      throw new Error(`Edit webhook ${id}: nothing to change`);
+    }
+
+    // Read before write. Blind-writing an id that is not there would create or
+    // corrupt something we never looked at.
+    const before = await this.findWebhook(id);
+    if (!before) {
+      throw new Error(`Edit webhook ${id}: no such webhook on this account`);
+    }
+
+    const merged = { ...before, ...wanted, id: before.id, userId: this.userId };
 
     try {
       const response = await fetch(`${this.baseUrl}/api/obd/webhooks/edit`, {
         method: 'POST',
         headers: this.getAuthHeader(),
-        body: JSON.stringify({
-          id,
-          webhookName,
-          url,
-          event,
-          userId: this.userId,
-        }),
+        body: JSON.stringify(merged),
       });
 
       if (!response.ok) {
         throw new Error(`Edit webhook failed: ${response.statusText}`);
       }
 
-      return await response.json();
+      const result = await response.json();
+
+      // The provider is not ours and its edit contract is not documented, so
+      // confirm rather than assume. If the two fields that can silently break a
+      // campaign came back empty, say so loudly AND hand back what they were,
+      // so whoever is reading can put them straight back.
+      const after = await this.findWebhook(id);
+      for (const field of ['headerJson', 'bodyJson']) {
+        if (before[field] && !(after && after[field])) {
+          throw new Error(
+            `Edit webhook ${id} DROPPED ${field}. The panel no longer has it and ` +
+              `presses may now fail. Restore it to:\n${before[field]}`
+          );
+        }
+      }
+
+      return result;
     } catch (error) {
       console.error('Edit Webhook Error:', error);
       throw error;
     }
+  }
+
+  /** One webhook by id, or null. Tolerates a bare array or a {data:[...]} wrapper. */
+  async findWebhook(id) {
+    const raw = await this.getWebhooks();
+    const list = Array.isArray(raw) ? raw : Array.isArray(raw?.data) ? raw.data : [];
+    return list.find((w) => String(w?.id) === String(id)) ?? null;
   }
 
   async deleteWebhook(webhookId) {
