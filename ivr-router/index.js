@@ -103,7 +103,24 @@ app.use("/api/obd", consoleAuth("CONSOLE_OBD"), createObdRoutes(obdClient));
 app.use("/api/ananta", anantaRoutes);
 
 // ==================== Oriserve Voice Agent Routes ====================
-app.use("/api/oriserve", oriserveRoutes);
+// GUARDED, for the same reason /api/obd is. This router places outbound AI
+// voice calls on our Oriserve key — /campaigns/trigger one at a time,
+// /campaigns/bulk-trigger a list of them — and /campaigns/:id/cancel can kill a
+// campaign that is mid-flight. Every call costs money and rings a real person.
+// It was mounted open, reachable by anyone who knew the URL.
+//
+// No onlyPaths, deliberately: this is the whole router, so a route added later
+// is locked the moment it exists rather than inheriting nothing. That is how
+// the same hole survived the pass that closed the others.
+//
+// This locks /api/oriserve/health too. Railway's container check uses the
+// top-level /health, which is untouched; the operator liveness curl in
+// ORI_VOICE_BOT_CAMPAIGN.md now carries ?token=. It also locks the log-only
+// copy of the callback at /api/oriserve/webhooks/oriserve — not the one
+// Oriserve posts to. The configured notification_webhook_url is the top-level
+// /webhooks/oriserve in this file, which keeps its own ORISERVE_WEBHOOK_SECRET
+// and is the only copy that persists anything.
+app.use("/api/oriserve", consoleAuth("CONSOLE_ORISERVE"), oriserveRoutes);
 
 // ==================== Retired: /api/db, /api/ivr-campaigns, /api/lenders, /api/recordings
 //
