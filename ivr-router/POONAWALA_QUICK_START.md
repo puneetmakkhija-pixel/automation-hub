@@ -4,7 +4,15 @@ Get the Poonawala pincode gating and eligibility engine running in 5 minutes.
 
 ## 1. Database Setup
 
-Run these SQL queries in Supabase SQL Editor:
+Apply the migration — it creates `serviceable_pincodes` and `gating_logs` with
+the indexes the gating client needs:
+
+```bash
+psql "$DATABASE_URL" -f database/migrations/002_serviceable_pincodes.sql
+```
+
+Or paste `database/migrations/002_serviceable_pincodes.sql` into the Supabase
+SQL Editor. The equivalent DDL is reproduced below for reference.
 
 ### Create Tables
 
@@ -88,17 +96,37 @@ curl -X POST http://localhost:3000/api/gating/bulk-upload-pincodes \
 }
 ```
 
-### Option B: Individual Pincode Upload
+### Option B: Load the full lender list (recommended)
+
+`database/data/poonawalla_stpl_pincodes.csv` holds all **16,070** pincodes from
+Poonawalla's STPL RT1 master (15,048 `Sourcing Allowed` + 1,022
+`Sourcing Allowed - Prime`), as issued by the InstaPL Partnership team.
+
+```bash
+npm --prefix data-jobs run load:pincodes            # upsert all 16,070
+npm --prefix data-jobs run load:pincodes -- --dry-run   # parse only, no writes
+npm --prefix data-jobs run load:pincodes -- --prune     # also drop de-listed pincodes
+```
+
+The loader upserts on `(pincode, lender_type)`, so re-running is safe. When the
+lender sends a revised list, replace the CSV and re-run with `--prune`.
+
+### Option C: Individual Pincode Upload
 
 Use the database directly:
 
 ```sql
 INSERT INTO serviceable_pincodes (pincode, lender_type, state, city)
-VALUES 
+VALUES
   ('400001', 'poonawala', 'Maharashtra', 'Mumbai'),
   ('400002', 'poonawala', 'Maharashtra', 'Mumbai'),
   ('400003', 'poonawala', 'Maharashtra', 'Mumbai');
 ```
+
+> **Lender key:** rows are stored under `lender_type = 'poonawala'` (one `l`),
+> matching the default in `pincodeGatingClient.js`. Callers may pass
+> `poonawalla`, `Poonawalla Fincorp`, etc. — `normalizeLenderType()` maps them
+> onto the stored key.
 
 ## 3. Verify Pincode Data
 

@@ -1,5 +1,5 @@
 import express from "express";
-import PincodeGatingClient from "./pincodeGatingClient.js";
+import PincodeGatingClient, { normalizeLenderType } from "./pincodeGatingClient.js";
 
 const router = express.Router();
 let gatingClient = null;
@@ -100,7 +100,7 @@ router.get("/pincodes", async (req, res) => {
     const { data, error } = await gatingClient.supabase
       .from("serviceable_pincodes")
       .select("*")
-      .eq("lender_type", lenderType)
+      .eq("lender_type", normalizeLenderType(lenderType))
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
     if (error) throw error;
@@ -129,8 +129,8 @@ router.post("/search-pincode", async (req, res) => {
     const { data, error } = await gatingClient.supabase
       .from("serviceable_pincodes")
       .select("*")
-      .eq("pincode", String(pincode).padStart(6, "0"))
-      .eq("lender_type", lenderType);
+      .eq("pincode", String(pincode).trim().padStart(6, "0"))
+      .eq("lender_type", normalizeLenderType(lenderType));
 
     if (error) throw error;
 
