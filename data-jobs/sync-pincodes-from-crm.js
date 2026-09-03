@@ -10,6 +10,24 @@ import { pathToFileURL } from "node:url";
 //   node data-jobs/sync-pincodes-from-crm.js --lender Poonawalla --prune
 //   node data-jobs/sync-pincodes-from-crm.js --dry-run
 //
+// RUNNING AS A CRON
+//
+// The `pincode-sync` Railway service (root data-jobs, restart policy NEVER)
+// runs `npm run sync:pincodes:cron` on a daily schedule. That script passes
+// --prune, and the schedule is the reason it has to.
+//
+// Without --prune this is upsert-only: a pincode the lender has DE-LISTED stays
+// in serviceable_pincodes forever, and the IVR keeps offering that lender in an
+// area it no longer serves. Hero's 28 Jul list dropped 101 pincodes and
+// Poonawalla's dropped 20, so this is not hypothetical. Under-offering is the
+// failure a stale list causes; over-offering is the one an un-pruned sync
+// causes, and it is the worse of the two — the applicant is told yes and finds
+// out later.
+//
+// --prune deletes only within the lender being synced, and shrinkGuard still
+// runs first, so a truncated or empty upstream read refuses (exit 2) instead of
+// emptying the table. Exit codes: 0 synced, 2 refused by the guard, 1 error.
+//
 // WHY A SYNC AND NOT A SECOND CSV
 //
 // The same lender lists live in two Supabase projects, and both drifted to the
