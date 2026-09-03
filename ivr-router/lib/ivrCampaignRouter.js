@@ -356,20 +356,39 @@ class IVRCampaignRouter {
     const { phone, name, campaignId, lenderId } = data;
 
     try {
-      const result = await this.oriserveClient.initiateCampaign({
-        phone,
-        name,
-        campaignId,
-        purpose: 'document_collection',
+      // triggerCampaign, not initiateCampaign: the client has never had a method
+      // by that name, so every call here threw TypeError. _launchDocumentJourney
+      // wraps this in Promise.allSettled, so the throw became one VOICE_BOT_FAILED
+      // line while the WhatsApp half went out and the journey reported success —
+      // the voice bot has never once reached Oriserve.
+      //
+      // The keys are the client's, not ours: mobile (not phone), and campaign_id
+      // is deliberately NOT passed. `campaignId` here is OUR IVR campaign; sending
+      // it as Oriserve's would name a campaign their tenant has never heard of.
+      // Omitted, the client falls back to ORISERVE_CAMPAIGN_ID, which is the
+      // BuddyLoan campaign. Ours travels in metadata, where the callback can use it.
+      const result = await this.oriserveClient.triggerCampaign({
+        mobile: phone,
         metadata: {
+          customer_name: name,
+          purpose: 'document_collection',
+          ivr_campaign_id: campaignId,
           routingId,
           lenderId,
         },
       });
 
+      // triggerCampaign RETURNS { success: false } on an API error rather than
+      // throwing — only bad input throws. Without this, a refusal by Oriserve
+      // would land in the fulfilled branch and log VOICE_BOT_LAUNCHED, which is
+      // the same "looks like it worked" failure the line above just fixed.
+      if (!result.success) {
+        throw new Error(result.error || 'Oriserve refused the campaign trigger');
+      }
+
       return {
         success: true,
-        botId: result.campaignId,
+        botId: result.campaign_id,
         phone,
         startTime: new Date().toISOString(),
       };
