@@ -19,6 +19,16 @@ import assert from "node:assert/strict";
 process.env.ORISERVE_API_KEY ||= "test-key";
 process.env.ORISERVE_CAMPAIGN_ID ||= "test-oriserve-campaign";
 
+// The dispatch now writes each decision to crm.voice_dispatch. Blanked, not
+// left alone: `||=` would keep a real SUPABASE_URL that a developer already has
+// exported, and running this suite would then insert test presses into the
+// production CRM. Empty means the client cannot be built, the writer says so
+// once and returns, and this file keeps its promise of no credentials and no
+// network. The write itself is covered by test-voice-dispatch-log.mjs, which
+// points these at a fake on loopback.
+process.env.SUPABASE_URL = "";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "";
+
 const mod = await import("./lib/oriVoiceDispatch.js");
 const { dispatchPressToVoiceBot, toE164, dialKey, _resetDialled } = mod;
 
