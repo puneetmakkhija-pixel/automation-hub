@@ -149,12 +149,35 @@ async function forwarderSuite() {
     assert.equal(typeof r.forwarded, "boolean");
   });
 
-  await check("CRM_PRESS_FORWARD=0 sends nothing", async () => {
-    process.env.CRM_PRESS_FORWARD = "0";
-    const r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
-    delete process.env.CRM_PRESS_FORWARD;
+  await check("CRM_PRESS_FORWARD=0 sends nothing, and says so once", async () => {
+    // The warning half of this exists because of 3 Sep 2026: the forward was
+    // off, the only evidence was an empty table, and establishing that no HTTP
+    // call was being made at all meant reading a production container's logs
+    // press by press. A silent skip and a working forward look identical from
+    // the outside. This is also why the two assertions share one check — the
+    // warning fires once per process, so a separate check would find the flag
+    // already spent and pass against nothing.
+    const warnings = [];
+    const realWarn = console.warn;
+    console.warn = (...args) => warnings.push(args.join(" "));
+    let r;
+    try {
+      process.env.CRM_PRESS_FORWARD = "0";
+      r = await forwardPressToCrm({ mobile: "9812345678" }, { digit: "1", variant: "businessloans" });
+      // A second press, to pin that it warns once and not once per press.
+      await forwardPressToCrm({ mobile: "9812345679" }, { digit: "1", variant: "businessloans" });
+    } finally {
+      console.warn = realWarn;
+      delete process.env.CRM_PRESS_FORWARD;
+    }
+
     assert.deepEqual(r, { forwarded: false, reason: "disabled" });
-    assert.equal(seen.length, 0);
+    assert.equal(seen.length, 0, "nothing may be posted");
+    assert.equal(warnings.length, 1, "once per process, not once per press");
+    // Name the variable, so the log says what to change rather than only that
+    // something is wrong.
+    assert.match(warnings[0], /CRM_PRESS_FORWARD=0/);
+    assert.match(warnings[0], /ivr_campaign_events/);
   });
 
   await check("no secret sends nothing", async () => {
