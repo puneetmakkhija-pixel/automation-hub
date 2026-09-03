@@ -14,7 +14,8 @@
     "test:alias": "node test-alias.mjs",
     "test:edit-webhook": "node test-edit-webhook.mjs",
     "test:oriserve-guard": "node test-oriserve-guard.mjs",
-    "test:voice-bot-launch": "node test-voice-bot-launch.mjs"
+    "test:voice-bot-launch": "node test-voice-bot-launch.mjs",
+    "test:ori-press-dispatch": "node test-ori-press-dispatch.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",

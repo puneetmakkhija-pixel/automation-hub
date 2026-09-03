@@ -5,6 +5,7 @@ import SupabaseClient from "../supabaseClient.js";
 import { resolveCustomerId } from "../customerIds.js";
 import { resolveSsoLink } from "../crmSsoLink.js";
 import { forwardPressToCrm } from "../crmPressForward.js";
+import { dispatchPressToVoiceBot } from "../oriVoiceDispatch.js";
 import { aliasFor } from "../mobileAlias.js";
 
 /**
@@ -366,6 +367,17 @@ async function handleKeypress(req, res) {
   // lib/crmPressForward.js has both: why it can never fail the send, and which
   // variants it forwards.
   forwardPressToCrm(body, { digit, variant });
+
+  // And the ORI voice bot gets the press-1 itself. By the owner's decision the
+  // bot is now the response to a press and this template is enrichment, so it
+  // is dispatched here rather than after the send: a Business Loans caller who
+  // pressed 1 gets called even when the digit has no template mapped, which is
+  // a misconfiguration on our side and not a reason to leave them with nothing.
+  //
+  // Business Loans only, press 1 only, deduped separately from the send —
+  // lib/oriVoiceDispatch.js has why each of those. Not awaited: it spends money
+  // and takes a round trip, and neither may delay the message.
+  dispatchPressToVoiceBot(body, { digit, variant });
 
   const template = templateMap()[digit];
 
