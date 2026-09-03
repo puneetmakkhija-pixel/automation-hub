@@ -266,11 +266,18 @@ which PostgREST reads as a literal table called `crm.voice_call_events` in
 `/api/oriserve/webhooks/oriserve`. The webhook URL configured above hits the
 `index.js` one, so that is the copy that persists.
 
-A quick liveness check on the credentials:
+A quick liveness check on the credentials. `/api/oriserve` is behind
+`CONSOLE_SECRET` — the whole router, because `/campaigns/trigger` and
+`/campaigns/bulk-trigger` place calls that cost money and `/campaigns/:id/cancel`
+stops a live one — so the check carries the token:
 
 ```bash
-curl -s https://ivr-voice-bot-system-production.up.railway.app/api/oriserve/health
+curl -s "https://ivr-voice-bot-system-production.up.railway.app/api/oriserve/health?token=$CONSOLE_SECRET"
 ```
+
+Without it the answer is `401`, and `503` means `CONSOLE_SECRET` is unset on the
+service. Railway's own container check uses the top-level `/health`, which is
+open and unaffected.
 
 `{"success": false, ... "Missing ORISERVE_API_KEY"}` is a configuration
 problem; anything else is a real answer from the tenant.
