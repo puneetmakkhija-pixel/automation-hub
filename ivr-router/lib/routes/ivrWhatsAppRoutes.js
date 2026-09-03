@@ -5,6 +5,7 @@ import SupabaseClient from "../supabaseClient.js";
 import { resolveCustomerId } from "../customerIds.js";
 import { resolveSsoLink } from "../crmSsoLink.js";
 import { forwardPressToCrm } from "../crmPressForward.js";
+import { aliasFor } from "../mobileAlias.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -441,6 +442,10 @@ async function handleKeypress(req, res) {
     ...body,
     customer_id: customerId ?? "",
     sso_link: sso.url,
+    // {{alias}} is the mobile, shifted and base-36'd, for affiliate sub-IDs
+    // that must reconcile back to a customer without handing a third party a
+    // phone number. lib/mobileAlias.js carries the recon formula.
+    alias: aliasFor(phone.phone),
   });
   const blank = placeholders.findIndex((v) => v === "");
   if (blank !== -1) {
