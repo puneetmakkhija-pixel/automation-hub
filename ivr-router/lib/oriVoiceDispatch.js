@@ -1,4 +1,5 @@
 import OriserveVoiceClient from "./oriserveVoiceClient.js";
+import { recordVoiceDispatch } from "./voiceDispatchLog.js";
 
 /**
  * A press of 1, handed to the ORI voice bot.
@@ -145,11 +146,23 @@ export function dispatchPressToVoiceBot(body, context = {}) {
   }
 }
 
+/**
+ * The two gates that are not about this caller.
+ *
+ * Every press on this webhook passes through here — 6,047 herofincorp against
+ * 692 businessloans on 02 Sep — and these two reject most of them for reasons
+ * that are the same every time. They are deliberately checked BEFORE the kill
+ * switch and are the only outcomes not written to crm.voice_dispatch: a row per
+ * Hero press saying "not a Business Loans press-1" would be ~6,000 a day of a
+ * fact the IVR leads book already states by existing.
+ *
+ * The kill switch used to be first. Moving it below these two is what makes a
+ * recorded decision mean something: "disabled" now says a press we WOULD have
+ * dialled was stopped by the switch, which is the number the screen needs.
+ * It also means a mis-pointed panel still logs its variant warning while the
+ * dispatch is off, instead of going silent for two separate reasons at once.
+ */
 async function placeCall(body, { digit, variant } = {}) {
-  if (String(process.env.ORI_PRESS_DISPATCH || "1").trim() === "0") {
-    return { dialled: false, reason: "disabled" };
-  }
-
   if (String(digit || "").trim() !== "1") {
     return { dialled: false, reason: "not_press_1" };
   }
@@ -167,6 +180,37 @@ async function placeCall(body, { digit, variant } = {}) {
       );
     }
     return { dialled: false, reason: "variant_not_dialled" };
+  }
+
+  // From here on this IS a Business Loans press-1, so every outcome is a fact
+  // about a lead on the IVR leads screen and gets written down.
+  const outcome = await decideAndDial(body, { digit, variant });
+
+  // Awaited, not floated. Nothing user-facing is waiting: the route never
+  // awaits dispatchPressToVoiceBot, so the customer's WhatsApp has already
+  // gone. Awaiting here instead makes the write ordered and testable, and
+  // recordVoiceDispatch is contractually unable to reject — a database that is
+  // down must not undo a call that already rang a real phone.
+  await recordVoiceDispatch({
+    mobile: body.mobile,
+    dispatched: outcome.dialled,
+    reason: outcome.dialled ? null : outcome.reason,
+    variant: variant ?? null,
+    digit: digit ?? null,
+    providerCampaignId: outcome.campaignId ?? null,
+    uniqueId: body.unique_id || body.call_id || null,
+    raw: {
+      ivr_campaign_id: body.campaign_id ?? null,
+      ivr_campaign_name: body.campaign_name ?? null,
+    },
+  });
+
+  return outcome;
+}
+
+async function decideAndDial(body, { variant } = {}) {
+  if (String(process.env.ORI_PRESS_DISPATCH || "1").trim() === "0") {
+    return { dialled: false, reason: "disabled" };
   }
 
   const mobile = toE164(body.mobile);
