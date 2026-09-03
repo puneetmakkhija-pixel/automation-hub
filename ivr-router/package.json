@@ -11,7 +11,8 @@
     "test:pl-tracker": "node test-pl-tracker.mjs",
     "test:ananta-receipt": "node test-ananta-receipt.mjs",
     "test:obd-guard": "node test-obd-guard.mjs",
-    "test:alias": "node test-alias.mjs"
+    "test:alias": "node test-alias.mjs",
+    "test:edit-webhook": "node test-edit-webhook.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
