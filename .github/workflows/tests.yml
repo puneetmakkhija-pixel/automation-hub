@@ -20,9 +20,14 @@
 
 name: tests
 
+# push is limited to main, not every branch. A branch push and its pull request
+# both fire, so `branches: ["**"]` ran this workflow twice for every commit on a
+# PR branch — two identical green ticks and double the minutes. Work on a branch
+# is covered by pull_request (which fires on synchronize, drafts included); this
+# push trigger is what covers main itself once something merges.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 # A second push to the same branch makes the first run's answer irrelevant.
