@@ -50,6 +50,30 @@ await check("is not fooled by case", async () => {
   assert.equal(lenderOfLink("HTTPS://INSTANT-POCKET-LOAN.POONAWALLAFINCORP.COM/"), "poonawalla");
 });
 
+/**
+ * The Whistleloop affiliate shortener. These links carry no lender domain at
+ * all, so before this was mapped every one of them counted as "unknown" —
+ * 3,740 presses on 03-04 Sep 2026, which is most of two days of Poonawalla.
+ */
+await check("reads Poonawalla out of the Whistleloop shortener", async () => {
+  assert.equal(
+    lenderOfLink("https://s1.whistleloop.com/?linkid=52680&offerid=1351&publisher_id=4773&loop_id=1rtvsyy"),
+    "poonawalla"
+  );
+});
+
+await check("does not claim a Whistleloop link for an offer we have not mapped", async () => {
+  // A different offer id is a different lender's link until someone says
+  // otherwise. Counting it as Poonawalla would put another lender's customers
+  // in Poonawalla's sheet, which nothing downstream would catch.
+  assert.equal(lenderOfLink("https://s1.whistleloop.com/?linkid=52680&offerid=9999"), "unknown");
+  assert.equal(lenderOfLink("https://s1.whistleloop.com/"), "unknown");
+});
+
+await check("does not match offerid=1351 outside the shortener", async () => {
+  assert.equal(lenderOfLink("https://example.com/?offerid=1351"), "unknown");
+});
+
 console.log("\nIST day handling");
 
 await check("bounds one IST day, not one UTC day", async () => {

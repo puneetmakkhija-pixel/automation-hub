@@ -22,12 +22,28 @@
  * nothing else in the system would notice.
  */
 
-/** Where the customer was actually sent. */
+/**
+ * Where the customer was actually sent.
+ *
+ * Mirrors public.pl_press_lender() in the database (migration 005), which is
+ * what pl_ivr_tracker() and the enrichment job read. Change the two together
+ * or the sheet and the header count start disagreeing about the same day.
+ */
 export function lenderOfLink(link) {
   const l = String(link || "").toLowerCase();
   if (l.includes("poonawallafincorp")) return "poonawalla";
   if (l.includes("herofincorp")) return "herofincorp";
   if (l.includes("crmbusinessloans")) return "businessloans";
+  // Poonawalla behind the Whistleloop affiliate shortener, which never carries
+  // the lender's own domain. On 03-04 Sep 2026 this shape accounted for 3,740
+  // presses that read as "unknown" and dropped out of Poonawalla's numbers —
+  // 4 Sep showed ~952 against an actual ~4,568.
+  //
+  // Keyed on the offer id, not on the PFL_% campaign name: all 3,740 carried
+  // offerid=1351 and nothing else, while the campaign name is typed by hand in
+  // the IVR panel and one of those rows was not named PFL at all. A new offer
+  // id for the same lender will read as "unknown" rather than be guessed at.
+  if (l.includes("whistleloop") && l.includes("offerid=1351")) return "poonawalla";
   return "unknown";
 }
 

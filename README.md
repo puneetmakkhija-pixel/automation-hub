@@ -55,6 +55,43 @@ trigger call are in
 `ORISERVE_API_KEY` is a live credential and is not in this repo — it is set on
 the Railway service only.
 
+### Personal-loan press-1 leads are enriched, not just logged
+
+A Poonawalla or Hero Fincorp press-1 hands the customer straight to that
+lender's own journey, so the lead never enters the CRM and
+`public.whatsapp_messages` is the only record that the call happened. That row
+is a mobile number and a campaign name — no name, no bureau, no GST, no
+pincode — which is not enough to decide which of a day's ~6,000 presses is
+worth a callback.
+
+`data-jobs/enrich-press1-leads.js` walks each IST day through
+`public.pl_press1_enrich()`, which joins those mobiles to `se_base` (reached
+from this project as the foreign table `fed.se_base`) and lands the result in
+`public.pl_press1_enriched` — one row per press, carrying a snapshot of bureau,
+GST, banking, pincode and score. `npm run enrich:press1:cron` does the last two
+days and is safe to re-run; the schema and the reasons for its shape are in
+[`ivr-router/migrations/005_pl_press1_enrichment.sql`](ivr-router/migrations/005_pl_press1_enrichment.sql).
+
+Backfilled 01-04 Sep 2026: 15,714 presses, 6,130 matched in `se_base` (39%).
+The unmatched are real — the personal-loan dialling lists are not drawn from
+`se_base` — so the per-day match rate is the number to watch. It is reported
+per day rather than per run for that reason.
+
+### Which lender a press belongs to is read off the link
+
+`public.pl_press_lender()` and `lenderOfLink()` in
+`ivr-router/lib/plTracker.js` are the same rule in two places and must change
+together. The link is what the customer actually opened; `metadata->>'variant'`
+is only the slug the IVR panel was pointed at, and the two have already
+disagreed in live data.
+
+Poonawalla is also reached through the Whistleloop affiliate shortener, whose
+links carry no lender domain at all. Before `offerid=1351` was mapped, 3,740
+presses on 3-4 Sep 2026 counted as `unknown`: 4 Sep read as ~952 Poonawalla
+presses against an actual ~4,568. A **new** offer id will read as `unknown`
+rather than be guessed at — matching on the `PFL_%` campaign name instead was
+rejected because that name is typed by hand in the panel.
+
 ### Four Railway services were deleted on 1 Sep 2026
 
 `api`, `chatbot` and `whatsapp` backed the three stub folders removed below.
