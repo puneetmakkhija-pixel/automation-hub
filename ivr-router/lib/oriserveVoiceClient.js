@@ -54,6 +54,59 @@ class OriserveVoiceClient {
   }
 
   /**
+   * The callback URL we hand Oriserve, carrying the credential we will demand
+   * back.
+   *
+   * We send notification_webhook_url on every trigger — it is not configured in
+   * Oriserve's dashboard — and we used to send a bare URL. /webhooks/oriserve is
+   * guarded by verifyWebhookSecret('ORISERVE_WEBHOOK_SECRET'), so every callback
+   * they made was answered with a 401 and the outcome was lost:
+   *
+   *   [ORISERVE] Rejected request: missing secret (path=/webhooks/oriserve)
+   *
+   * On 04 Sep that ran from 04:24:31 — twenty seconds after the first call was
+   * placed — continuously through 951 dispatched calls, and crm.voice_call_events
+   * never took a single row. The word in the log is "missing", not "bad": they
+   * were not sending a wrong secret, they had never been given one. Rotating
+   * ORISERVE_WEBHOOK_SECRET would not have touched it.
+   *
+   * The token goes in the query string because that is the only slot we control.
+   * verifyWebhookSecret reads x-webhook-secret, Authorization: Bearer, or
+   * ?token= — and Oriserve composes the callback request, so we cannot make it
+   * send a header. This is a deliberate trade: the secret is visible in their
+   * request logs, which is why it is its own variable rather than one shared
+   * with another integration, and why an existing token on the URL is never
+   * overwritten.
+   *
+   * Read at call time, not in the constructor, so the URL and the secret cannot
+   * drift apart in a long-lived process — two variables that had to agree by
+   * hand is exactly how this broke.
+   */
+  callbackUrl(override) {
+    const base = override || this.webhookUrl;
+    if (!base) return base;
+
+    const secret = (process.env.ORISERVE_WEBHOOK_SECRET || '').trim();
+    if (!secret) return base;
+
+    try {
+      const url = new URL(base);
+      // Someone who already put a token on the URL meant it. Do not second-guess.
+      if (url.searchParams.has('token')) return base;
+      url.searchParams.set('token', secret);
+      return url.toString();
+    } catch {
+      // Not a parseable URL. Sending it unchanged reproduces the old behaviour,
+      // which is a 401 rather than a call placed against a mangled callback.
+      console.warn(
+        `[ORISERVE] notification_webhook_url is not a valid URL — sending it ` +
+          `unchanged, and the callback will be rejected as unauthenticated.`
+      );
+      return base;
+    }
+  }
+
+  /**
    * Generate UUID for Idempotency-Key
    */
   generateIdempotencyKey() {
@@ -172,7 +225,7 @@ class OriserveVoiceClient {
     const payload = {
       campaign_id,
       mobile: phoneValidation.formatted,
-      notification_webhook_url: notification_webhook_url || this.webhookUrl,
+      notification_webhook_url: this.callbackUrl(notification_webhook_url),
       metadata,
     };
 
