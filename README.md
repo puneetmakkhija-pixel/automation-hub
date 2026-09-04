@@ -77,6 +77,36 @@ The unmatched are real — the personal-loan dialling lists are not drawn from
 `se_base` — so the per-day match rate is the number to watch. It is reported
 per day rather than per run for that reason.
 
+### Which of those leads could carry a business loan
+
+`ivr-router/migrations/006_pl_press1_business_loan_targeting.sql` goes a step
+further than the enrichment: `public.pl_press1_sme` snapshots
+`sme_user_master` for the same mobiles (banking turnover, average bank balance,
+GST turnover slab and business-loan tradelines — none of which `se_base` holds),
+`public.pl_press1_bl_candidate` scores every GST-active lead against all 14
+lender BREs read live from `fed.se_lender_bre`, and
+`public.pl_press1_bl_target` is the callable list. `pl_press1_sme_refresh()`
+rebuilds the snapshot in ~10s and matches 7,301 of 13,434 press-1 mobiles,
+against `se_base`'s 5,174.
+
+Two things in that file are load-bearing and easy to undo by accident.
+`writeoff_settled = 99` and `max_dpd = 180` are **sentinels in the source, not
+measurements** — read literally they fail every lender with a write-off or DPD
+cap — so they are nulled and surfaced as `wo_sentinel` / `dpd_sentinel`. And a
+threshold whose input is missing leaves a lead *provisional* for that lender
+rather than passed or failed, because a NULL ABB means "no banking held", never
+"a low balance".
+
+`pl_press1_bl_target` is a **floor**. Of the 2,616 self-employed press-1 users
+above bureau 730, only 426 fail its four tests; 1,824 hold no data on any of
+them. Coverage across all 13,434 users is ABB and banking turnover 6%,
+tradelines 4%, GST slab 2% — so a count read off that view is roughly a third
+of the real pool, and collecting the missing inputs is worth more than working
+the list harder.
+
+Part A of that migration is one `GRANT` that runs in the **Database** project,
+not in smecircle; the file says so and leaves it commented for that reason.
+
 ### Which lender a press belongs to is read off the link
 
 `public.pl_press_lender()` and `lenderOfLink()` in
