@@ -150,6 +150,29 @@ docs describe.
 Anything worth recovering is in git history; nothing is lost by their absence
 from the working tree.
 
+## Tests
+
+Both folders carry check files — 13 in `ivr-router`, one in `data-jobs`, ~150
+assertions between them. Plain node, no credentials and no network; each exits
+non-zero on failure.
+
+```
+cd ivr-router && npm ci && for f in test-*.mjs; do node "$f"; done
+cd data-jobs  && npm ci && npm test
+```
+
+`.github/workflows/tests.yml` runs exactly that on every push and pull request,
+one matrix job per folder. It **globs** `test-*.mjs` rather than reading
+`package.json` scripts — three of `ivr-router`'s check files were never wired
+into a script, so a hand-maintained list would have been missing them from the
+start. A new check file is picked up by existing there.
+
+It does not cover the SQL. `ivr-router/migrations/*.sql` are applied by hand
+against Supabase, and `005` reads `fed.se_base` — a foreign table pointing at
+another project — so a throwaway Postgres in CI could not run it without
+standing up both sides. A green tick means the JavaScript is sound, not the
+migration.
+
 ## Wiring a *new* service into Railway (one-time)
 
 The six services above are already wired; this is for adding another.

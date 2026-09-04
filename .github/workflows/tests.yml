@@ -1,0 +1,92 @@
+# Runs the check files in ivr-router and data-jobs on every push and PR.
+#
+# WHY THIS EXISTS
+#
+# Both folders carry real unit tests — 13 files in ivr-router, one in
+# data-jobs, ~150 assertions between them — and until now nothing ran them
+# except a person remembering to. A test nobody runs is a comment that takes
+# longer to write, and the things these cover are the ones that fail quietly:
+# which lender a press-1 belongs to, whether a webhook edit drops the headers
+# the panel needs, whether an OBD guard actually refuses.
+#
+# WHAT IT DOES NOT COVER
+#
+# The SQL. ivr-router/migrations/*.sql are applied by hand against Supabase,
+# and the newest of them reads fed.se_base — a foreign table pointing at
+# another project — so a throwaway Postgres in CI could not run it without
+# standing up both sides. The functions there are exercised by having been run
+# against live data, not by this workflow. Treat a green tick here as "the
+# JavaScript is sound", not "the migration is".
+
+name: tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    strategy:
+      # Both packages report, always. Without this, a failure in ivr-router
+      # cancels data-jobs and hides whether that one was also broken.
+      fail-fast: false
+      matrix:
+        package: [ivr-router, data-jobs]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22 because data-jobs pins engines.node to >=22: @supabase/supabase-js
+      # constructs a RealtimeClient on createClient() and needs a native
+      # WebSocket, so it does not start on 20 or below.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+
+      # ci, not install: it installs exactly the committed lockfile and fails
+      # if the lockfile and package.json disagree, which is itself worth
+      # catching — data-jobs' lockfile had drifted to engines.node >=18.
+      - name: install ${{ matrix.package }}
+        working-directory: ${{ matrix.package }}
+        run: npm ci
+
+      # Globbed, not listed. Three of ivr-router's check files
+      # (test-gating-criteria, test-oriserve-callback-url,
+      # test-voice-dispatch-log) are not in package.json's scripts, so a
+      # hand-maintained list here would already be missing three of them and
+      # would go on missing every file added after this one. Every check file
+      # runs even after one fails, so a single break does not hide the rest.
+      #
+      # Each file exits non-zero on failure and needs no credentials and no
+      # network — the one that dials 127.0.0.1:1 does so to be refused.
+      - name: run every check file in ${{ matrix.package }}
+        working-directory: ${{ matrix.package }}
+        run: |
+          shopt -s nullglob
+          files=(test-*.mjs)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::error::no test-*.mjs files found in ${{ matrix.package }} — this job is green for the wrong reason"
+            exit 1
+          fi
+          failed=()
+          for f in "${files[@]}"; do
+            echo "::group::$f"
+            node "$f" || failed+=("$f")
+            echo "::endgroup::"
+          done
+          echo "ran ${#files[@]} check file(s), ${#failed[@]} failed"
+          if [ ${#failed[@]} -gt 0 ]; then
+            for f in "${failed[@]}"; do echo "::error file=${{ matrix.package }}/$f::$f failed"; done
+            exit 1
+          fi
