@@ -4,25 +4,52 @@ Two self-hosted services behind the BuddyLoan call centre: **`ivr-router`** (cal
 routing, OBD campaigns, the voice bot and the WhatsApp flows) and
 **`data-jobs`** (scheduled ETL).
 
-Deploys as **one GitHub repo → one Railway project ("Automation Hub")**. Each
+Deploys as **one GitHub repo → two Railway projects**. Most of it lives in
+"Automation Hub"; `hero-disbursal` deliberately does not — see below. Each
 service sets Railway's "Root Directory" to the folder it builds from — except
 `ivr-voice-bot-system`, which must stay at the repo root. See the table below
 before changing one.
 
 ## Services
 
-Five Railway services: three built from this repo, plus two Railway-provisioned
+Six Railway services: four built from this repo, plus two Railway-provisioned
 databases. The Root Directory column is what each service is actually set to
 today; times are UTC, because that is what Railway's cron field takes.
 
-| Folder | What it's for | Railway service | Root Directory | How it starts |
-| --- | --- | --- | --- | --- |
-| `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
-| `data-jobs` | Press-1 lead enrichment | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
-| `data-jobs` | Lender serviceable-pincode sync | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
-| `data-jobs` | Hero disbursal report ingest | `hero-disbursal` | `data-jobs` | Railpack, `npm run ingest:hero-disbursal:cron`, cron `0 22 * * *` |
-| — | Cache | `redis` | — | `redis:7` image |
-| — | Database | `postgresql` | — | `postgres:16` image |
+| Folder | What it's for | Railway project | Railway service | Root Directory | How it starts |
+| --- | --- | --- | --- | --- | --- |
+| `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | Automation Hub | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
+| `data-jobs` | Press-1 lead enrichment | Automation Hub | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
+| `data-jobs` | Lender serviceable-pincode sync | Automation Hub | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
+| `data-jobs` | Hero disbursal report ingest | **Business loans CRM** | `hero-disbursal` | `data-jobs` | Railpack, `npm run ingest:hero-disbursal:cron`, cron `0 22 * * *` |
+| — | Cache | Automation Hub | `redis` | — | `redis:7` image |
+| — | Database | Automation Hub | `postgresql` | — | `postgres:16` image |
+
+### Why one service sits in the other Railway project
+
+`hero-disbursal` needs the Gmail app password for the MIS mailbox, and that
+credential already exists — on `dsa-business-crm`, in the **Business loans CRM**
+project. Railway's `${{service.VAR}}` references resolve only **within a
+project**, so putting the job there lets it read the existing values instead of
+holding a second copy of a secret to rotate:
+
+```
+GMAIL_IMAP_USER           = ${{dsa-business-crm.GMAIL_IMAP_USER}}
+GMAIL_IMAP_APP_PASSWORD   = ${{dsa-business-crm.GMAIL_IMAP_APP_PASSWORD}}
+SUPABASE_URL              = ${{dsa-business-crm.SUPABASE_URL}}
+SUPABASE_SERVICE_ROLE_KEY = ${{dsa-business-crm.SUPABASE_SERVICE_ROLE_KEY}}
+```
+
+Pointing at that project's Supabase credentials is safe because both reach the
+same database, and that is provable rather than assumed:
+`public.pl_press1_mis_outcome` joins `crm.v_pl_mis` — written by the CRM — to
+`crm.mis_hero_disbursal`, written by this job. A view cannot join across
+databases.
+
+It still builds from THIS repo, branch `main`, so a push to `main` redeploys it
+along with everything else. An inert `hero-disbursal` also exists in Automation
+Hub with its cron removed; it is the first attempt, kept only because Railway's
+MCP has no delete-service call, and it should be deleted from the dashboard.
 
 All three crons have restart policy NEVER: a scheduled run that fails should wait
 for its next slot, not spin. 22:30 UTC is 04:00 IST, an hour behind the pincode sync
@@ -236,11 +263,26 @@ So the report keeps its own parser and its own table, and
 | Variable | Why |
 | --- | --- |
 | `MIS_IMAP_USER` / `MIS_IMAP_APP_PASSWORD` | the MIS mailbox, Gmail app password |
-| `GMAIL_IMAP_USER` / `GMAIL_IMAP_APP_PASSWORD` | fallback names for the same pair |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | already set on every `data-jobs` service |
+| `GMAIL_IMAP_USER` / `GMAIL_IMAP_APP_PASSWORD` | fallback names for the same pair; these are the ones actually set |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | where `crm.mis_hero_disbursal` lives |
 
-Without the IMAP pair the job exits non-zero naming both variables, rather than
-reporting an empty mailbox.
+All four are `${{dsa-business-crm.*}}` references, which is the whole reason this
+service sits in the Business loans CRM project — see **Why one service sits in
+the other Railway project**. Without the IMAP pair the job exits non-zero naming
+both variables, rather than reporting an empty mailbox.
+
+Verified end to end on 05 Sep 2026, 16:50 UTC:
+
+```
+[mis-mail] [Gmail]/All Mail: 6 message(s) from sandeep.pant@herofincorp.com since 2026-09-01
+[hero-disbursal] {"mail":"Buddy Loan.xlsx","subject":"Buddy Loan Disbursement Report","sent":"2026-09-05T04:25:12.000Z"}
+[hero-disbursal] {"file":"Buddy Loan.xlsx","origin":"email","sheet_rows":58,"records":58,
+                  "duplicate_lan_ids":0,"disbursed_rows":50,
+                  "sanction_total":14752411,"disbursal_total":11973303}
+```
+
+Hero sends it about **04:25 UTC (09:55 IST)**, so the 22:00 UTC run collects that
+morning's report with hours to spare.
 
 ### Which lender a press belongs to is read off the link
 
