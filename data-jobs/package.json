@@ -7,7 +7,10 @@
     "start": "node run.js",
     "load:pincodes": "node load-serviceable-pincodes.js",
     "sync:pincodes": "node sync-pincodes-from-crm.js",
-    "sync:pincodes:cron": "node sync-pincodes-from-crm.js --prune"
+    "sync:pincodes:cron": "node sync-pincodes-from-crm.js --prune",
+    "enrich:press1": "node enrich-press1-leads.js",
+    "enrich:press1:cron": "node enrich-press1-leads.js --days 2",
+    "test": "node test-enrich-press1.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4"
