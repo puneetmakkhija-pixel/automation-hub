@@ -11,11 +11,14 @@
     "enrich:press1": "node enrich-press1-leads.js",
     "enrich:press1:cron": "node enrich-press1-leads.js --days 2",
     "ingest:hero-disbursal": "node ingest-hero-disbursal.js",
+    "ingest:hero-disbursal:cron": "node ingest-hero-disbursal.js --from-email",
     "test": "node test-enrich-press1.mjs && node test-hero-disbursal.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "imapflow": "^1.7.8",
+    "mailparser": "^3.9.20"
   },
   "engines": {
     "node": ">=22.0.0"

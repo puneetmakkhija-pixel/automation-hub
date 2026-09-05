@@ -9,13 +9,29 @@
  * and a dropped column produces a NULL that reads as "the lender did not say".
  */
 import assert from "node:assert/strict";
-import { asDate, asTimestamp, toRecord } from "./ingest-hero-disbursal.js";
+import ExcelJS from "exceljs";
+import { asDate, asTimestamp, parseArgs, readSheetFromBuffer, toRecord } from "./ingest-hero-disbursal.js";
+import { HERO_DISBURSAL, pickAttachment, subjectMatches } from "./fetch-mis-mail.js";
 
 let failed = 0;
 const check = (name, fn) => {
   try { fn(); console.log(`  ok   ${name}`); }
   catch (e) { failed++; console.log(`  FAIL ${name}\n       ${e.message}`); }
 };
+const checkAsync = async (name, fn) => {
+  try { await fn(); console.log(`  ok   ${name}`); }
+  catch (e) { failed++; console.log(`  FAIL ${name}\n       ${e.message}`); }
+};
+
+/** A stand-in for the real report — the real one is customer data and is not committed. */
+async function workbookBuffer(sheets) {
+  const wb = new ExcelJS.Workbook();
+  for (const [name, rows] of sheets) {
+    const ws = wb.addWorksheet(name);
+    rows.forEach((r) => ws.addRow(r));
+  }
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
 
 console.log("\ndates");
 
@@ -110,6 +126,99 @@ check("keeps the whole original row in raw, including columns we do not map", ()
 check("strips thousands separators off an amount", () => {
   const r = toRecord(HEADERS, [...ROW.slice(0, 18), "2,90,705", "2026-09-02"], "f.xlsx");
   assert.equal(r.disbursal_amount, 290705);
+});
+
+console.log("\nmail selection");
+
+/**
+ * The sender was the one thing worth getting from the source rather than from a
+ * mailbox search. Hero sends TWO daily emails from two different people:
+ * digital.marketing@ sends Daily Pulse, which the CRM already ingests, and
+ * sandeep.pant@ sends this one. Wiring the first address here would have
+ * re-ingested the application feed and found no disbursals in it.
+ */
+check("keys on the address that actually sends the disbursal report", () => {
+  assert.equal(HERO_DISBURSAL.from, "sandeep.pant@herofincorp.com");
+});
+
+check("matches the subject Hero actually sends, and not the Daily Pulse one", () => {
+  assert.ok(subjectMatches("Buddy Loan Disbursement Report", HERO_DISBURSAL));
+  assert.ok(subjectMatches("FW: Buddy Loan Disbursement Report - 02.09.2026", HERO_DISBURSAL));
+  assert.ok(subjectMatches("BuddyLoan Disbursement report", HERO_DISBURSAL));
+  assert.equal(subjectMatches("Buddy Loan Daily Pulse", HERO_DISBURSAL), false);
+  assert.equal(subjectMatches("", HERO_DISBURSAL), false);
+  assert.equal(subjectMatches(null, HERO_DISBURSAL), false);
+});
+
+/**
+ * The signature image is the thing being excluded. Picking it would hand ExcelJS
+ * a PNG and turn a delivered report into a parse error.
+ */
+check("picks the spreadsheet out of the attachments and skips the signature image", () => {
+  const att = pickAttachment(
+    [
+      { filename: "image001.png" },
+      { filename: "Buddy_Loan.xlsx" },
+      { filename: "notes.pdf" },
+    ],
+    HERO_DISBURSAL
+  );
+  assert.equal(att.filename, "Buddy_Loan.xlsx");
+  assert.equal(pickAttachment([{ filename: "image001.png" }], HERO_DISBURSAL), null);
+  assert.equal(pickAttachment([], HERO_DISBURSAL), null);
+  assert.equal(pickAttachment(undefined, HERO_DISBURSAL), null);
+});
+
+check("accepts a csv too, and an attachment with no filename does not throw", () => {
+  assert.equal(pickAttachment([{ filename: "report.CSV" }], HERO_DISBURSAL).filename, "report.CSV");
+  assert.equal(pickAttachment([{}], HERO_DISBURSAL), null);
+});
+
+console.log("\narguments");
+
+/** A named file must beat --from-email, or re-running one day pulls the newest instead. */
+check("a named file wins over --from-email", () => {
+  const a = parseArgs(["--from-email", "sept.xlsx"]);
+  assert.equal(a.file, "sept.xlsx");
+  assert.equal(a.fromEmail, true);
+});
+
+check("--from-email alone asks for the mailbox, and --dry-run still parses", () => {
+  assert.deepEqual(parseArgs(["--from-email"]), { file: null, dryRun: false, fromEmail: true });
+  assert.deepEqual(parseArgs(["--dry-run", "--from-email"]), { file: null, dryRun: true, fromEmail: true });
+  assert.deepEqual(parseArgs([]), { file: null, dryRun: false, fromEmail: false });
+});
+
+console.log("\nreading the attachment bytes");
+
+/**
+ * What the cron does every day: parse the workbook straight out of the mail
+ * attachment, never off the disk. Worth its own checks because it is a
+ * different ExcelJS entry point (load() rather than readFile()) from the one
+ * the by-hand path uses.
+ */
+await checkAsync("parses a workbook from a buffer, not a path", async () => {
+  const buf = await workbookBuffer([["Disbursement Data", [HEADERS, ROW]]]);
+  const { headers, dataRows } = await readSheetFromBuffer(buf, "Buddy_Loan.xlsx");
+  assert.deepEqual(headers, HEADERS);
+  assert.equal(dataRows.length, 1);
+  assert.equal(toRecord(headers, dataRows[0], "Buddy_Loan.xlsx").lan_id, "101211507");
+});
+
+/** The real file ships a Summary tab whose four rows of totals are not applications. */
+await checkAsync("takes the named sheet even when it is not the first one", async () => {
+  const buf = await workbookBuffer([
+    ["Summary_Disbursement_Data", [["Total"], [58]]],
+    ["Disbursement Data", [HEADERS, ROW]],
+  ]);
+  const { dataRows } = await readSheetFromBuffer(buf, "Buddy_Loan.xlsx");
+  assert.equal(dataRows.length, 1);
+});
+
+/** A lender quietly renaming a column must stop the run, not write a table of NULLs. */
+await checkAsync("refuses a workbook that has lost a column it needs", async () => {
+  const buf = await workbookBuffer([["Disbursement Data", [HEADERS.slice(0, 5), ROW.slice(0, 5)]]]);
+  await assert.rejects(() => readSheetFromBuffer(buf, "Buddy_Loan.xlsx"), /missing expected column/);
 });
 
 console.log(failed ? `\n${failed} failed\n` : "\nall passed\n");
