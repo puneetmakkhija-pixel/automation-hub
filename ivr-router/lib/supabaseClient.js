@@ -38,6 +38,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { readVoiceOutcome } from './voiceOutcomeFields.js';
 
 class SupabaseError extends Error {
   constructor(message, statusCode, details) {
@@ -293,13 +294,12 @@ class SupabaseClient {
       throw new SupabaseError('provider is required', null, null);
     }
 
-    // Providers disagree on these key names, and the raw payload keeps whatever
-    // we fail to recognise, so read generously rather than insisting on one.
-    const mobile = payload.mobile || payload.phone || null;
-    const callId = payload.call_id || payload.campaign_call_id || payload.callId || null;
-    const rawDuration = payload.call_duration ?? payload.duration_sec ?? payload.duration;
-    const duration = Number.isFinite(Number(rawDuration)) ? Math.trunc(Number(rawDuration)) : null;
-    const status = payload.status || payload.event_status || null;
+    // Providers disagree on these key names AND on how deep to nest them, and
+    // the raw payload keeps whatever we fail to recognise. This used to read
+    // flat top-level keys only, which is why Oriserve's first 719 callbacks
+    // landed with every column but `provider` set to NULL — see
+    // lib/voiceOutcomeFields.js.
+    const { mobile, callId, status, duration } = readVoiceOutcome(payload);
 
     const saved = { webhookEvent: false, voiceCallEvent: false, errors: [] };
 
