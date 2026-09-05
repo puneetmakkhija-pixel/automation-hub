@@ -16,23 +16,37 @@ import SupabaseClient from "./supabaseClient.js";
  *
  * ── Read this before turning enforcement on ───────────────────────────────
  *
- * Measured against 5,459 real press-1s from 04-05 Sep 2026:
+ * Measured against 5,459 real press-1s from 04-05 Sep 2026, resolved against
+ * the 4.1M-row base (fed.se_base + fed.sme_user_master, reached over the
+ * db_bases postgres_fdw link):
  *
- *              press-1   in any enrichment source   qualifies
- *   businessloans 1,719          451 (26%)            398
- *   poonawalla    3,614          125 (3.5%)            98
- *   herofincorp     126            9 (7%)               8
+ *                 press-1   covered         qualifies
+ *   businessloans   1,719   1,718 (99.9%)   1,347 (78%)
+ *   poonawalla      3,614   2,226 (61.6%)   1,409 (39%)
+ *   herofincorp       126     125 (99.2%)     106 (84%)
+ *   total           5,459   4,069 (74.5%)   2,862
  *
- * Only 10.7% of callers exist in ANY enrichment source. Among those that do,
- * 88% qualify. So this gate is mostly a coverage test wearing a credit test's
- * clothes: it does not separate good leads from bad, it separates leads we have
- * data on from leads we do not.
+ * Enforcing does NOT cut dialling. It takes it from 1,719 to 2,862: it keeps
+ * 78% of Business Loans and adds 1,515 qualified Hero and Poonawalla leads
+ * nobody is calling today. Enforcement still defaults to OFF, because a 66%
+ * rise in paid outbound calls is not something to switch on without somebody
+ * deciding to -- shadow records a verdict per press and changes nothing.
  *
- * Enforcing it drops dialling from 1,719 to 504 across those two days -- a 71%
- * cut, and 77% on Business Loans alone. That is why IVR_QUALIFY_ENFORCE exists
- * and defaults to OFF: shadow mode records the verdict for every press and
- * changes nothing, so the real rate can be watched for a day before anyone
- * loses a call. Flip it only once those numbers are understood.
+ * (An earlier version of this measured 10.7% coverage and predicted a 71% cut.
+ * That read the small local extracts in the smecircle project -- exp_se_report
+ * at 131,925 rows -- instead of the real base in the other project. The base
+ * had been reachable from here the whole time.)
+ *
+ * ── It costs about three seconds ──────────────────────────────────────────
+ *
+ * The base is in another Supabase project, and each verdict opens its own FDW
+ * connection: ~2.9s, nearly all of it connection setup rather than the lookup,
+ * which hits a primary key. That is affordable only because this path is
+ * fire-and-forget -- the route never awaits the dispatch, so the customer's
+ * WhatsApp has already gone. It is still the obvious next thing to fix: a
+ * local materialised copy of (mobile, cibil, abb, bto, turnover, running_bl)
+ * would make it sub-millisecond and remove a cross-project dependency from a
+ * webhook.
  *
  * ── Same rule as everything else on this path ─────────────────────────────
  *
