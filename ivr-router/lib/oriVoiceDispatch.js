@@ -1,5 +1,10 @@
 import OriserveVoiceClient from "./oriserveVoiceClient.js";
 import { recordVoiceDispatch } from "./voiceDispatchLog.js";
+import {
+  qualifyLead,
+  decideFromVerdict,
+  enforcing as qualifyEnforcing,
+} from "./leadQualification.js";
 
 /**
  * A press of 1, handed to the ORI voice bot.
@@ -51,8 +56,14 @@ import { recordVoiceDispatch } from "./voiceDispatchLog.js";
  *
  * Config:
  *   ORI_PRESS_VARIANTS   comma-separated variants to dial, default
- *                        "businessloans". "*" dials every press-1.
+ *                        "businessloans". Can only narrow DIALABLE_VARIANTS,
+ *                        never widen it; "*" means every variant on that list.
  *   ORI_PRESS_DISPATCH=0 turns the bot off without a deploy.
+ *   IVR_QUALIFY_ENFORCE=1 gate on crm.ivr_lead_qualifies() instead of on the
+ *                        variant, admitting Hero and Poonawalla presses that
+ *                        clear a bar. Default 0: the verdict is recorded and
+ *                        ignored. See lib/leadQualification.js before setting
+ *                        it — on 04-05 Sep data it cuts dialling by 71%.
  *   ORISERVE_API_KEY     required; without it the client cannot be built and
  *                        this stays inert and says so once.
  *   ORISERVE_CAMPAIGN_ID the BuddyLoan campaign the call runs.
@@ -80,18 +91,107 @@ function voiceClient() {
   }
 }
 
-/** Variants whose press-1 gets a bot call. */
-function dialledVariants() {
+/**
+ * The variants this bot is EVER allowed to dial. Not configurable.
+ *
+ * ORI_PRESS_VARIANTS used to be the only gate, and it could widen as easily as
+ * narrow: setting it to "*" dialled every press-1 on the webhook, whatever the
+ * product. On 04-05 Sep that would have been 3,614 Poonawalla presses
+ * (s1.whistleloop.com, which send no variant at all) and 126 Hero presses
+ * (loans.apps.herofincorp.com) on top of the 1,720 Business Loans ones — paid
+ * calls into two books that have no CRM case for a bot to enrich, from a
+ * one-word edit in a dashboard, with nothing in the code to stop it.
+ *
+ * So the env var now only ever SUBTRACTS. A variant must be named here to be
+ * dialable at all; ORI_PRESS_VARIANTS picks a subset of this list, and "*"
+ * means "all of this list" rather than "all presses". Adding a product to the
+ * bot is a code change and a review — which is the point.
+ */
+const DIALABLE_VARIANTS = new Set(["businessloans"]);
+
+/**
+ * Who the qualification rule governs, once it is enforcing.
+ *
+ * From 05 Sep 2026 the bot is not scoped by which IVR someone pressed on but by
+ * what enrichment says about them: a Poonawalla or Hero press that clears any
+ * of the five bars in crm.ivr_lead_qualifies() is a business-loan lead. So when
+ * IVR_QUALIFY_ENFORCE is on, all three IVRs are admitted HERE and the
+ * qualification check downstream is what actually decides.
+ *
+ * Poonawalla presses arrive with no variant field at all -- 3,616 of the 5,462
+ * press-1s on 04-05 Sep, all from s1.whistleloop.com -- so the empty variant is
+ * an admitted source in its own right rather than a mistake to reject.
+ *
+ * While shadow (the default) this stays out of the way and only Business Loans
+ * is dialled, exactly as before. That ordering matters: admitting all three
+ * before the verdict can stop anyone would treble the call volume overnight,
+ * which is the opposite of what shadow mode is for.
+ */
+const QUALIFY_GOVERNED_VARIANTS = new Set([
+  "businessloans",
+  "herofincorp",
+  "poonawalla",
+  "", // Poonawalla's IVR sends no variant
+]);
+
+function allowedVariants() {
+  return qualifyEnforcing() ? QUALIFY_GOVERNED_VARIANTS : DIALABLE_VARIANTS;
+}
+
+/** Whatever ORI_PRESS_VARIANTS currently selects. Not yet checked for safety. */
+function configuredVariants() {
   return (process.env.ORI_PRESS_VARIANTS ?? "businessloans")
     .split(",")
     .map((v) => v.trim().toLowerCase())
     .filter(Boolean);
 }
 
+/** What the bot will actually dial: the selection, clamped to the allowlist. */
+function dialledVariants() {
+  const configured = configuredVariants();
+  const allowed = allowedVariants();
+  const selected = configured.includes("*") ? [...allowed] : configured;
+  return selected.filter((v) => allowed.has(v));
+}
+
 function dials(variant) {
-  const allowed = dialledVariants();
-  if (allowed.includes("*")) return true;
-  return allowed.includes(String(variant || "").trim().toLowerCase());
+  const key = String(variant || "").trim().toLowerCase();
+
+  // The hard gate, and the only one. Deliberately not duplicated inside
+  // dialledVariants(): a second copy there is unreachable, so it would sit
+  // untested and read as protection that no test could hold to account.
+  if (!allowedVariants().has(key)) {
+    warnUnconfigurable(key);
+    return false;
+  }
+
+  // Once qualification is enforcing it IS the gate, and the variant is only a
+  // label on the lead. ORI_PRESS_VARIANTS stops applying here on purpose: it
+  // defaults to "businessloans", so leaving it in the path would reject every
+  // Hero and Poonawalla press before the verdict was ever asked for — the whole
+  // point of the change, silently undone by a variable nobody thought to edit.
+  if (qualifyEnforcing()) return true;
+
+  const configured = configuredVariants();
+  return configured.includes("*") || configured.includes(key);
+}
+
+/**
+ * Say so, once, when ORI_PRESS_VARIANTS names something the bot may not dial.
+ *
+ * This is config drift worth seeing: someone put a product on the bot and the
+ * deploy quietly did not take. Keyed separately from the per-variant rejection
+ * notice so a normal Hero press does not suppress it.
+ */
+function warnUnconfigurable(key) {
+  if (!configuredVariants().includes(key)) return;
+  if (warnedVariants.has(`cfg:${key}`)) return;
+  warnedVariants.add(`cfg:${key}`);
+  console.warn(
+    `[ORI_PRESS] ORI_PRESS_VARIANTS names "${key}", which the bot is not ` +
+      `permitted to dial — ignoring it. Allowed: ${[...DIALABLE_VARIANTS].join(", ")}. ` +
+      `Adding one is a code change in lib/oriVoiceDispatch.js, not a variable.`
+  );
 }
 
 /** Oriserve wants +91XXXXXXXXXX; the panel sends whatever it sends. */
@@ -202,6 +302,12 @@ async function placeCall(body, { digit, variant } = {}) {
     raw: {
       ivr_campaign_id: body.campaign_id ?? null,
       ivr_campaign_name: body.campaign_name ?? null,
+      // The qualification verdict, recorded whether or not it was allowed to
+      // act. In shadow mode this is the ONLY trace of it, and the whole point:
+      // it is what the enforced rate can be measured from before anyone flips
+      // IVR_QUALIFY_ENFORCE and loses calls.
+      qualify_enforced: qualifyEnforcing(),
+      qualification: outcome.verdict ?? null,
     },
   });
 
@@ -219,14 +325,26 @@ async function decideAndDial(body, { variant } = {}) {
     return { dialled: false, reason: "bad_mobile" };
   }
 
+  // Enrichment, before the dedupe: the verdict is wanted on every press, and a
+  // repeat press must not come back "unknown" just because the first one used
+  // up the key. Never throws; an unreachable lookup returns unknown and passes.
+  const verdict = await qualifyLead(body.mobile);
+  const { dial, reason: refusal } = decideFromVerdict(verdict);
+  if (!dial) {
+    console.log(
+      `[ORI_PRESS] ${mobile} does not qualify (enriched=${verdict.enriched}) — no call placed`
+    );
+    return { dialled: false, reason: refusal, verdict };
+  }
+
   const key = dialKey(body, variant);
   if (alreadyDialled(key)) {
     console.log(`[ORI_PRESS] Already dialled (${key}) — not calling again`);
-    return { dialled: false, reason: "duplicate" };
+    return { dialled: false, reason: "duplicate", verdict };
   }
 
   const ori = voiceClient();
-  if (!ori) return { dialled: false, reason: "no_client" };
+  if (!ori) return { dialled: false, reason: "no_client", verdict };
 
   try {
     // campaign_id is deliberately omitted: body.campaign_id is OUR dialler's
@@ -255,18 +373,18 @@ async function decideAndDial(body, { variant } = {}) {
       );
       // Nothing rang, so release the key: the next press may still get through.
       dialled.delete(key);
-      return { dialled: false, reason: "refused" };
+      return { dialled: false, reason: "refused", verdict };
     }
 
     console.log(
       `[ORI_PRESS] Voice bot dialled ${mobile} variant=${variant || "-"} ` +
         `campaign=${result.campaign_id || "-"} key=${key}`
     );
-    return { dialled: true, campaignId: result.campaign_id ?? null };
+    return { dialled: true, campaignId: result.campaign_id ?? null, verdict };
   } catch (error) {
     console.error(`[ORI_PRESS] Call failed for ${mobile}: ${error?.message ?? error}`);
     dialled.delete(key);
-    return { dialled: false, reason: "error" };
+    return { dialled: false, reason: "error", verdict };
   }
 }
 
