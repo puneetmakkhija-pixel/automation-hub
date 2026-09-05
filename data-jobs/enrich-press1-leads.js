@@ -25,11 +25,18 @@ import { pathToFileURL } from "node:url";
 //
 // RUNNING AS A CRON
 //
-// Daily, after the day's campaigns have finished dialling. --days 2 rather than
-// today-only: presses land through the evening and se_base is rescored
-// overnight, so yesterday is still moving when today starts. Re-running is
-// safe — pl_press1_enrich() upserts on the press row's id and refreshes the
-// se_base snapshot.
+// The `jobs` Railway service (root data-jobs, restart policy NEVER) runs
+// `npm run enrich:press1:cron` on `30 22 * * *` UTC — 04:00 IST, an hour behind
+// the pincode sync so the two never contend, and after both the day's dialling
+// and se_base's overnight rescoring.
+//
+// That script passes --days 2 rather than today-only, and the schedule is the
+// reason it has to: at 04:00 IST the IST date has already rolled over, so a
+// today-only run would enrich a day on which nobody has pressed anything yet and
+// skip the one that just finished. --days 2 covers the boundary either way.
+//
+// Re-running is safe — pl_press1_enrich() upserts on the press row's id and
+// refreshes the se_base snapshot.
 
 // 2,000 mobiles per foreign-table round trip. Measured on 02 Sep 2026 (6,047
 // presses): 7.0s at 1,000, 4.1s at 5,000 — nearly all of it FDW round trips.
