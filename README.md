@@ -119,6 +119,35 @@ the list harder.
 Part A of that migration is one `GRANT` that runs in the **Database** project,
 not in smecircle; the file says so and leaves it commented for that reason.
 
+### And what the lender did with them
+
+`ivr-router/migrations/007_pl_press1_mis_outcome.sql` adds
+`public.pl_press1_mis_outcome`: every press-1 lead joined to whatever Hero's and
+Poonawalla's MIS say happened to it — applied, logged in, sanctioned, disbursed,
+or a rejection reason — one row per press, showing the furthest stage reached.
+
+It is a **view, not columns on `pl_press1_enriched`**. The MIS advances daily on
+the lenders' schedule, independently of `pl_press1_enrich()`, so columns filled
+at enrichment time would report "not sanctioned" for someone sanctioned that
+morning and keep saying it until the next nightly run. The join costs ~600ms
+across the whole book, so freezing it buys nothing.
+
+**`mis_matched = false` does not mean "did not convert."** Coverage is badly
+asymmetric: Hero echoes our `customer_id`, so all 1,711 of its MIS rows resolve;
+Poonawalla's alias survives only in `UTM_Partner_AgentCode` shaped
+`4773_alias_<7 chars>_`, and only for publisher 4773 — 60 rows out of 6,424. The
+other publishers in that feed (4636 with 1,695 distinct tokens, plus 1309, 4154,
+681) carry 10-character mixed-case tokens matching neither our codec nor any
+alias in `crm.v_alias_sent`, under campaign names like `BDL_HeroCL_LBD_Aug1` that
+make them look like ours. They are another affiliate's scheme, and matching on
+them would attach other partners' applications to our leads.
+
+So any conversion rate read off this view is a floor, and for Poonawalla a floor
+roughly a hundred times below the truth. The durable fix is Poonawalla echoing
+`client_reference_id` the way Hero already does; until then `mis_same_lender`
+is worth watching, because 30 presses currently surface in the *other* lender's
+book.
+
 ### Which lender a press belongs to is read off the link
 
 `public.pl_press_lender()` and `lenderOfLink()` in
