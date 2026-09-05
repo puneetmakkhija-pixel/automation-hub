@@ -10,10 +10,12 @@
     "sync:pincodes:cron": "node sync-pincodes-from-crm.js --prune",
     "enrich:press1": "node enrich-press1-leads.js",
     "enrich:press1:cron": "node enrich-press1-leads.js --days 2",
-    "test": "node test-enrich-press1.mjs"
+    "ingest:hero-disbursal": "node ingest-hero-disbursal.js",
+    "test": "node test-enrich-press1.mjs && node test-hero-disbursal.mjs"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.4"
+    "@supabase/supabase-js": "^2.45.4",
+    "exceljs": "^4.4.0"
   },
   "engines": {
     "node": ">=22.0.0"

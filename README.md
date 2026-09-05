@@ -148,6 +148,42 @@ roughly a hundred times below the truth. The durable fix is Poonawalla echoing
 is worth watching, because 30 presses currently surface in the *other* lender's
 book.
 
+### Hero's disbursal report is the other half of Hero's MIS
+
+The Hero MIS we ingest (`crm.pl_lender_mis`, lender `herofincorp`) is an
+**application** feed: all 2,464 rows it has ever sent carry a NULL sanction and
+a NULL disbursal. It has identity and no outcome — Hero echoes our
+`customer_id`, so `crm.v_pl_mis` decodes 100% of it to a mobile.
+
+Hero's daily disbursal report is the mirror image: sanction and disbursal
+amounts, and no mobile, no PAN, no name. Its `App ID` is the same identifier
+space as `pl_lender_mis.lan_id`, which is the only thing joining the two.
+
+So `pl_press1_mis_outcome` reporting every Hero lead as unconverted was never a
+fact about the customers — it was a column the feed does not contain.
+
+`data-jobs/ingest-hero-disbursal.js` loads that report into
+`crm.mis_hero_disbursal` (migration 008), and the outcome view joins the halves
+on `lan_id`. It is a separate table rather than a merge into `pl_lender_mis`,
+which the CRM's own MIS pipeline writes: two writers on one row is how one of
+them silently loses.
+
+```
+npm --prefix data-jobs run ingest:hero-disbursal -- --dry-run report.xlsx
+npm --prefix data-jobs run ingest:hero-disbursal -- report.xlsx
+```
+
+Dates in that file are **DD-MM-YYYY**, which `Date.parse` reads as MM-DD-YYYY:
+silently wrong for every day below the 13th and rejected above it. They are
+parsed by hand for that reason and `test-hero-disbursal.mjs` pins it, because
+the failure looks like plausible data in the wrong month for about 40% of rows.
+
+The join is proven but barely exercised: of the first file's 58 applications,
+3 exist in the Hero MIS window and 1 carries a real disbursal. The other 54 are
+older than anything the MIS holds — the two feeds are cut from different date
+ranges, so the fix is asking Hero to widen the MIS window or to put sanction and
+disbursal fields in the main feed.
+
 ### Which lender a press belongs to is read off the link
 
 `public.pl_press_lender()` and `lenderOfLink()` in
