@@ -11,16 +11,28 @@ before changing one.
 
 ## Services
 
-Four Railway services: two built from this repo, plus two Railway-provisioned
+Five Railway services: three built from this repo, plus two Railway-provisioned
 databases. The Root Directory column is what each service is actually set to
-today.
+today; times are UTC, because that is what Railway's cron field takes.
 
 | Folder | What it's for | Railway service | Root Directory | How it starts |
 | --- | --- | --- | --- | --- |
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
-| `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack, `npm start` |
+| `data-jobs` | Press-1 lead enrichment | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
+| `data-jobs` | Lender serviceable-pincode sync | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
 | — | Cache | `redis` | — | `redis:7` image |
 | — | Database | `postgresql` | — | `postgres:16` image |
+
+Both crons have restart policy NEVER: a scheduled run that fails should wait for
+its next slot, not spin. 22:30 UTC is 04:00 IST, an hour behind the pincode sync
+so the two never contend, and after both the day's dialling and se_base's
+overnight rescoring. The job asks for `--days 2` rather than today alone, since
+presses land through the evening and yesterday is still moving when today starts.
+
+`npm start` still runs `data-jobs/run.js`, which reports which Supabase project
+the service's credentials actually reach and exits. It is no longer any service's
+start command — run it by hand when a job behaves as though its tables are
+missing, which is what PGRST205 looks like from the wrong project.
 
 Env vars for each are in that folder's `.env.example`. `redis` and `postgresql`
 are provisioned from Docker images and build nothing from this repo.
