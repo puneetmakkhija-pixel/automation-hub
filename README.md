@@ -11,16 +11,28 @@ before changing one.
 
 ## Services
 
-Four Railway services: two built from this repo, plus two Railway-provisioned
+Five Railway services: three built from this repo, plus two Railway-provisioned
 databases. The Root Directory column is what each service is actually set to
-today.
+today; times are UTC, because that is what Railway's cron field takes.
 
 | Folder | What it's for | Railway service | Root Directory | How it starts |
 | --- | --- | --- | --- | --- |
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
-| `data-jobs` | Scheduled data processing | `jobs` | `data-jobs` | Railpack, `npm start` |
+| `data-jobs` | Press-1 lead enrichment | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
+| `data-jobs` | Lender serviceable-pincode sync | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
 | — | Cache | `redis` | — | `redis:7` image |
 | — | Database | `postgresql` | — | `postgres:16` image |
+
+Both crons have restart policy NEVER: a scheduled run that fails should wait for
+its next slot, not spin. 22:30 UTC is 04:00 IST, an hour behind the pincode sync
+so the two never contend, and after both the day's dialling and se_base's
+overnight rescoring. The job asks for `--days 2` rather than today alone, since
+presses land through the evening and yesterday is still moving when today starts.
+
+`npm start` still runs `data-jobs/run.js`, which reports which Supabase project
+the service's credentials actually reach and exits. It is no longer any service's
+start command — run it by hand when a job behaves as though its tables are
+missing, which is what PGRST205 looks like from the wrong project.
 
 Env vars for each are in that folder's `.env.example`. `redis` and `postgresql`
 are provisioned from Docker images and build nothing from this repo.
@@ -106,6 +118,113 @@ the list harder.
 
 Part A of that migration is one `GRANT` that runs in the **Database** project,
 not in smecircle; the file says so and leaves it commented for that reason.
+
+### And what the lender did with them
+
+`ivr-router/migrations/007_pl_press1_mis_outcome.sql` adds
+`public.pl_press1_mis_outcome`: every press-1 lead joined to whatever Hero's and
+Poonawalla's MIS say happened to it — applied, logged in, sanctioned, disbursed,
+or a rejection reason — one row per press, showing the furthest stage reached.
+
+It is a **view, not columns on `pl_press1_enriched`**. The MIS advances daily on
+the lenders' schedule, independently of `pl_press1_enrich()`, so columns filled
+at enrichment time would report "not sanctioned" for someone sanctioned that
+morning and keep saying it until the next nightly run. The join costs ~600ms
+across the whole book, so freezing it buys nothing.
+
+**`mis_matched = false` does not mean "did not convert."** Coverage is badly
+asymmetric: Hero echoes our `customer_id`, so all 1,711 of its MIS rows resolve;
+Poonawalla's alias survives only in `UTM_Partner_AgentCode` shaped
+`4773_alias_<7 chars>_`, and only for publisher 4773 — 60 rows out of 6,424. The
+other publishers in that feed (4636 with 1,695 distinct tokens, plus 1309, 4154,
+681) carry 10-character mixed-case tokens matching neither our codec nor any
+alias in `crm.v_alias_sent`, under campaign names like `BDL_HeroCL_LBD_Aug1` that
+make them look like ours. They are another affiliate's scheme, and matching on
+them would attach other partners' applications to our leads.
+
+So any conversion rate read off this view is a floor, and for Poonawalla a floor
+roughly a hundred times below the truth. The durable fix is Poonawalla echoing
+`client_reference_id` the way Hero already does; until then `mis_same_lender`
+is worth watching, because 30 presses currently surface in the *other* lender's
+book.
+
+### Hero's disbursal report is the other half of Hero's MIS
+
+The Hero MIS we ingest (`crm.pl_lender_mis`, lender `herofincorp`) is an
+**application** feed: all 2,464 rows it has ever sent carry a NULL sanction and
+a NULL disbursal. It has identity and no outcome — Hero echoes our
+`customer_id`, so `crm.v_pl_mis` decodes 100% of it to a mobile.
+
+Hero's daily disbursal report is the mirror image: sanction and disbursal
+amounts, and no mobile, no PAN, no name. Its `App ID` is the same identifier
+space as `pl_lender_mis.lan_id`, which is the only thing joining the two.
+
+So `pl_press1_mis_outcome` reporting every Hero lead as unconverted was never a
+fact about the customers — it was a column the feed does not contain.
+
+`data-jobs/ingest-hero-disbursal.js` loads that report into
+`crm.mis_hero_disbursal` (migration 008), and the outcome view joins the halves
+on `lan_id`. It is a separate table rather than a merge into `pl_lender_mis`,
+which the CRM's own MIS pipeline writes: two writers on one row is how one of
+them silently loses.
+
+```
+npm --prefix data-jobs run ingest:hero-disbursal -- --dry-run report.xlsx
+npm --prefix data-jobs run ingest:hero-disbursal -- report.xlsx
+```
+
+Dates in that file are **DD-MM-YYYY**, which `Date.parse` reads as MM-DD-YYYY:
+silently wrong for every day below the 13th and rejected above it. They are
+parsed by hand for that reason and `test-hero-disbursal.mjs` pins it, because
+the failure looks like plausible data in the wrong month for about 40% of rows.
+
+The join is proven but barely exercised: of the first file's 58 applications,
+3 exist in the Hero MIS window and 1 carries a real disbursal. The other 54 are
+older than anything the MIS holds — the two feeds are cut from different date
+ranges, so the fix is asking Hero to widen the MIS window or to put sanction and
+disbursal fields in the main feed.
+
+#### Automating it needs one rule in the mail watcher, not a new pipeline
+
+Hero sends **two** daily emails and only one is wired up:
+
+| Email | From | Carries | Status |
+| --- | --- | --- | --- |
+| `Daily Pulse - Buddy Loan` | `digital.marketing@herofincorp.com` | applications, identity (`cuid`) | **ingested** — `source_file` reads `Daily_Pulse_Buddy Loan_<date>.xlsx` |
+| `Buddy Loan Disbursement Report` | `sandeep.pant@herofincorp.com` | sanction and disbursal amounts | **not ingested** |
+
+The PL MIS is not loaded through `crm.mis_adapter` — that registry drives the BL
+lenders (ABFL, Bajaj, Protium…) and has no Hero row. Hero and Poonawalla come in
+through `crm.upsert_pl_mis(p_secret, p_lender, p_mis_date, p_source_file,
+p_rows)`, which a mail watcher outside this repo calls with parsed rows.
+
+**The disbursal report can go through that same RPC unchanged.** Its upsert is
+`on conflict (lender, lan_id) do update set customer_name =
+coalesce(excluded.customer_name, t.customer_name)` and so on for every column —
+it fills nulls and never clobbers. So feeding it Hero rows carrying only
+`applicationNumber` plus the amounts populates exactly the sanction and
+disbursal fields that are empty today, and leaves the name, phone and stage the
+Daily Pulse set. No second lender, no second table, no ordering requirement
+between the two emails.
+
+The watcher rule it needs:
+
+```
+from:     sandeep.pant@herofincorp.com
+subject:  Buddy Loan Disbursement Report
+sheet:    "Disbursement Data"        # NOT Summary_Disbursement_Data — that tab is 4 rows of totals
+lender:   herofincorp
+columns:  App ID                -> applicationNumber
+          Sanction Loan Amount  -> sanctionAmount
+          Decision Date         -> sanctionDate
+          landisbursementamount -> disbursedAmount
+          landisbursementdate   -> disbursedDate
+          Final Status          -> rawStatus
+```
+
+`crm.mis_hero_disbursal` still earns its place after that: `decile`,
+`campaign_id`, `appsflyer_id`, `cpv_action` and the city/pincode have no column
+in `pl_lender_mis`, and campaign-level attribution needs them.
 
 ### Which lender a press belongs to is read off the link
 
