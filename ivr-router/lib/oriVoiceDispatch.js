@@ -63,8 +63,8 @@ import {
  *                        variant, admitting Hero and Poonawalla presses that
  *                        clear a bar. Default 0: the verdict is recorded and
  *                        ignored. See lib/leadQualification.js before setting
- *                        it — on 04-05 Sep data it RAISES dialling 66%, from
- *                        1,719 to 2,862, by admitting qualified Hero and
+ *                        it — on 04-05 Sep data it RAISES dialling 67%, from
+ *                        1,719 to 2,868, by admitting qualified Hero and
  *                        Poonawalla presses.
  *   ORISERVE_API_KEY     required; without it the client cannot be built and
  *                        this stays inert and says so once.

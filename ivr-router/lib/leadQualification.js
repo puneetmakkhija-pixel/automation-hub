@@ -17,36 +17,43 @@ import SupabaseClient from "./supabaseClient.js";
  * ── Read this before turning enforcement on ───────────────────────────────
  *
  * Measured against 5,459 real press-1s from 04-05 Sep 2026, resolved against
- * the 4.1M-row base (fed.se_base + fed.sme_user_master, reached over the
- * db_bases postgres_fdw link):
+ * fed.sme_user_master (4,312,739 rows, one per mobile, regenerated daily) over
+ * the db_bases postgres_fdw link:
  *
  *                 press-1   covered         qualifies
- *   businessloans   1,719   1,718 (99.9%)   1,347 (78%)
- *   poonawalla      3,614   2,226 (61.6%)   1,409 (39%)
+ *   businessloans   1,719   1,718 (99.9%)   1,350 (79%)
+ *   poonawalla      3,614   2,226 (61.6%)   1,412 (39%)
  *   herofincorp       126     125 (99.2%)     106 (84%)
- *   total           5,459   4,069 (74.5%)   2,862
+ *   total           5,459   4,069 (74.5%)   2,868
  *
- * Enforcing does NOT cut dialling. It takes it from 1,719 to 2,862: it keeps
- * 78% of Business Loans and adds 1,515 qualified Hero and Poonawalla leads
- * nobody is calling today. Enforcement still defaults to OFF, because a 66%
+ * Enforcing does NOT cut dialling. It takes it from 1,719 to 2,868: it keeps
+ * 79% of Business Loans and adds 1,518 qualified Hero and Poonawalla leads
+ * nobody is calling today. Enforcement still defaults to OFF, because a 67%
  * rise in paid outbound calls is not something to switch on without somebody
  * deciding to -- shadow records a verdict per press and changes nothing.
  *
- * (An earlier version of this measured 10.7% coverage and predicted a 71% cut.
- * That read the small local extracts in the smecircle project -- exp_se_report
- * at 131,925 rows -- instead of the real base in the other project. The base
- * had been reachable from here the whole time.)
+ * Two earlier readings of this were wrong, both because of where they looked:
+ * the first measured 10.7% coverage and predicted a 71% CUT, having read the
+ * small local extracts (exp_se_report, 131,925 rows) instead of the real base
+ * in the other Supabase project. The second read fed.se_base beside the master;
+ * se_base turns out to be a strict subset -- 19,953 of 19,953 sampled mobiles
+ * are in the master, and 0 press-1s were in se_base but not the master -- and
+ * it cannot answer condition 5 at all, because tradeline_details lives only on
+ * the master.
  *
- * ── It costs about three seconds ──────────────────────────────────────────
+ * ── It costs about two and a half seconds ─────────────────────────────────
  *
- * The base is in another Supabase project, and each verdict opens its own FDW
- * connection: ~2.9s, nearly all of it connection setup rather than the lookup,
- * which hits a primary key. That is affordable only because this path is
- * fire-and-forget -- the route never awaits the dispatch, so the customer's
- * WhatsApp has already gone. It is still the obvious next thing to fix: a
- * local materialised copy of (mobile, cibil, abb, bto, turnover, running_bl)
- * would make it sub-millisecond and remove a cross-project dependency from a
- * webhook.
+ * ~2.6s per verdict, essentially all of it FDW connection setup rather than the
+ * lookup, which hits a primary key. Dropping the second table took it from
+ * ~2.9s to ~2.6s and no further: the cost is per CONNECTION, not per table, so
+ * reading fewer tables barely helps. That is affordable only because this path
+ * is fire-and-forget -- the route never awaits the dispatch, so the customer's
+ * WhatsApp has already gone.
+ *
+ * The real fix is a local materialised copy of the six columns, refreshed on
+ * the same daily cadence the master is rebuilt on. That makes it
+ * sub-millisecond and takes a cross-project dependency out of a webhook. Not
+ * done yet.
  *
  * ── Same rule as everything else on this path ─────────────────────────────
  *
