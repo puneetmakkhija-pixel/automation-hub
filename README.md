@@ -184,6 +184,48 @@ older than anything the MIS holds — the two feeds are cut from different date
 ranges, so the fix is asking Hero to widen the MIS window or to put sanction and
 disbursal fields in the main feed.
 
+#### Automating it needs one rule in the mail watcher, not a new pipeline
+
+Hero sends **two** daily emails and only one is wired up:
+
+| Email | From | Carries | Status |
+| --- | --- | --- | --- |
+| `Daily Pulse - Buddy Loan` | `digital.marketing@herofincorp.com` | applications, identity (`cuid`) | **ingested** — `source_file` reads `Daily_Pulse_Buddy Loan_<date>.xlsx` |
+| `Buddy Loan Disbursement Report` | `sandeep.pant@herofincorp.com` | sanction and disbursal amounts | **not ingested** |
+
+The PL MIS is not loaded through `crm.mis_adapter` — that registry drives the BL
+lenders (ABFL, Bajaj, Protium…) and has no Hero row. Hero and Poonawalla come in
+through `crm.upsert_pl_mis(p_secret, p_lender, p_mis_date, p_source_file,
+p_rows)`, which a mail watcher outside this repo calls with parsed rows.
+
+**The disbursal report can go through that same RPC unchanged.** Its upsert is
+`on conflict (lender, lan_id) do update set customer_name =
+coalesce(excluded.customer_name, t.customer_name)` and so on for every column —
+it fills nulls and never clobbers. So feeding it Hero rows carrying only
+`applicationNumber` plus the amounts populates exactly the sanction and
+disbursal fields that are empty today, and leaves the name, phone and stage the
+Daily Pulse set. No second lender, no second table, no ordering requirement
+between the two emails.
+
+The watcher rule it needs:
+
+```
+from:     sandeep.pant@herofincorp.com
+subject:  Buddy Loan Disbursement Report
+sheet:    "Disbursement Data"        # NOT Summary_Disbursement_Data — that tab is 4 rows of totals
+lender:   herofincorp
+columns:  App ID                -> applicationNumber
+          Sanction Loan Amount  -> sanctionAmount
+          Decision Date         -> sanctionDate
+          landisbursementamount -> disbursedAmount
+          landisbursementdate   -> disbursedDate
+          Final Status          -> rawStatus
+```
+
+`crm.mis_hero_disbursal` still earns its place after that: `decile`,
+`campaign_id`, `appsflyer_id`, `cpv_action` and the city/pincode have no column
+in `pl_lender_mis`, and campaign-level attribution needs them.
+
 ### Which lender a press belongs to is read off the link
 
 `public.pl_press_lender()` and `lenderOfLink()` in
