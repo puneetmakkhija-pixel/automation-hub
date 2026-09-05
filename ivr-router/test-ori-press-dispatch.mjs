@@ -106,16 +106,50 @@ await check("the variant match ignores case and padding", async () => {
   assert.equal(r.dialled, true, r.reason);
 });
 
-await check("ORI_PRESS_VARIANTS can widen it", async () => {
+await check("ORI_PRESS_VARIANTS cannot widen past the allowlist", async () => {
+  // The env var used to be the only gate, so this exact string put Hero's
+  // 126 daily press-1s on a paid outbound bot from a dashboard edit.
   process.env.ORI_PRESS_VARIANTS = "businessloans,herofincorp";
   const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "herofincorp" });
+  assert.equal(r.dialled, false);
+  assert.equal(r.reason, "variant_not_dialled");
+  assert.deepEqual(calls, []);
+});
+
+await check("...and business loans still dials with that same setting", async () => {
+  // The narrowing half has to keep working, or the guard above is just an
+  // outage: a bad env var must cost Hero its calls, not cost us ours.
+  process.env.ORI_PRESS_VARIANTS = "businessloans,herofincorp";
+  const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
   assert.equal(r.dialled, true, r.reason);
 });
 
-await check('"*" dials every variant', async () => {
+await check('"*" means every ALLOWED variant, not every press', async () => {
   process.env.ORI_PRESS_VARIANTS = "*";
   const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "anything" });
+  assert.equal(r.dialled, false);
+  assert.equal(r.reason, "variant_not_dialled");
+  assert.deepEqual(calls, []);
+});
+
+await check('"*" still dials business loans', async () => {
+  process.env.ORI_PRESS_VARIANTS = "*";
+  const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
   assert.equal(r.dialled, true, r.reason);
+});
+
+await check("a press carrying no variant is never dialled", async () => {
+  // 3,614 of the 5,460 press-1s on 04-05 Sep came from s1.whistleloop.com with
+  // no variant field at all. They must not fall through any setting.
+  for (const setting of ["businessloans", "*", "businessloans,herofincorp"]) {
+    process.env.ORI_PRESS_VARIANTS = setting;
+    for (const variant of [undefined, null, "", "   "]) {
+      const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant });
+      assert.equal(r.dialled, false, `setting=${setting} variant=${JSON.stringify(variant)}`);
+      assert.equal(r.reason, "variant_not_dialled");
+    }
+  }
+  assert.deepEqual(calls, []);
 });
 
 console.log("\nonly a press of 1\n");

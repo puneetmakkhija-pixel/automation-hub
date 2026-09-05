@@ -28,6 +28,7 @@ import http from "node:http";
 // ── A fake PostgREST ───────────────────────────────────────────────────────
 
 let inserts = [];
+let rpcCalls = [];
 let respond = { status: 201, body: "[]" };
 
 const server = http.createServer((req, res) => {
@@ -40,7 +41,10 @@ const server = http.createServer((req, res) => {
     } catch {
       parsed = raw;
     }
-    inserts.push({
+    // Only the voice_dispatch write is this suite's business. The dispatch also
+    // asks crm.ivr_lead_qualifies() over the same client now, and counting that
+    // as an insert made every "exactly one row" assertion read 2.
+    (req.url.includes("/rpc/") ? rpcCalls : inserts).push({
       method: req.method,
       path: req.url,
       schema: req.headers["content-profile"] ?? req.headers["accept-profile"] ?? null,
@@ -75,6 +79,7 @@ OriserveVoiceClient.prototype.triggerCampaign = async function () {
 let failed = 0;
 const check = async (name, fn) => {
   inserts = [];
+  rpcCalls = [];
   respond = { status: 201, body: "[]" };
   reply = { success: true, campaign_id: "ori-1" };
   _resetDialled();
@@ -147,6 +152,7 @@ await check("a refusal by Oriserve is recorded as refused, not as a call", async
 await check("a duplicate press is recorded, and does not dial twice", async () => {
   await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
   inserts = [];
+  rpcCalls = [];
   const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
   assert.equal(r.reason, "duplicate");
   assert.equal(row().reason, "duplicate");
