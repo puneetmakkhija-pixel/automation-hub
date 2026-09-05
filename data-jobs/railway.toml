@@ -1,6 +1,9 @@
 # Railway reads the config file relative to a service's Root Directory, so this
-# governs every service rooted at data-jobs: `jobs`, `morning-check` and
-# `afternoon-check`.
+# governs every service rooted at data-jobs: `jobs` and `pincode-sync` in the
+# Automation Hub project, and `hero-disbursal` in the Business loans CRM project
+# (it sits there to reach that project's Gmail app password by reference -- see
+# the README). Root Directory is per service, not per project, so this file
+# reaches all of them.
 #
 # Without it those services fall through to the repo-root railway.toml, which
 # sets builder = "dockerfile" with dockerfile = "Dockerfile". Resolved against
