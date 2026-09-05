@@ -2,12 +2,15 @@ import { createClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
+import { Readable } from "node:stream";
 import path from "node:path";
+import { fetchLatestReport, HERO_DISBURSAL } from "./fetch-mis-mail.js";
 
 // Ingests Hero Fincorp's daily disbursal report into crm.mis_hero_disbursal.
 //
 //   node data-jobs/ingest-hero-disbursal.js Buddy_Loan.xlsx
 //   node data-jobs/ingest-hero-disbursal.js --dry-run report.csv
+//   node data-jobs/ingest-hero-disbursal.js --from-email      (what the cron runs)
 //
 // WHY THIS FILE EXISTS AT ALL
 //
@@ -29,6 +32,14 @@ import path from "node:path";
 // how one of them silently loses, and the loser would be whichever ran second
 // on a day the other reordered its columns. This lands in its own table and
 // public.pl_press1_mis_outcome joins the two on lan_id.
+//
+// Reading that pipeline since settles it beyond a preference. crm.upsert_pl_mis
+// REPLACES the `raw` column on conflict, and `raw` is where Hero's application
+// feed keeps the customer: crm.v_pl_lead decodes the mobile from raw->>'cuid'.
+// This report has no cuid column, so routing it through that RPC would blank the
+// mobile on every LAN the two feeds share — silently, and on a growing share of
+// the book. Separate tables are not the cautious option here; they are the only
+// correct one.
 
 const COLUMNS = {
   // file header            -> column, parser
@@ -110,44 +121,105 @@ export function toRecord(headers, values, sourceFile) {
   return rec.lan_id ? rec : null;
 }
 
-async function readSheet(file) {
-  const wb = new ExcelJS.Workbook();
-  if (file.toLowerCase().endsWith(".csv")) await wb.csv.readFile(file);
-  else await wb.xlsx.readFile(file);
-
+/** Pulls the rows out of an already-loaded workbook. `label` only names it in errors. */
+function readWorkbook(wb, label) {
   // The disbursal sheet by name where present, else the first sheet: the file
   // also carries a Summary tab, and reading that one would ingest four rows of
   // totals as if they were applications.
   const ws = wb.getWorksheet("Disbursement Data") ?? wb.worksheets[0];
-  if (!ws) throw new Error(`${file}: no worksheet`);
+  if (!ws) throw new Error(`${label}: no worksheet`);
 
   const rows = [];
   ws.eachRow((row) => rows.push(row.values.slice(1).map((c) => (c && c.text !== undefined ? c.text : c))));
-  if (!rows.length) throw new Error(`${file}: empty sheet`);
+  if (!rows.length) throw new Error(`${label}: empty sheet`);
 
   const headers = rows[0].map((h) => String(h ?? "").trim());
   const missing = ["App ID", "landisbursementamount", "landisbursementdate"].filter((h) => !headers.includes(h));
   if (missing.length) {
-    throw new Error(`${file}: missing expected column(s): ${missing.join(", ")}. Headers seen: ${headers.join(", ")}`);
+    throw new Error(`${label}: missing expected column(s): ${missing.join(", ")}. Headers seen: ${headers.join(", ")}`);
   }
   return { headers, dataRows: rows.slice(1) };
 }
 
-function parseArgs(argv) {
-  const args = { file: null, dryRun: false };
+async function readSheet(file) {
+  const wb = new ExcelJS.Workbook();
+  if (file.toLowerCase().endsWith(".csv")) await wb.csv.readFile(file);
+  else await wb.xlsx.readFile(file);
+  return readWorkbook(wb, file);
+}
+
+/**
+ * Same, from the bytes of a mail attachment.
+ *
+ * The attachment is never written to disk. Nothing downstream needs a path, and
+ * a lender report left in a container's filesystem is customer data sitting
+ * somewhere nobody is looking after it.
+ *
+ * Exported for the unit test: this is the path the cron takes every day, while
+ * the file path above is only ever used by hand.
+ */
+export async function readSheetFromBuffer(buffer, label) {
+  const wb = new ExcelJS.Workbook();
+  if (label.toLowerCase().endsWith(".csv")) await wb.csv.read(Readable.from(buffer));
+  else await wb.xlsx.load(buffer);
+  return readWorkbook(wb, label);
+}
+
+/** Exported for the unit test. */
+export function parseArgs(argv) {
+  const args = { file: null, dryRun: false, fromEmail: false };
   for (const a of argv) {
     if (a === "--dry-run") args.dryRun = true;
+    else if (a === "--from-email") args.fromEmail = true;
     else if (!a.startsWith("--")) args.file = a;
   }
   return args;
 }
 
+/**
+ * The report and where it came from, either off the disk or out of the mailbox.
+ *
+ * A named file always wins over --from-email so that re-running a specific day's
+ * report by hand does not silently ingest whatever happens to be newest.
+ */
+async function loadReport(args) {
+  if (args.file) {
+    const { headers, dataRows } = await readSheet(args.file);
+    return { headers, dataRows, source: path.basename(args.file), origin: "file" };
+  }
+
+  const user = process.env.MIS_IMAP_USER || process.env.GMAIL_IMAP_USER;
+  const pass = process.env.MIS_IMAP_APP_PASSWORD || process.env.GMAIL_IMAP_APP_PASSWORD;
+  if (!user || !pass) {
+    throw new Error(
+      "--from-email needs MIS_IMAP_USER/MIS_IMAP_APP_PASSWORD (or GMAIL_IMAP_USER/GMAIL_IMAP_APP_PASSWORD)"
+    );
+  }
+
+  const mail = await fetchLatestReport({ user, pass, rule: HERO_DISBURSAL });
+  if (!mail) {
+    // Not an error. Hero does not send on Sundays, and a missing report is a
+    // fact about the day rather than a failure of this job — exiting non-zero
+    // would page someone every weekend.
+    return null;
+  }
+  console.log(`[hero-disbursal] ${JSON.stringify({ mail: mail.filename, subject: mail.subject, sent: mail.date })}`);
+  const { headers, dataRows } = await readSheetFromBuffer(mail.content, mail.filename);
+  return { headers, dataRows, source: mail.filename, origin: "email" };
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (!args.file) throw new Error("usage: node ingest-hero-disbursal.js [--dry-run] <file.xlsx|file.csv>");
+  if (!args.file && !args.fromEmail) {
+    throw new Error("usage: node ingest-hero-disbursal.js [--dry-run] (--from-email | <file.xlsx|file.csv>)");
+  }
 
-  const { headers, dataRows } = await readSheet(args.file);
-  const source = path.basename(args.file);
+  const report = await loadReport(args);
+  if (!report) {
+    console.log(`[hero-disbursal] ${JSON.stringify({ found: false, note: "no matching email in the last 4 days" })}`);
+    return;
+  }
+  const { headers, dataRows, source } = report;
   const records = dataRows.map((r) => toRecord(headers, r, source)).filter(Boolean);
 
   // A lender re-sending the same application twice in one file is not a reason
@@ -163,6 +235,7 @@ async function main() {
   const disbursed = rows.filter((r) => r.disbursal_date).length;
   const summary = {
     file: source,
+    origin: report.origin,
     sheet_rows: dataRows.length,
     records: rows.length,
     duplicate_lan_ids: dupes,

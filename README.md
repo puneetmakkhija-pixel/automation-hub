@@ -20,14 +20,18 @@ today; times are UTC, because that is what Railway's cron field takes.
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
 | `data-jobs` | Press-1 lead enrichment | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
 | `data-jobs` | Lender serviceable-pincode sync | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
+| `data-jobs` | Hero disbursal report ingest | `hero-disbursal` | `data-jobs` | Railpack, `npm run ingest:hero-disbursal:cron`, cron `0 22 * * *` |
 | — | Cache | `redis` | — | `redis:7` image |
 | — | Database | `postgresql` | — | `postgres:16` image |
 
-Both crons have restart policy NEVER: a scheduled run that fails should wait for
-its next slot, not spin. 22:30 UTC is 04:00 IST, an hour behind the pincode sync
+All three crons have restart policy NEVER: a scheduled run that fails should wait
+for its next slot, not spin. 22:30 UTC is 04:00 IST, an hour behind the pincode sync
 so the two never contend, and after both the day's dialling and se_base's
-overnight rescoring. The job asks for `--days 2` rather than today alone, since
-presses land through the evening and yesterday is still moving when today starts.
+overnight rescoring. The Hero disbursal ingest runs at 22:00 UTC, half an hour
+ahead of it, so the day's outcomes are in before enrichment reads them; its
+four-day mailbox window means the exact hour is not load-bearing. The enrichment
+job asks for `--days 2` rather than today alone, since presses land through the
+evening and yesterday is still moving when today starts.
 
 `npm start` still runs `data-jobs/run.js`, which reports which Supabase project
 the service's credentials actually reach and exits. It is no longer any service's
@@ -171,6 +175,7 @@ them silently loses.
 ```
 npm --prefix data-jobs run ingest:hero-disbursal -- --dry-run report.xlsx
 npm --prefix data-jobs run ingest:hero-disbursal -- report.xlsx
+npm --prefix data-jobs run ingest:hero-disbursal:cron          # fetches the mail itself
 ```
 
 Dates in that file are **DD-MM-YYYY**, which `Date.parse` reads as MM-DD-YYYY:
@@ -184,47 +189,58 @@ older than anything the MIS holds — the two feeds are cut from different date
 ranges, so the fix is asking Hero to widen the MIS window or to put sanction and
 disbursal fields in the main feed.
 
-#### Automating it needs one rule in the mail watcher, not a new pipeline
+#### It fetches its own mail, on its own cron
 
-Hero sends **two** daily emails and only one is wired up:
+Hero sends **two** daily emails from two different people:
 
-| Email | From | Carries | Status |
+| Email | From | Carries | Ingested by |
 | --- | --- | --- | --- |
-| `Daily Pulse - Buddy Loan` | `digital.marketing@herofincorp.com` | applications, identity (`cuid`) | **ingested** — `source_file` reads `Daily_Pulse_Buddy Loan_<date>.xlsx` |
-| `Buddy Loan Disbursement Report` | `sandeep.pant@herofincorp.com` | sanction and disbursal amounts | **not ingested** |
+| `Daily Pulse - Buddy Loan` | `digital.marketing@herofincorp.com` | applications, identity (`cuid`) | the CRM's mail watcher, into `crm.pl_lender_mis` |
+| `Buddy Loan Disbursement Report` | `sandeep.pant@herofincorp.com` | sanction and disbursal amounts | `ingest:hero-disbursal:cron` here, into `crm.mis_hero_disbursal` |
 
-The PL MIS is not loaded through `crm.mis_adapter` — that registry drives the BL
-lenders (ABFL, Bajaj, Protium…) and has no Hero row. Hero and Poonawalla come in
-through `crm.upsert_pl_mis(p_secret, p_lender, p_mis_date, p_source_file,
-p_rows)`, which a mail watcher outside this repo calls with parsed rows.
+`npm run ingest:hero-disbursal:cron` runs `--from-email`: it opens the MIS
+mailbox over IMAP, takes the newest message from that sender whose subject
+matches, parses the attachment **in memory**, and upserts on `lan_id`. A day with
+no report logs `found: false` and exits 0 — Hero does not send on Sundays, and a
+weekend should not page anyone.
 
-**The disbursal report can go through that same RPC unchanged.** Its upsert is
-`on conflict (lender, lan_id) do update set customer_name =
-coalesce(excluded.customer_name, t.customer_name)` and so on for every column —
-it fills nulls and never clobbers. So feeding it Hero rows carrying only
-`applicationNumber` plus the amounts populates exactly the sanction and
-disbursal fields that are empty today, and leaves the name, phone and stage the
-Daily Pulse set. No second lender, no second table, no ordering requirement
-between the two emails.
+The IMAP connection is opened **read-only**. The CRM's watcher reads the same
+mailbox and marks what it has ingested `\Seen`; a second reader able to set flags
+could mark a report seen before that watcher had processed it, and the report
+would look handled while nothing had been written.
 
-The watcher rule it needs:
+#### Why not just add a sender to the CRM's mail watcher
 
-```
-from:     sandeep.pant@herofincorp.com
-subject:  Buddy Loan Disbursement Report
-sheet:    "Disbursement Data"        # NOT Summary_Disbursement_Data — that tab is 4 rows of totals
-lender:   herofincorp
-columns:  App ID                -> applicationNumber
-          Sanction Loan Amount  -> sanctionAmount
-          Decision Date         -> sanctionDate
-          landisbursementamount -> disbursedAmount
-          landisbursementdate   -> disbursedDate
-          Final Status          -> rawStatus
+That was the plan, and it is wrong. `crm.upsert_pl_mis` coalesces every scalar
+column — it fills nulls and never clobbers — but it **replaces `raw` wholesale**:
+
+```sql
+raw = coalesce(excluded.raw, t.raw),   -- replaced, not merged
 ```
 
-`crm.mis_hero_disbursal` still earns its place after that: `decile`,
-`campaign_id`, `appsflyer_id`, `cpv_action` and the city/pincode have no column
-in `pl_lender_mis`, and campaign-level attribution needs them.
+`raw` is where Hero's application feed keeps the customer. `crm.v_pl_lead`
+resolves the mobile from `raw->>'cuid'`, and the disbursal report has no `cuid`
+column. Routing it through that RPC would blank the mobile on every LAN the two
+feeds share — silently, and on a growing share of the book as the overlap grows.
+
+The adapter shape is also lossy: `NormalizedLead` has no field for `decile`,
+`appsflyerid`, `Campaign Id`, the `Utm_*`, `CPV Action`, `Sanction Rate` or the
+city, so campaign-level attribution would survive only inside the `raw` this
+report must not write.
+
+So the report keeps its own parser and its own table, and
+`pl_press1_mis_outcome` joins the two halves on `lan_id`.
+
+#### What it needs to run
+
+| Variable | Why |
+| --- | --- |
+| `MIS_IMAP_USER` / `MIS_IMAP_APP_PASSWORD` | the MIS mailbox, Gmail app password |
+| `GMAIL_IMAP_USER` / `GMAIL_IMAP_APP_PASSWORD` | fallback names for the same pair |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | already set on every `data-jobs` service |
+
+Without the IMAP pair the job exits non-zero naming both variables, rather than
+reporting an empty mailbox.
 
 ### Which lender a press belongs to is read off the link
 
