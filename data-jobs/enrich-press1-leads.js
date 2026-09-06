@@ -123,6 +123,50 @@ async function countDay(db, day) {
   return count ?? 0;
 }
 
+/**
+ * The one line someone skims. `presses: 0` on its own is ambiguous — it reads
+ * the same whether nobody dialled a personal-loan campaign, the IVR stopped
+ * recording presses, or pl_press_lender() quietly stopped recognising a lender.
+ * So the roll-up carries the count BEFORE the scope filter and what the filter
+ * took, which tells those three apart at a glance.
+ *
+ * Exported for the unit test.
+ */
+export function rollUp(results) {
+  let presses = 0;
+  let matched = 0;
+  let press1InRange = 0;
+  const dropped = {};
+
+  for (const r of results) {
+    presses += Number(r?.presses ?? 0);
+    matched += Number(r?.matched ?? 0);
+    press1InRange += Number(r?.press1_in_range ?? 0);
+    for (const [lender, n] of Object.entries(r?.dropped_by_lender ?? {})) {
+      dropped[lender] = (dropped[lender] ?? 0) + Number(n ?? 0);
+    }
+  }
+
+  const out = {
+    days: results.length,
+    presses,
+    matched,
+    match_rate: presses ? Number(((matched / presses) * 100).toFixed(1)) : 0,
+    press1_in_range: press1InRange,
+    dropped_by_lender: dropped,
+  };
+
+  // Said out loud only when it needs saying: a run that enriched nothing is the
+  // one that gets glanced at and assumed fine.
+  if (presses === 0) {
+    out.note =
+      press1InRange === 0
+        ? "no press-1 rows at all in range - nobody dialled, or presses stopped being recorded"
+        : "press-1 traffic existed but none of it was personal-loan; see dropped_by_lender";
+  }
+  return out;
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const days = daysInRange(args);
@@ -130,8 +174,7 @@ async function main() {
 
   const db = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-  let presses = 0;
-  let matched = 0;
+  const results = [];
 
   for (const day of days) {
     if (args.dryRun) {
@@ -141,16 +184,12 @@ async function main() {
     }
 
     const result = await enrichDay(db, day, args.batch);
-    presses += Number(result?.presses ?? 0);
-    matched += Number(result?.matched ?? 0);
+    results.push(result);
     console.log(`[enrich-press1] ${JSON.stringify(result)}`);
   }
 
   if (!args.dryRun && days.length > 1) {
-    const rate = presses ? ((matched / presses) * 100).toFixed(1) : "0.0";
-    console.log(
-      `[enrich-press1] ${JSON.stringify({ days: days.length, presses, matched, match_rate: Number(rate) })}`
-    );
+    console.log(`[enrich-press1] ${JSON.stringify(rollUp(results))}`);
   }
 }
 
