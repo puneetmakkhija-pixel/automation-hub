@@ -284,6 +284,52 @@ Verified end to end on 05 Sep 2026, 16:50 UTC:
 Hero sends it about **04:25 UTC (09:55 IST)**, so the 22:00 UTC run collects that
 morning's report with hours to spare.
 
+### An empty enrichment run says which kind of empty it is
+
+`presses: 0` used to be ambiguous. On the night of 05 Sep 2026 the cron logged:
+
+```
+[enrich-press1] {"to":"2026-09-05","note":"no personal-loan press-1 rows in range","presses":0}
+```
+
+That was true — the day held 768 press-1 rows and every one was a Business
+Loans campaign, which this job drops on purpose. But establishing it took a hand
+query against `whatsapp_messages`, and the same line appears when:
+
+1. nobody dialled a personal-loan campaign — fine
+2. the IVR stopped recording presses — an outage
+3. `pl_press_lender()` stopped recognising a lender — a silent regression
+
+Case 3 has happened here: 3,740 Whistleloop presses read as `unknown` until
+`offerid=1351` was mapped, and 04 Sep reported ~952 Poonawalla presses against
+an actual ~4,568. A new offer id or a changed shortener empties this table while
+the cron keeps exiting 0.
+
+So `pl_press1_enrich()` (migration 009) now reports both sides of the filter:
+
+| Field | Means |
+| --- | --- |
+| `press1_in_range` | every `digit='1'` row in the window, before any filtering |
+| `presses` | what survived, i.e. what was enriched |
+| `dropped_by_lender` | `{"businessloans": 768}` — which product took them |
+| `dropped_bad_mobile` | rows whose number would not normalise to 10 digits |
+
+They are reported on a good day too, not only an empty one: a day where
+`dropped_by_lender` suddenly names a lender that used to be enriched IS the
+regression, and it is invisible if the counts appear only when the result is
+empty. `rollUp()` in `enrich-press1-leads.js` sums them for the summary line and
+adds a `note` when nothing was enriched.
+
+Real values, so the arithmetic can be checked:
+
+```
+04 Sep  presses 3742  press1_in_range 4694  dropped_by_lender {"businessloans":952}   3742+952=4694
+05 Sep  presses    0  press1_in_range  768  dropped_by_lender {"businessloans":768}      0+768=768
+```
+
+Reporting only — the same rows go in and the same rows come out. Re-running
+04 Sep after the change reproduced 3,742 presses and 1,724 matched exactly.
+
 ### Which lender a press belongs to is read off the link
 
 `public.pl_press_lender()` and `lenderOfLink()` in
