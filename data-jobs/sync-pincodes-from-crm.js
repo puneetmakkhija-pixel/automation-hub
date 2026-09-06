@@ -132,8 +132,13 @@ async function readFromAppliedImport(crm, lender) {
     .order("applied_at", { ascending: false })
     .limit(1);
 
-  // Table absent (pipeline not deployed upstream) is a fallback, not a failure.
-  if (error || !imports?.length) return null;
+  // Table absent (pipeline not deployed upstream) is a fallback, not a failure
+  // -- but it is not the same fallback as the table being there and unreadable,
+  // and this used to report both as nothing at all. A permissions change on
+  // lender_pincode_import would silently downgrade every sync to the bare array,
+  // dropping status/Prime/state for good, and the log would look untouched.
+  if (error) return { rows: null, why: `lender_pincode_import unreadable: ${error.message}` };
+  if (!imports?.length) return { rows: null, why: "no applied import upstream" };
 
   const importId = imports[0].id;
   const rows = [];
@@ -151,7 +156,9 @@ async function readFromAppliedImport(crm, lender) {
     if (data.length < CHUNK_SIZE) break;
   }
 
-  return rows.length ? { rows, source: `applied import ${importId}` } : null;
+  return rows.length
+    ? { rows, source: `applied import ${importId}` }
+    : { rows: null, why: `applied import ${importId} carries no rows` };
 }
 
 async function readFromServiceabilityArray(crm, lender) {
@@ -163,7 +170,12 @@ async function readFromServiceabilityArray(crm, lender) {
     .maybeSingle();
 
   if (error) throw new Error(`Reading pincode_serviceability: ${error.message}`);
-  if (!data?.pincodes?.length) return null;
+  // No row at all and a row holding an empty array are different facts: the
+  // first means this lender is not known upstream under this key -- a renamed
+  // lender reads exactly like this -- and the second means it is known and
+  // currently serves nowhere.
+  if (!data) return { rows: null, why: `no pincode_serviceability row for "${lender}" -- renamed upstream?` };
+  if (!data.pincodes?.length) return { rows: null, why: "pincode_serviceability row exists but holds no pincodes" };
 
   // status / is_prime / state are simply not held in this shape. They are left
   // null rather than guessed, so a Prime pincode is never invented here.
@@ -178,19 +190,36 @@ async function readFromServiceabilityArray(crm, lender) {
   };
 }
 
-async function syncLender(crm, target, crmLender, lenderType, args) {
-  const read = (await readFromAppliedImport(crm, crmLender))
-    ?? (await readFromServiceabilityArray(crm, crmLender));
-
-  if (!read) {
-    return { lender: crmLender, lenderType, skipped: true, note: "no pincodes upstream" };
-  }
-
+/**
+ * Upstream rows -> rows for serviceable_pincodes, counting what is discarded.
+ *
+ * The discards used to be silent: a `continue` with nothing tallying it. That is
+ * the same shape of bug the press-1 enrichment had, and it fails the same way.
+ * A source that starts sending "110001.0", or five-digit codes, or nulls, loses
+ * every row here and the only visible symptom is a smaller number. Total
+ * corruption is caught by shrinkGuard, but PARTIAL corruption is not: lose 20%
+ * of a lender's pincodes and the guard (25%) waves it through, --prune deletes
+ * the survivors' absent neighbours, and the IVR quietly stops offering that
+ * lender across whole districts. Nothing in the log would have said why.
+ *
+ * Exported for the unit test.
+ */
+export function normalizePincodeRows(rows, lenderType, now = new Date().toISOString()) {
   const seen = new Set();
   const records = [];
-  for (const r of read.rows) {
-    const pincode = String(r.pincode).trim().padStart(6, "0");
-    if (!/^[1-9][0-9]{5}$/.test(pincode) || seen.has(pincode)) continue;
+  let dropped_malformed = 0;
+  let dropped_duplicate = 0;
+
+  for (const r of rows ?? []) {
+    const pincode = String(r?.pincode ?? "").trim().padStart(6, "0");
+    if (!/^[1-9][0-9]{5}$/.test(pincode)) {
+      dropped_malformed += 1;
+      continue;
+    }
+    if (seen.has(pincode)) {
+      dropped_duplicate += 1;
+      continue;
+    }
     seen.add(pincode);
     records.push({
       pincode,
@@ -198,9 +227,32 @@ async function syncLender(crm, target, crmLender, lenderType, args) {
       status: r.status ?? null,
       is_prime: r.is_prime === true,
       state: r.state ?? null,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     });
   }
+
+  return { records, seen, dropped_malformed, dropped_duplicate };
+}
+
+async function syncLender(crm, target, crmLender, lenderType, args) {
+  const preferred = await readFromAppliedImport(crm, crmLender);
+  const read = preferred?.rows ? preferred : await readFromServiceabilityArray(crm, crmLender);
+
+  if (!read?.rows) {
+    // Was "no pincodes upstream" for every one of these. A lender renamed in the
+    // CRM produced that line and nothing else, and the sync then skipped -- so
+    // the live list silently froze while the log stayed reassuring.
+    return {
+      lender: crmLender,
+      lenderType,
+      skipped: true,
+      note: "no pincodes upstream",
+      preferred_source: preferred?.why ?? null,
+      fallback_source: read?.why ?? null,
+    };
+  }
+
+  const { records, seen, dropped_malformed, dropped_duplicate } = normalizePincodeRows(read.rows, lenderType);
 
   let live = 0;
   if (!args.dryRun) {
@@ -212,13 +264,25 @@ async function syncLender(crm, target, crmLender, lenderType, args) {
     live = count ?? 0;
   }
 
+  // Reported on every path, not just the empty one. A day where dropped_malformed
+  // suddenly climbs is the regression this exists to catch, and it would be
+  // invisible if the counts only showed up when something went wrong.
+  const seenUpstream = {
+    rows_upstream: read.rows.length,
+    dropped_malformed,
+    dropped_duplicate,
+    // Named only when the richer source was NOT the one used, so a normal run
+    // stays quiet and a degraded one says so.
+    fell_back_because: preferred?.rows ? undefined : (preferred?.why ?? undefined),
+  };
+
   const blocked = args.dryRun ? null : shrinkGuard(records.length, live, args.force);
   if (blocked) {
-    return { lender: crmLender, lenderType, blocked: blocked.error, source: read.source, incoming: records.length, live };
+    return { lender: crmLender, lenderType, blocked: blocked.error, source: read.source, incoming: records.length, live, ...seenUpstream };
   }
 
   if (args.dryRun) {
-    return { lender: crmLender, lenderType, dryRun: true, source: read.source, incoming: records.length };
+    return { lender: crmLender, lenderType, dryRun: true, source: read.source, incoming: records.length, ...seenUpstream };
   }
 
   for (let i = 0; i < records.length; i += CHUNK_SIZE) {
@@ -248,7 +312,20 @@ async function syncLender(crm, target, crmLender, lenderType, args) {
     pruned = stale.length;
   }
 
-  return { lender: crmLender, lenderType, source: read.source, synced: records.length, live, pruned };
+  // added is exact only when --prune ran: after a pruned sync the lender holds
+  // exactly records.length rows, of which (live - pruned) were already there.
+  const added = args.prune ? Math.max(0, records.length - (live - pruned)) : undefined;
+
+  return {
+    lender: crmLender,
+    lenderType,
+    source: read.source,
+    synced: records.length,
+    live,
+    pruned,
+    added,
+    ...seenUpstream,
+  };
 }
 
 async function main() {
