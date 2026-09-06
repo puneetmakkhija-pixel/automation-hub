@@ -10,7 +10,7 @@
  * nobody looks at until a lender asks for that day's sheet.
  */
 import assert from "node:assert/strict";
-import { daysInRange, addDays, istToday } from "./enrich-press1-leads.js";
+import { daysInRange, addDays, istToday , rollUp } from "./enrich-press1-leads.js";
 
 let failed = 0;
 const check = (name, fn) => {
@@ -67,6 +67,59 @@ check("today is IST's today, not UTC's", () => {
 check("addDays steps whole days without drifting on month ends", () => {
   assert.equal(addDays("2026-08-31", 1), "2026-09-01");
   assert.equal(addDays("2026-03-01", -1), "2026-02-28");
+});
+
+console.log("\nan empty run says why it is empty");
+
+/**
+ * The reason this exists. On 05 Sep 2026 the cron logged presses:0 and exited
+ * clean, and it took a hand query against whatsapp_messages to learn the day
+ * held 768 press-1 rows, all of them a Business Loans campaign. That log line
+ * reads identically when nobody dialled personal loans, when the IVR stops
+ * recording presses, and when pl_press_lender() quietly stops recognising a
+ * lender -- and the last one has happened here, when 3,740 Whistleloop presses
+ * counted as 'unknown' until offerid=1351 was mapped.
+ */
+check("a quiet personal-loan day is distinguishable from no traffic at all", () => {
+  const quiet = rollUp([{ presses: 0, matched: 0, press1_in_range: 768, dropped_by_lender: { businessloans: 768 } }]);
+  const dark  = rollUp([{ presses: 0, matched: 0, press1_in_range: 0,   dropped_by_lender: {} }]);
+  assert.equal(quiet.press1_in_range, 768);
+  assert.deepEqual(quiet.dropped_by_lender, { businessloans: 768 });
+  assert.match(quiet.note, /none of it was personal-loan/);
+  assert.equal(dark.press1_in_range, 0);
+  assert.match(dark.note, /no press-1 rows at all/);
+  assert.notEqual(quiet.note, dark.note);
+});
+
+check("a run that enriched something carries no note to skim past", () => {
+  const r = rollUp([{ presses: 3742, matched: 1724, press1_in_range: 4694, dropped_by_lender: { businessloans: 952 } }]);
+  assert.equal(r.note, undefined);
+  assert.equal(r.match_rate, 46.1);
+});
+
+/** 3,742 enriched + 952 dropped = 4,694 seen. If that stops adding up, a filter changed. */
+check("sums presses and drops across days, and the arithmetic closes", () => {
+  const r = rollUp([
+    { presses: 3742, matched: 1724, press1_in_range: 4694, dropped_by_lender: { businessloans: 952 } },
+    { presses: 0,    matched: 0,    press1_in_range: 768,  dropped_by_lender: { businessloans: 768 } },
+  ]);
+  assert.equal(r.days, 2);
+  assert.equal(r.presses, 3742);
+  assert.equal(r.press1_in_range, 5462);
+  assert.equal(r.dropped_by_lender.businessloans, 1720);
+  assert.equal(r.presses + r.dropped_by_lender.businessloans, r.press1_in_range);
+});
+
+check("an older function that does not send the new fields still rolls up", () => {
+  const r = rollUp([{ presses: 10, matched: 4 }]);
+  assert.equal(r.press1_in_range, 0);
+  assert.deepEqual(r.dropped_by_lender, {});
+  assert.equal(r.match_rate, 40);
+});
+
+check("no days, and a null result, do not throw", () => {
+  assert.equal(rollUp([]).days, 0);
+  assert.equal(rollUp([null]).presses, 0);
 });
 
 console.log(failed ? `\n${failed} failed\n` : "\nall passed\n");
