@@ -284,6 +284,54 @@ Verified end to end on 05 Sep 2026, 16:50 UTC:
 Hero sends it about **04:25 UTC (09:55 IST)**, so the 22:00 UTC run collects that
 morning's report with hours to spare.
 
+### The pincode sync says what it discarded, and why it skipped
+
+Same treatment as the enrichment job below, for the same reason: a filter that
+drops rows without counting them fails quietly.
+
+`sync-pincodes-from-crm.js` silently `continue`d past any pincode that failed
+`^[1-9][0-9]{5}$` or repeated one already seen. `shrinkGuard` catches TOTAL
+corruption — a source sending nothing refuses at 25% shrink — but partial
+corruption walks straight through it. Lose 20% of a lender's list to a format
+change upstream (`"110001.0"`, a five-digit code, a null), the guard waves it
+past, `--prune` then deletes the rows that no longer appear, and the IVR stops
+offering that lender across whole districts. Nothing in the log said why.
+
+Every result line now carries:
+
+| Field | Means |
+| --- | --- |
+| `rows_upstream` | what the CRM returned, before any filtering |
+| `dropped_malformed` | rows that are not a valid six-digit pincode |
+| `dropped_duplicate` | rows repeating a pincode already kept |
+| `synced` | what survived and was written |
+| `added` | new pincodes this run (exact only under `--prune`) |
+| `fell_back_because` | present only when the richer source could not be used |
+
+`rows_upstream = synced + dropped_malformed + dropped_duplicate` always. If that
+stops adding up, a filter changed.
+
+**`"no pincodes upstream"` used to hide a renamed lender.** `LENDER_MAP` keys on
+the CRM's spelling (`Poonawalla`, `Hero`); rename one upstream and every read
+matches nothing, the sync skips, and the live list silently freezes while the log
+stays reassuring. The skip now names which read failed and how — a missing
+`pincode_serviceability` row reads differently from one holding an empty array,
+and a `lender_pincode_import` that is *unreadable* (a permissions change) reads
+differently from one that is merely absent. That last case used to downgrade
+every sync to the bare array shape — dropping status, Prime and state — with no
+visible change at all.
+
+Measured against the live CRM on 06 Sep 2026, both lenders on the applied-import
+path, nothing discarded:
+
+```
+Hero        rows_upstream 15227   dropped_malformed 0   dropped_duplicate 0   keeps 15227
+Poonawalla  rows_upstream 16070   dropped_malformed 0   dropped_duplicate 0   keeps 16070
+```
+
+`data-jobs/test-sync-pincodes.mjs` covers this and `shrinkGuard`, which two
+comments claimed was tested while no test file existed.
+
 ### An empty enrichment run says which kind of empty it is
 
 `presses: 0` used to be ambiguous. On the night of 05 Sep 2026 the cron logged:
