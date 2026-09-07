@@ -261,6 +261,70 @@ await check("decideFromVerdict refuses only a definite no when enforcing", async
   assert.equal(q.decideFromVerdict(undefined).dial, true);
 });
 
+console.log("\na degraded verdict has to say it is degraded\n");
+
+await check("source and baseOk are carried through, not dropped", async () => {
+  // The defect this guards. crm.ivr_lead_qualifies has returned `source` since
+  // 05 Sep; qualifyLead never copied it, so every recorded verdict had no field
+  // saying where it came from. The router then spent two days answering from
+  // the local extracts because it could not reach the base, and nothing in the
+  // data said so — coverage just looked lower than expected.
+  q._setLookup(async () => ({
+    data: { qualifies: true, enriched: true, base_ok: true, source: "user_master", reasons: ["abb"] },
+  }));
+  const v = await q.qualifyLead("9876543210");
+  assert.equal(v.source, "user_master");
+  assert.equal(v.baseOk, true);
+});
+
+await check("a verdict built without the base reports baseOk false", async () => {
+  q._setLookup(async () => ({
+    data: {
+      qualifies: false, enriched: true, base_ok: false,
+      source: "local_extract_degraded", reasons: [],
+    },
+  }));
+  const v = await q.qualifyLead("9876543210");
+  assert.equal(v.baseOk, false);
+  assert.equal(v.source, "local_extract_degraded");
+  // enriched stays true: the extracts DID know this person. "we answered from
+  // thin data" and "we found nobody" are different, and conflating them is
+  // exactly how the outage hid.
+  assert.equal(v.enriched, true);
+});
+
+await check("the recorded dispatch carries the source", async () => {
+  // End to end: what reaches crm.voice_dispatch.raw is what anybody
+  // investigating a coverage drop will have to read.
+  q._setLookup(async () => ({
+    data: { qualifies: true, enriched: true, base_ok: false, source: "base_unreachable", reasons: ["bureau"] },
+  }));
+  const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
+  assert.equal(r.verdict.source, "base_unreachable");
+  assert.equal(r.verdict.baseOk, false);
+});
+
+await check("an unknown verdict still names why it is unknown", async () => {
+  for (const [setup, expected] of [
+    [() => q._setLookup(async () => ({ error: "no_client" })), "no_client"],
+    [() => q._setLookup(async () => { throw new Error("boom"); }), "lookup_failed"],
+  ]) {
+    setup();
+    const v = await q.qualifyLead("9876543210");
+    assert.equal(v.source, expected);
+    assert.equal(v.baseOk, false);
+  }
+  const v = await q.qualifyLead("nonsense");
+  assert.equal(v.source, "no_mobile10");
+});
+
+await check("a missing source reads as unknown, never as success", async () => {
+  q._setLookup(async () => ({ data: { qualifies: true, enriched: true } }));
+  const v = await q.qualifyLead("9876543210");
+  assert.equal(v.source, "unknown");
+  assert.equal(v.baseOk, false);
+});
+
 await check("qualifyLead never rejects, whatever the lookup does", async () => {
   for (const boom of [
     async () => {
