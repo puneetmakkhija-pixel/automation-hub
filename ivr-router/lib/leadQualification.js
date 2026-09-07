@@ -41,19 +41,38 @@ import SupabaseClient from "./supabaseClient.js";
  * it cannot answer condition 5 at all, because tradeline_details lives only on
  * the master.
  *
- * ── It costs about two and a half seconds ─────────────────────────────────
+ * ── It ran on the wrong data for two days ─────────────────────────────────
  *
- * ~2.6s per verdict, essentially all of it FDW connection setup rather than the
- * lookup, which hits a primary key. Dropping the second table took it from
- * ~2.9s to ~2.6s and no further: the cost is per CONNECTION, not per table, so
- * reading fewer tables barely helps. That is affordable only because this path
- * is fire-and-forget -- the route never awaits the dispatch, so the customer's
- * WhatsApp has already gone.
+ * The numbers above are a BACKTEST, run as `postgres`. In production the router
+ * reaches crm.ivr_lead_qualifies() through PostgREST as `service_role`, and the
+ * db_bases postgres_fdw server has a user mapping for `postgres` only. The
+ * function was SECURITY INVOKER, so every read of fed.sme_user_master raised,
+ * the exception handler caught it, and the verdict came from the local extracts
+ * instead -- silently, because "the master had no row" and "the master could not
+ * be read" both produced the same output.
  *
- * The real fix is a local materialised copy of the six columns, refreshed on
- * the same daily cadence the master is rebuilt on. That makes it
- * sub-millisecond and takes a cross-project dependency out of a webhook. Not
- * done yet.
+ * First live day (07 Sep, 706 presses) measured 29.9% enriched against the
+ * backtest's 99.9% -- and 26.2% is what the local extracts alone score. Fixed by
+ * making the function SECURITY DEFINER with a pinned search_path, so it runs as
+ * the owner, which holds the mapping. On a re-run of the same callers: enriched
+ * 3/15 -> 15/15, qualifying 2/15 -> 12/15.
+ *
+ * Hence `source` and `baseOk` on every verdict, and the once-per-process warning
+ * below. A degradation that leaves the verdicts looking like verdicts is the
+ * kind that lasts.
+ *
+ * ── It costs about seven hundred milliseconds ─────────────────────────────
+ *
+ * ~720ms per verdict on a warm connection; the ~2.6s figure quoted earlier was
+ * a COLD one, measured one call per session, and is what the first press after
+ * an idle period still pays. Nearly all of it is the cross-project round trip
+ * rather than the lookup, which hits a primary key. Affordable only because the
+ * route never awaits the dispatch.
+ *
+ * The real fix remains a local materialised copy of the columns this reads,
+ * refreshed on the master's daily cadence: sub-millisecond, and no cross-project
+ * dependency -- nor a second role that needs its own FDW mapping -- in a
+ * webhook. Not done yet.
  *
  * ── Same rule as everything else on this path ─────────────────────────────
  *
@@ -70,6 +89,7 @@ import SupabaseClient from "./supabaseClient.js";
 let client = null;
 let unavailable = false;
 let warnedUnavailable = false;
+let warnedDegraded = false;
 
 /** Built lazily: the constructor throws without credentials, which must not throw here. */
 function db() {
@@ -120,6 +140,7 @@ export function _resetQualification() {
   client = null;
   unavailable = false;
   warnedUnavailable = false;
+  warnedDegraded = false;
   lookup = rpcLookup;
 }
 
@@ -139,15 +160,26 @@ function mobile10Of(raw) {
  * Ask enrichment about one caller. Never throws, never rejects.
  *
  * @param {string} mobile the caller, in whatever shape the panel sent
- * @returns {Promise<{qualifies: boolean|null, enriched: boolean, reasons: string[],
- *                    facts: object, status: string}>}
+ * @returns {Promise<{qualifies: boolean|null, enriched: boolean, baseOk: boolean,
+ *                    source: string, reasons: string[], facts: object,
+ *                    status: string}>}
  *   `qualifies` is null when we could not find out. `status` is one of
  *   "qualified", "not_qualified", "no_mobile10", "no_client", "lookup_failed".
+ *
+ *   `source` and `baseOk` are carried through UNCHANGED from the function and
+ *   recorded with every decision. They are the difference between noticing a
+ *   silent degradation and not: on 07 Sep the router had been answering from
+ *   the local extracts for two days because it could not reach the base, and
+ *   the recorded verdicts had no field that said so. source='user_master'
+ *   means the 4.3M base answered; 'local_extract_degraded' or
+ *   'base_unreachable' mean the link is down and the verdict is thin.
  */
 export async function qualifyLead(mobile) {
   const unknown = (status) => ({
     qualifies: null,
     enriched: false,
+    baseOk: false,
+    source: status,
     reasons: [],
     facts: {},
     status,
@@ -163,9 +195,25 @@ export async function qualifyLead(mobile) {
     if (!data || typeof data !== "object") return unknown("lookup_failed");
 
     const qualifies = Boolean(data.qualifies);
+    const baseOk = Boolean(data.base_ok);
+
+    // Once per process. A run of presses answered without the base is a real
+    // outage of the rule's inputs, and it is otherwise completely silent --
+    // the verdicts still look like verdicts.
+    if (!baseOk && !warnedDegraded) {
+      warnedDegraded = true;
+      console.warn(
+        `[IVR_QUALIFY] The enrichment base is unreachable — verdicts are being ` +
+          `made from the local extracts, which cover a fraction of callers. ` +
+          `Check the db_bases FDW user mapping for the connecting role.`
+      );
+    }
+
     return {
       qualifies,
       enriched: Boolean(data.enriched),
+      baseOk,
+      source: typeof data.source === "string" ? data.source : "unknown",
       reasons: Array.isArray(data.reasons) ? data.reasons : [],
       facts: data.facts && typeof data.facts === "object" ? data.facts : {},
       status: qualifies ? "qualified" : "not_qualified",
