@@ -7,6 +7,7 @@ import { resolveSsoLink } from "../crmSsoLink.js";
 import { forwardPressToCrm } from "../crmPressForward.js";
 import { dispatchPressToVoiceBot } from "../oriVoiceDispatch.js";
 import { aliasFor } from "../mobileAlias.js";
+import { addAliasToLinks } from "../applyLinkAlias.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -450,15 +451,24 @@ async function handleKeypress(req, res) {
     );
   }
 
-  const placeholders = interpolate(raw, {
-    ...body,
-    customer_id: customerId ?? "",
-    sso_link: sso.url,
-    // {{alias}} is the mobile, shifted and base-36'd, for affiliate sub-IDs
-    // that must reconcile back to a customer without handing a third party a
-    // phone number. lib/mobileAlias.js carries the recon formula.
-    alias: aliasFor(phone.phone),
-  });
+  // {{alias}} is the mobile, shifted and base-36'd, for affiliate sub-IDs that
+  // must reconcile back to a customer without handing a third party a phone
+  // number. lib/mobileAlias.js carries the recon formula.
+  const alias = aliasFor(phone.phone);
+
+  // Then put it on the link whether or not the template asked for it. Leaving
+  // that to whoever edits IVR_LINK_* is why only the Poonawalla link carried
+  // one: on 10 Sep, 111 of 15,003 press-1 leads could be found in a lender's
+  // MIS, and every single match came off an alias on a link.
+  const placeholders = addAliasToLinks(
+    interpolate(raw, {
+      ...body,
+      customer_id: customerId ?? "",
+      sso_link: sso.url,
+      alias,
+    }),
+    alias
+  );
   const blank = placeholders.findIndex((v) => v === "");
   if (blank !== -1) {
     console.error(
