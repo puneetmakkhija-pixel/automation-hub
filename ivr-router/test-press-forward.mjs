@@ -327,6 +327,37 @@ async function webhookSuite() {
     assert.equal(crmHits[0].body.ivr_variant, "businessloans");
   });
 
+  await check("the apply link leaves carrying the alias", async () => {
+    // The wiring check. lib/applyLinkAlias.js is unit-tested on its own, and
+    // every one of those checks would still pass with the call reverted out of
+    // this route — which is exactly how the Oriserve callback token shipped
+    // untested. Assert on what actually goes to Ananta.
+    //
+    // The bare URL is the real production value: crmbusinessloans.com/apply
+    // went out 7,574 times with no query string at all, so nothing came back.
+    process.env.IVR_LINK_BUSINESSLOANS = "https://crmbusinessloans.com/apply";
+    process.env.IVR_ALIAS_KEY = "0";
+    try {
+      const r = await post("/whatsapp/businessloans", {
+        mobile: "9811100007", dtmf: "1", unique_id: "c-alias-1",
+      });
+      await settle();
+      assert.equal(r.body.sent, true, JSON.stringify(r.body));
+      assert.equal(anantaHits.length, 1);
+
+      const sent = anantaHits[0].message.placeholders.join(" ");
+      const match = /alias_([0-9a-zA-Z]{7})([^0-9a-zA-Z]|$)/.exec(sent);
+      assert.ok(match, `no alias on the outgoing link: ${sent}`);
+
+      // With the key at 0 the alias is just the mobile in base 36, so this
+      // pins the VALUE too — a link carrying somebody else's alias would pass
+      // a mere "an alias is present" check.
+      assert.equal(match[1], (9811100007).toString(36).padStart(7, "0"));
+    } finally {
+      delete process.env.IVR_LINK_BUSINESSLOANS;
+    }
+  });
+
   await check("a digit with no template is still forwarded", async () => {
     const r = await post("/whatsapp/businessloans", { mobile: "9811100002", dtmf: "9", unique_id: "c-2" });
     await settle();
