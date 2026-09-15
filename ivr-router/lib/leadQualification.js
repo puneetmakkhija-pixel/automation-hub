@@ -182,6 +182,9 @@ export async function qualifyLead(mobile) {
     source: status,
     reasons: [],
     facts: {},
+    // Nobody looked it up, so nobody knows it. Never a placeholder: the caller
+    // omits the name entirely rather than have the bot say something invented.
+    name: null,
     status,
   });
 
@@ -216,6 +219,10 @@ export async function qualifyLead(mobile) {
       source: typeof data.source === "string" ? data.source : "unknown",
       reasons: Array.isArray(data.reasons) ? data.reasons : [],
       facts: data.facts && typeof data.facts === "object" ? data.facts : {},
+      // The name the bot greets them by. crm.ivr_lead_qualifies reads it out of
+      // the same master row the verdict is built from, so it costs no extra
+      // round trip; null when no source knows it.
+      name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : null,
       status: qualifies ? "qualified" : "not_qualified",
     };
   } catch (error) {

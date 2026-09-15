@@ -227,6 +227,57 @@ await check("the callback gets what it needs to find the lead", async () => {
   assert.equal(m.purpose, "press1_qualification");
 });
 
+/**
+ * The bot greeted 4,455 of 4,455 connected callers with the literal string
+ * "{{call.name}}", because Oriserve's script reads a metadata key called `name`
+ * and this module only ever sent one called `customer_name`. These three checks
+ * are that defect, from each side it can come back from.
+ */
+await check("the key Oriserve's script actually reads is sent", async () => {
+  await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
+  assert.equal(
+    calls[0].metadata.name,
+    "Test Customer",
+    "{{call.name}} reads metadata.name — customer_name alone leaves it unresolved"
+  );
+});
+
+await check("a press with no name falls back to the enriched one", async () => {
+  const { _setLookup } = await import("./lib/leadQualification.js");
+  _setLookup(async () => ({ data: { qualifies: true, enriched: true, base_ok: true,
+                                    source: "user_master", reasons: ["abb"], facts: {},
+                                    name: "Mohammed Imran" } }));
+  try {
+    await dispatchPressToVoiceBot(
+      press({ name: undefined, customer_name: undefined }),
+      { digit: "1", variant: "businessloans" }
+    );
+    assert.equal(calls[0].metadata.name, "Mohammed Imran");
+    assert.equal(calls[0].metadata.customer_name, "Mohammed Imran");
+  } finally {
+    _setLookup();
+  }
+});
+
+await check("a caller nobody can name is sent no name at all", async () => {
+  const { _setLookup } = await import("./lib/leadQualification.js");
+  _setLookup(async () => ({ data: { qualifies: true, enriched: false, base_ok: true,
+                                    source: "none", reasons: [], facts: {}, name: null } }));
+  try {
+    await dispatchPressToVoiceBot(
+      press({ name: undefined, customer_name: undefined }),
+      { digit: "1", variant: "businessloans" }
+    );
+    // Undefined, not "" and not a placeholder of our own: a bot with nothing to
+    // say there has to fall back in its own script. Inventing a stand-in here
+    // is how "{{call.name}}" got said out loud in the first place.
+    assert.equal(calls[0].metadata.name, undefined);
+    assert.equal(calls[0].metadata.customer_name, undefined);
+  } finally {
+    _setLookup();
+  }
+});
+
 console.log("\nbad input rings nobody\n");
 
 await check("a number that is not an Indian mobile is not dialled", async () => {

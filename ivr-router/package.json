@@ -15,7 +15,8 @@
     "test:edit-webhook": "node test-edit-webhook.mjs",
     "test:oriserve-guard": "node test-oriserve-guard.mjs",
     "test:voice-bot-launch": "node test-voice-bot-launch.mjs",
-    "test:ori-press-dispatch": "node test-ori-press-dispatch.mjs"
+    "test:ori-press-dispatch": "node test-ori-press-dispatch.mjs",
+    "test:flexiloans-campaign": "node test-flexiloans-campaign.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
