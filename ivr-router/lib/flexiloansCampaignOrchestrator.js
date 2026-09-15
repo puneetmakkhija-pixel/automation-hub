@@ -48,6 +48,20 @@ export function campaignCap(env = process.env) {
 }
 
 /**
+ * How many people ONE request may dial.
+ *
+ * A cap in a request body may only ever narrow the env cap, never widen it.
+ * If a body could raise it, the cap would protect nobody — the whole point is
+ * that enlarging a run is a deliberate environment change someone makes on
+ * purpose, not a number typed into a curl.
+ */
+export function resolveRunCap(asked, envCap) {
+  const n = Number(asked);
+  if (!Number.isFinite(n) || n < 1) return envCap;
+  return Math.min(Math.floor(n), envCap);
+}
+
+/**
  * The script the prompt is rendered from.
  *
  * Numerals are spelled out in Devanagari on purpose. A multilingual TTS model

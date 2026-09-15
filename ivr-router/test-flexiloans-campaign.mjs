@@ -14,6 +14,7 @@ import {
   buildBaseCsv,
   campaignCap,
   campaignEnabled,
+  resolveRunCap,
   runFlexiloansCampaign,
 } from "./lib/flexiloansCampaignOrchestrator.js";
 
@@ -109,6 +110,19 @@ await check("an empty base does not compose an empty campaign", async () => {
   const out = await runFlexiloansCampaign(fakeDeps(0, calls), { enabled: true });
   assert.equal(out.dialled, false);
   assert.ok(!calls.some((c) => c[0] === "compose"));
+});
+
+await check("a request body can narrow the cap but never widen it", () => {
+  // The route hands req.body.cap straight here. If a body could raise the cap,
+  // the cap would protect nobody — anyone who reached the route could dial the
+  // whole base with one number in a curl.
+  assert.equal(resolveRunCap(100, 500), 100, "narrowing is allowed");
+  assert.equal(resolveRunCap(5000, 500), 500, "widening is clamped to the env cap");
+  assert.equal(resolveRunCap(undefined, 500), 500, "absent means the env cap");
+  assert.equal(resolveRunCap("abc", 500), 500, "nonsense means the env cap");
+  assert.equal(resolveRunCap(0, 500), 500, "zero is not a run of zero, it is no instruction");
+  assert.equal(resolveRunCap(-10, 500), 500, "negative cannot mean unlimited");
+  assert.equal(resolveRunCap(10.9, 500), 10, "fractional narrows down, never up");
 });
 
 console.log("\nthe contact file\n");
