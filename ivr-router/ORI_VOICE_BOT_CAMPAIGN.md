@@ -77,6 +77,38 @@ through the client is a genuine second call, not a safe replay.
   refused before it reaches Oriserve rather than silently failing to dial.
 - **`notification_webhook_url`** — where Oriserve posts the outcome. Optional
   per request; omitted, the client fills in `ORISERVE_WEBHOOK_URL`.
+### The bot's script reads `metadata.name`, and nothing else
+
+Oriserve flattens `metadata` into the `call` object it sends back, and the
+campaign's opening line is:
+
+```
+नमस्ते, मैं रिया बोल रही हूँ Buddy Loan से। क्या मैं {{call.name}} जी से बात कर रही हूं?
+```
+
+So `{{call.name}}` resolves against a metadata key named **`name`**. This repo
+sent `customer_name` — a different key — and Oriserve does not fall back, so the
+slot never filled and **the bot read the literal string "{{call.name}}" out loud
+in its first sentence on every connected call**: 4,455 of 4,455 with a
+transcript, measured 15 Sep over the campaign's first eleven days. There was no
+control group because there were no exceptions.
+
+Renaming the key alone would not have fixed it. Of 7,901 calls, the number that
+carried any name at all was **zero**: an IVR keypress payload has no name field,
+so `body.name || body.customer_name` was always empty. The name now comes from
+the qualification verdict — `crm.ivr_lead_qualifies` returns it from the same
+master row it already reads for this mobile, so it costs no extra lookup.
+
+`lib/oriVoiceDispatch.js` sends **both** keys: `name` for the script, and
+`customer_name` because the callback and this document have always shown it.
+When no source knows the name, neither key is sent — a bot with nothing to put
+in the slot has to fall back inside its own script, and inventing a stand-in
+here is how a placeholder got spoken in the first place.
+
+> **Still open, and not ours to fix:** the callers nobody can name. The greeting
+> has no fallback branch, and that template lives in the Oriserve console, not
+> in this repo. Ask Oriserve to make the name optional in the opening line.
+
 - **`metadata`** — passed through untouched and returned on the callback. This
   is how a disposition gets back to a customer: put `account_id` (or whatever
   key the CRM joins on) in here, because the callback carries no lead ID of its

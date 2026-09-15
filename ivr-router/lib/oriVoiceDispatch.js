@@ -310,6 +310,10 @@ async function placeCall(body, { digit, variant } = {}) {
       // IVR_QUALIFY_ENFORCE and loses calls.
       qualify_enforced: qualifyEnforcing(),
       qualification: outcome.verdict ?? null,
+      // Whether the bot was given a name to greet them by. Recorded as a fact
+      // of the dispatch so the share of calls that can say one is readable
+      // from this table, without re-deriving it from the callbacks.
+      named: outcome.named ?? null,
     },
   });
 
@@ -352,10 +356,33 @@ async function decideAndDial(body, { variant } = {}) {
     // campaign_id is deliberately omitted: body.campaign_id is OUR dialler's
     // campaign, not Oriserve's. The client falls back to ORISERVE_CAMPAIGN_ID.
     // Ours travels in metadata, where the callback can read it back.
+    // The bot's opening line is
+    //   "क्या मैं {{call.name}} जी से बात कर रही हूं?"
+    // and Oriserve flattens this metadata into its `call` object, so the key it
+    // reads is `name`. We sent `customer_name`, which is a different key, so the
+    // slot never filled and the bot read the literal "{{call.name}}" out loud on
+    // every connected call — 4,455 of 4,455 with a transcript, measured 15 Sep.
+    //
+    // Underneath that, `body.name || body.customer_name` on an IVR keypress
+    // payload is always empty: of 7,901 calls, the number carrying any name at
+    // all was zero. Renaming the key alone would have changed nothing, so the
+    // name now comes from the qualification verdict, which reads it out of the
+    // same master row it already fetches for this mobile.
+    //
+    // Both keys are sent: `name` is what the current script reads, and
+    // `customer_name` is what the callback and the docs have always shown.
+    // Omitted entirely when unknown — a bot with no name to say must fall back
+    // in its own script, not read a placeholder we invented for it.
+    const greetingName =
+      String(body.name || body.customer_name || "").trim() ||
+      String(verdict?.name || "").trim() ||
+      undefined;
+
     const result = await ori.triggerCampaign({
       mobile,
       metadata: {
-        customer_name: String(body.name || body.customer_name || "").trim() || undefined,
+        name: greetingName,
+        customer_name: greetingName,
         purpose: "press1_qualification",
         source: "ivr_keypress_webhook",
         ivr_variant: variant || null,
@@ -380,9 +407,15 @@ async function decideAndDial(body, { variant } = {}) {
 
     console.log(
       `[ORI_PRESS] Voice bot dialled ${mobile} variant=${variant || "-"} ` +
-        `campaign=${result.campaign_id || "-"} key=${key}`
+        `campaign=${result.campaign_id || "-"} key=${key} ` +
+        `named=${greetingName ? "yes" : "no"}`
     );
-    return { dialled: true, campaignId: result.campaign_id ?? null, verdict };
+    return {
+      dialled: true,
+      campaignId: result.campaign_id ?? null,
+      verdict,
+      named: Boolean(greetingName),
+    };
   } catch (error) {
     console.error(`[ORI_PRESS] Call failed for ${mobile}: ${error?.message ?? error}`);
     dialled.delete(key);
