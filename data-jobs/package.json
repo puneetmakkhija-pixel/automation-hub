@@ -12,7 +12,9 @@
     "enrich:press1:cron": "node enrich-press1-leads.js --days 2",
     "ingest:hero-disbursal": "node ingest-hero-disbursal.js",
     "ingest:hero-disbursal:cron": "node ingest-hero-disbursal.js --from-email",
-    "test": "node test-enrich-press1.mjs && node test-hero-disbursal.mjs"
+    "test": "node test-enrich-press1.mjs && node test-hero-disbursal.mjs && node test-pull-lender-base.mjs",
+    "pull:lender-base": "node pull-lender-base.js",
+    "pull:lender-base:dry": "node pull-lender-base.js --dry-run"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
