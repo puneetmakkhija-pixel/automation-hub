@@ -6,6 +6,7 @@ import { resolveCustomerId } from "../customerIds.js";
 import { resolveSsoLink } from "../crmSsoLink.js";
 import { forwardPressToCrm } from "../crmPressForward.js";
 import { dispatchPressToVoiceBot } from "../oriVoiceDispatch.js";
+import { dispatchPressToOurBot, handledByOurBot } from "../ourVoiceBotDispatch.js";
 import { aliasFor } from "../mobileAlias.js";
 import { addAliasToLinks } from "../applyLinkAlias.js";
 
@@ -378,7 +379,21 @@ async function handleKeypress(req, res) {
   // Business Loans only, press 1 only, deduped separately from the send —
   // lib/oriVoiceDispatch.js has why each of those. Not awaited: it spends money
   // and takes a round trip, and neither may delay the message.
-  dispatchPressToVoiceBot(body, { digit, variant });
+  //
+  // TWO BOTS, ONE PRESS, NEVER BOTH. handledByOurBot() decides, and it is false
+  // unless OUR_BOT_PRESS_ENABLED=on AND the variant is on our bot's own
+  // hardcoded allowlist -- which does not include `businessloans`. So today
+  // every press still goes exactly where it went before, and Oriserve's live
+  // 700-1,500 calls a day are untouched. Our bot starts on the Flexiloans
+  // campaign, which has no traffic yet.
+  //
+  // if/else rather than two calls: a press routed to both bots is two paid
+  // calls to one person, seconds apart, from two different numbers.
+  if (handledByOurBot(variant)) {
+    dispatchPressToOurBot(body, { digit, variant });
+  } else {
+    dispatchPressToVoiceBot(body, { digit, variant });
+  }
 
   const template = templateMap()[digit];
 

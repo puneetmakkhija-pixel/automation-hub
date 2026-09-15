@@ -16,7 +16,8 @@
     "test:oriserve-guard": "node test-oriserve-guard.mjs",
     "test:voice-bot-launch": "node test-voice-bot-launch.mjs",
     "test:ori-press-dispatch": "node test-ori-press-dispatch.mjs",
-    "test:flexiloans-campaign": "node test-flexiloans-campaign.mjs"
+    "test:flexiloans-campaign": "node test-flexiloans-campaign.mjs",
+    "test:our-voice-bot": "node test-our-voice-bot.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
