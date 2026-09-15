@@ -93,6 +93,11 @@ export function mobile10Of(raw) {
  * @param {string|null} [args.providerCampaignId]
  * @param {string|null} [args.uniqueId]
  * @param {object} [args.raw]
+ * @param {string} [args.provider] which bot took the press. Defaults to
+ *   "oriserve" so every existing caller is unchanged; our own ElevenLabs bot
+ *   passes "ours". This column used to be hardcoded, which was fine while one
+ *   bot existed and would have quietly filed a second bot's calls under the
+ *   first one's name.
  * @returns {Promise<{recorded: boolean, reason?: string}>} always resolves.
  */
 export async function recordVoiceDispatch({
@@ -103,6 +108,7 @@ export async function recordVoiceDispatch({
   digit = null,
   providerCampaignId = null,
   uniqueId = null,
+  provider = "oriserve",
   raw = {},
 } = {}) {
   try {
@@ -122,7 +128,7 @@ export async function recordVoiceDispatch({
       .from("voice_dispatch")
       .insert({
         mobile10,
-        provider: "oriserve",
+        provider: String(provider || "oriserve").trim().toLowerCase(),
         variant: variant ?? null,
         digit: digit == null ? null : String(digit),
         dispatched: Boolean(dispatched),

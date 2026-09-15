@@ -14,6 +14,7 @@ import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import { verifyWebhookSecret } from "./lib/middleware/verifyWebhookSecret.js";
 import ivrWhatsAppRoutes from "./lib/routes/ivrWhatsAppRoutes.js";
 import plTrackerRoutes from "./lib/routes/plTrackerRoutes.js";
+import flexiloansCampaignRoutes from "./lib/routes/flexiloansCampaignRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
@@ -620,6 +621,17 @@ app.get('/personal-loans', consoleAuth('CONSOLE_PL_PAGE', null), (req, res) => {
   res.sendFile('public/personal-loans.html', { root: __dirname });
 });
 app.use('/api/pl-tracker', consoleAuth('CONSOLE_PL_API', null), plTrackerRoutes);
+
+// ==================== Flexiloans (Epimoney) broadcast ====================
+//
+// Behind CONSOLE_SECRET and failClosed: /run starts an outbound campaign, so
+// it answers to the operator credential rather than to a provider's webhook
+// secret. /status is gated too — it lists customer mobile numbers.
+//
+// The broadcast itself stays gated a second time, inside the orchestrator, on
+// FLEXI_CAMPAIGN_ENABLED. Reaching this route is permission to run the
+// pipeline; it is not permission to dial.
+app.use('/api/flexiloans-campaign', consoleAuth('CONSOLE_FLEXI', null), flexiloansCampaignRoutes);
 
 const server = app.listen(PORT, () => {
   logger.log('info', 'SERVICE_START', 'IVR Router service started', {
