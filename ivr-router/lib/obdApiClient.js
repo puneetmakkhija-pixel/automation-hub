@@ -76,6 +76,24 @@ export function findPromptId(prompts, wantedName) {
   return hit.promptId ?? hit.prompt_id ?? hit.id ?? null;
 }
 
+/**
+ * OBD reports failure with HTTP 200 and a message in the body.
+ *
+ * Run 9's base upload answered 200 {"message":"File Upload Failed"}. Every
+ * caller here checks response.ok and nothing else, so that read as success:
+ * the run carried on, composed with a baseId that was never going to exist,
+ * and three runs were spent believing the dial list had been uploaded.
+ *
+ * A 2xx is necessary and not sufficient. The body has to agree.
+ */
+const OBD_FAILURE_WORDS = /\b(fail(ed|ure)?|error|invalid|unable|denied|not\s+(allowed|found|valid))\b/i;
+
+export function obdBodySaysFailure(body) {
+  const message = body?.message ?? body?.status ?? body?.error;
+  if (typeof message !== 'string') return null;
+  return OBD_FAILURE_WORDS.test(message) ? message.trim().slice(0, 200) : null;
+}
+
 class OBDApiClient {
   constructor(baseUrl, username, password) {
     this.baseUrl = baseUrl;
@@ -186,7 +204,12 @@ class OBDApiClient {
         throw await obdFailure('Voice upload', response);
       }
 
-      return await response.json();
+      const body = await response.json();
+      const said = obdBodySaysFailure(body);
+      if (said) {
+        throw new Error(`Voice upload failed: HTTP ${response.status} — ${said}`);
+      }
+      return body;
     } catch (error) {
       console.error('Voice Upload Error:', error);
       throw error;
@@ -235,12 +258,15 @@ class OBDApiClient {
     formData.append('baseFile', blob, `${safeBase}.csv`);
     formData.append('userId', this.userId);
     formData.append('baseName', safeBase);
-    // Left as it was, deliberately. It has always sent the STRING "null" —
-    // FormData stringifies everything that is not Blob-like — and whether the
-    // dialler wants that, an empty value or no field at all is not something
-    // this run can tell us. The error now names what OBD says, so the next
-    // failure will say if this is the one.
-    formData.append('contactList', null);
+    // NOT sent at all any more.
+    //
+    // It used to be `formData.append('contactList', null)`, which sends the
+    // four-character string "null" — FormData stringifies everything that is
+    // not Blob-like. #88 left it alone for want of evidence; run 9 supplied it:
+    // the upload answers "File Upload Failed", and a field whose value is the
+    // literal word "null" is the one part of this request that cannot be
+    // defended. If the dialler actually requires it, the upload now says so in
+    // words rather than failing behind a 200.
 
     try {
       const response = await fetch(`${this.baseUrl}/api/obd/baseupload`, {
@@ -255,7 +281,12 @@ class OBDApiClient {
         throw await obdFailure('Base upload', response);
       }
 
-      return await response.json();
+      const body = await response.json();
+      const said = obdBodySaysFailure(body);
+      if (said) {
+        throw new Error(`Base upload failed: HTTP ${response.status} — ${said}`);
+      }
+      return body;
     } catch (error) {
       console.error('Base Upload Error:', error);
       throw error;
