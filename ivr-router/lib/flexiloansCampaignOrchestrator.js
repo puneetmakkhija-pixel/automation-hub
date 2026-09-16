@@ -338,7 +338,9 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     said: typeof prompt?.message === "string" ? prompt.message.slice(0, 200) : null,
   });
 
-  const base = await obd.uploadBaseFile(buildBaseCsv(rows), name);
+  // opts.contactList rides through from the request body so the value can be
+  // probed without a deploy per attempt. Absent means an empty field.
+  const base = await obd.uploadBaseFile(buildBaseCsv(rows), name, opts.contactList ?? "");
   const baseId = base?.baseId ?? base?.id ?? null;
   steps.push({
     step: "contacts",

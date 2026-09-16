@@ -79,6 +79,10 @@ router.post("/run", async (req, res) => {
       cap,
       ...(req.body?.testMobiles !== undefined ? { testMobiles: req.body.testMobiles } : {}),
       ...(req.body?.testMobile !== undefined ? { testMobile: req.body.testMobile } : {}),
+      // The dialler refuses the base upload both with contactList: "null" and
+      // with the field absent, and says nothing useful either way. Until the
+      // right value is known it is probeable from here rather than baked in.
+      ...(req.body?.contactList !== undefined ? { contactList: req.body.contactList } : {}),
     });
     res.status(out.ok ? 200 : 502).json(out);
   } catch (error) {

@@ -268,7 +268,7 @@ class OBDApiClient {
   }
 
   // Base File APIs
-  async uploadBaseFile(baseFile, baseName) {
+  async uploadBaseFile(baseFile, baseName, contactList = '') {
     await this.ensureToken();
 
     // A Blob, for the same reason uploadVoiceFile needs one: FormData.append()
@@ -289,15 +289,21 @@ class OBDApiClient {
     formData.append('baseFile', blob, `${safeBase}.csv`);
     formData.append('userId', this.userId);
     formData.append('baseName', safeBase);
-    // NOT sent at all any more.
+    // Back, because removing it made things WORSE, and that is evidence.
     //
-    // It used to be `formData.append('contactList', null)`, which sends the
-    // four-character string "null" — FormData stringifies everything that is
-    // not Blob-like. #88 left it alone for want of evidence; run 9 supplied it:
-    // the upload answers "File Upload Failed", and a field whose value is the
-    // literal word "null" is the one part of this request that cannot be
-    // defended. If the dialler actually requires it, the upload now says so in
-    // words rather than failing behind a 200.
+    //   with contactList: null  ->  200 {"message":"File Upload Failed"}
+    //   without it entirely     ->  400, empty body
+    //
+    // Two different refusals means the field is not ignored. #91 removed it on
+    // the argument that the literal string "null" is indefensible — which is
+    // true, and was the wrong conclusion: "send it correctly" and "do not send
+    // it" are different fixes and only one of them was tested.
+    //
+    // The VALUE is still unknown, so it is a parameter rather than a guess
+    // baked into the file. An empty string by default — the field present,
+    // carrying nothing — and a caller can pass whatever the dialler turns out
+    // to want without a deploy for each attempt.
+    formData.append('contactList', String(contactList ?? ''));
 
     try {
       const response = await fetch(`${this.baseUrl}/api/obd/baseupload`, {
