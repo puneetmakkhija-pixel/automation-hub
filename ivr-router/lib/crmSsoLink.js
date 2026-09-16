@@ -35,6 +35,17 @@ export function plainApplyUrl() {
 }
 
 /**
+ * Should a first-time caller still be sent through the OTP form?
+ *
+ * Default NO. This is the one switch that turns the press-1 apply link back
+ * into an OTP-gated one; it exists so the change can be reverted from the
+ * Railway dashboard rather than by a deploy.
+ */
+function requirePriorOtp() {
+  return String(process.env.IVR_SSO_REQUIRE_PRIOR_OTP || "0").trim() === "1";
+}
+
+/**
  * Has this number ever completed an OTP?
  *
  * The gate on pre-verification. A first-time caller must do the OTP: it is what
@@ -103,8 +114,25 @@ export async function resolveSsoLink(rawMobile, dbClient = null) {
   const mobile = String(rawMobile || "").replace(/\D/g, "").slice(-10);
   if (mobile.length !== 10) return fallback("bad_mobile");
 
-  // First-time caller: send them to the form so they complete the OTP.
-  if (!(await hasVerifiedBefore(dbClient, mobile))) {
+  // A first-time caller used to be sent to the form to complete an OTP. That
+  // rule is what emptied this funnel: in September 8,433 of 9,063 press-1
+  // callers never got past the number-entry screen, and only 380 ever typed a
+  // mobile at all.
+  //
+  // It was also protecting the wrong thing. The comment on hasVerifiedBefore
+  // said this OTP "creates the consent record the bureau pull reads". It does
+  // not. The bureau pull is gated on a SEPARATE OTP with purpose
+  // 'bureau_consent', taken later in the chat and re-checked inside
+  // /api/digitap/enrich before Experian is called. Skipping the login OTP
+  // weakens no consent record.
+  //
+  // What the login OTP proved was possession of the number. A token delivered
+  // by WhatsApp TO that number, seconds after a call FROM it, proves the same
+  // thing by the same means — and the token still expires in 30 minutes, which
+  // an OTP-verified session does not.
+  //
+  // IVR_SSO_REQUIRE_PRIOR_OTP=1 restores the old behaviour without a deploy.
+  if (requirePriorOtp() && !(await hasVerifiedBefore(dbClient, mobile))) {
     return fallback("never_verified");
   }
 
@@ -140,6 +168,70 @@ export async function resolveSsoLink(rawMobile, dbClient = null) {
     );
     return fallback("error");
   }
+}
+
+/**
+ * Is this placeholder our own plain /apply link — the one that asks for an OTP?
+ *
+ * Matched on host and path, not on an exact string, because the configured
+ * value carries query parameters (utm, and since 11 Sep the alias) and a
+ * trailing slash is optional. A link that already carries ?t= is a minted one
+ * and is left alone.
+ */
+export function isPlainApplyLink(value) {
+  let url;
+  try {
+    url = new URL(String(value ?? ""));
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+
+  let base;
+  try {
+    base = new URL(applyBaseUrl());
+  } catch {
+    return false;
+  }
+  if (url.hostname.toLowerCase() !== base.hostname.toLowerCase()) return false;
+  if (url.pathname.replace(/\/+$/, "") !== "/apply") return false;
+  return !url.searchParams.get("t");
+}
+
+/**
+ * Swap every plain /apply link in a placeholder list for the pre-verified one.
+ *
+ * Why this is in code rather than left to IVR_LINK_*: the SSO machinery has
+ * been deployed and working since August and had minted exactly ONE token for a
+ * press-1 caller, because the route only asked for a link when the configured
+ * template happened to contain {{sso_link}} — and the Business Loans template
+ * contains a bare URL. A capability nobody has wired up is the same as one that
+ * does not exist. This is the identical failure the alias had, and the same
+ * remedy: decide it here, once, for every send.
+ *
+ * The configured link's own query string is preserved — the alias is added to
+ * these placeholders immediately afterwards, and a utm tag somebody set is not
+ * this function's to drop.
+ */
+export function upgradeApplyLinks(placeholders, ssoUrl) {
+  if (!Array.isArray(placeholders)) return placeholders;
+  const minted = String(ssoUrl ?? "").trim();
+  if (!minted) return placeholders;
+
+  return placeholders.map((value) => {
+    if (!isPlainApplyLink(value)) return value;
+    try {
+      const from = new URL(String(value));
+      const to = new URL(minted);
+      for (const [k, v] of from.searchParams) {
+        if (!to.searchParams.has(k)) to.searchParams.set(k, v);
+      }
+      return to.toString();
+    } catch (error) {
+      console.warn(`[IVR_WA] Could not upgrade an apply link: ${error?.message ?? error}`);
+      return value;
+    }
+  });
 }
 
 export default resolveSsoLink;
