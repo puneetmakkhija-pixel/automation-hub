@@ -59,7 +59,7 @@ test("the voice upload refuses one too", async () => {
   const { c, restore } = clientWith({ message: "File Upload Failed" });
   try {
     await assert.rejects(
-      () => c.uploadVoiceFile(Buffer.from("ID3"), "FLEXI_BL_20260916.mp3", "campaign", "mp3"),
+      () => c.uploadVoiceFile(Buffer.from("ID3"), "FLEXI_BL_20260916.mp3", "menu", "mp3"),
       /Voice upload failed: HTTP 200 — File Upload Failed/
     );
   } finally { restore(); }

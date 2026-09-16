@@ -91,7 +91,9 @@ async function capturedUpload(fileName, fileType) {
     return { ok: true, status: 200, json: async () => ({ promptId: 1 }), text: async () => "" };
   };
   try {
-    await client.uploadVoiceFile(Buffer.from("ID3bytes"), fileName, "campaign", fileType);
+    // "menu", not "campaign": OBD answers "Invalid Voice Category." to the
+    // latter, and uploadVoiceFile now refuses it before the request.
+    await client.uploadVoiceFile(Buffer.from("ID3bytes"), fileName, "menu", fileType);
   } finally {
     globalThis.fetch = original;
   }

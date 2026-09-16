@@ -260,7 +260,14 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   // mp3 is what ElevenLabs returns; the OBD upload takes the type as a field
   // rather than sniffing it, so saying "wav" here would be a lie the dialler
   // acts on.
-  const prompt = await obd.uploadVoiceFile(audio, `${name}.mp3`, "campaign", "mp3");
+  // "menu", not "campaign". Run 10: `Invalid Voice Category.` — "campaign" is
+  // not a category OBD has, and the account's own 376 prompts say what is:
+  // menu 218, welcome 143, thanks 12, noagent 2, wronginput 1.
+  //
+  // menu rather than welcome because this prompt asks for a keypress, and that
+  // is the team's own precedent on this very campaign: BL_FLEXI_PRESS1_2.wav
+  // and BL_FLEXI_2.wav are both "menu", as is the generic DTMF.wav.
+  const prompt = await obd.uploadVoiceFile(audio, `${name}.mp3`, "menu", "mp3");
   // The upload replies {message} and no id — run 8 established that — so the
   // id comes from the list endpoint, which does carry one.
   let promptId = prompt?.promptId ?? prompt?.id ?? null;
