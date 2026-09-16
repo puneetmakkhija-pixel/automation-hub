@@ -63,6 +63,28 @@ export function resolveRunCap(asked, envCap) {
 }
 
 /**
+ * The numbers a TEST run dials, and nobody else.
+ *
+ * Eleven runs have gone at the whole base without one person ever hearing the
+ * prompt. Dialling 25,000 people to find out what the recording sounds like is
+ * the wrong order, and there was no other order available.
+ *
+ * Returns [] for anything that is not a real ten-digit mobile, and the caller
+ * treats [] as "this is not a test run" — so a typo can never silently become
+ * a broadcast to the entire base. That is the only failure mode that matters
+ * here.
+ */
+export function resolveTestMobiles(raw) {
+  const list = Array.isArray(raw) ? raw : raw === undefined || raw === null ? [] : [raw];
+  const cleaned = list
+    .map((m) => String(m ?? "").replace(/\D/g, "").slice(-10))
+    .filter((m) => m.length === 10);
+  // Bounded hard. A "test" is a handful of people you know, and anything
+  // longer is a campaign wearing a test's clothes.
+  return [...new Set(cleaned)].slice(0, 10);
+}
+
+/**
  * The script the prompt is rendered from.
  *
  * Numerals are spelled out in Devanagari on purpose. A multilingual TTS model
@@ -211,7 +233,10 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   const cap = opts.cap ?? campaignCap(env);
   const enabled = opts.enabled ?? campaignEnabled(env);
   const stamp = opts.stamp ?? new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const name = `FLEXI_BL_${stamp}`;
+  // Named apart, and with the clock in it: a test and the day's real broadcast
+  // must not collide in the dialler's list, and two tests in one day must not
+  // collide with each other.
+  const testStamp = new Date().toISOString().slice(11, 16).replace(":", "");
 
   const steps = [];
 
@@ -228,8 +253,34 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
 
   async function runPipeline() {
 
-  const rows = await selectBase(sb, { limit: cap });
-  steps.push({ step: "base", people: rows.length });
+  // A test run dials exactly the numbers it was handed and never touches the
+  // base. The selectBase call is not merely skipped — it is not reached — so
+  // there is no path where a malformed test number falls through to 25,000
+  // strangers.
+  const askedForTest = opts.testMobiles !== undefined || opts.testMobile !== undefined;
+  const testMobiles = resolveTestMobiles(opts.testMobiles ?? opts.testMobile);
+  const isTest = testMobiles.length > 0;
+
+  // The dangerous case, and it is not hypothetical: a caller types a test
+  // number wrong, nothing valid survives, isTest is false — and the run
+  // quietly falls through to the base and dials 25,000 strangers instead of
+  // the one person who was meant to hear it. Asking for a test and getting a
+  // broadcast is the worst outcome this file can produce, so a test that
+  // resolves to nobody is refused rather than widened.
+  if (askedForTest && !isTest) {
+    throw new Error(
+      `Test run asked for, but no valid ten-digit mobile in ` +
+        `${JSON.stringify(opts.testMobiles ?? opts.testMobile)} — refusing rather ` +
+        `than falling through to the base`
+    );
+  }
+
+  const name = isTest ? `FLEXI_TEST_${stamp}_${testStamp}` : `FLEXI_BL_${stamp}`;
+
+  const rows = isTest
+    ? testMobiles.map((mobile10) => ({ mobile10, customer_name: null }))
+    : await selectBase(sb, { limit: cap });
+  steps.push({ step: "base", people: rows.length, test: isTest || undefined });
   if (rows.length === 0) {
     return { ok: false, dialled: false, reason: "nobody to call", name, steps };
   }
@@ -345,12 +396,19 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   // know that before firing it.
   let recorded = null;
   let recordError = null;
-  try {
-    recorded = await recordDispatch(sb, { lender: LENDER, campaign: name, rows });
-  } catch (error) {
-    recordError = error?.message ?? String(error);
+  if (isTest) {
+    // Not written. The ledger exists so consecutive lots draw different people
+    // from the base, and a test number was never drawn from it — recording one
+    // would suppress a real customer for 90 days on the strength of a test.
+    steps.push({ step: "recorded", people: null, skipped: "test run" });
+  } else {
+    try {
+      recorded = await recordDispatch(sb, { lender: LENDER, campaign: name, rows });
+    } catch (error) {
+      recordError = error?.message ?? String(error);
+    }
+    steps.push({ step: "recorded", people: recorded, error: recordError });
   }
-  steps.push({ step: "recorded", people: recorded, error: recordError });
 
   return {
     ok: true,
@@ -360,7 +418,8 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     campaignId: campaign?.campaignId ?? campaign?.id ?? null,
     // Loud, and at the top level rather than buried in steps: a false here
     // means the next lot will call these people again.
-    dispatch_recorded: recordError === null && recorded === rows.length,
+    test: isTest || undefined,
+    dispatch_recorded: isTest ? undefined : recordError === null && recorded === rows.length,
     ...(recordError ? { warning: `dialled, but the dispatch ledger was not written: ${recordError}` } : {}),
     steps,
   };
