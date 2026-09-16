@@ -273,6 +273,11 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     // The keys, not the values: enough to see which field an id was read from,
     // without pasting a vendor payload into an HTTP response.
     returned: Object.keys(prompt ?? {}),
+    // ...except the message, which is where OBD hides "File Upload Failed"
+    // behind a 200. Run 9 captured this for the base step and not for this one,
+    // so half of what the dialler said was thrown away and the prompt's null id
+    // looked like a lookup problem rather than a failed upload.
+    said: typeof prompt?.message === "string" ? prompt.message.slice(0, 200) : null,
   });
 
   const base = await obd.uploadBaseFile(buildBaseCsv(rows), name);
