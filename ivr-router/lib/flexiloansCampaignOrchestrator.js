@@ -171,6 +171,19 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
 
   const steps = [];
 
+  // Every failure so far has been diagnosed from one error string, because the
+  // steps collected before the throw never leave this function. They do now:
+  // which step ran, what the dialler returned, and how far the run got is the
+  // context that turns the next 400 into one round trip instead of two.
+  try {
+    return await runPipeline();
+  } catch (error) {
+    error.steps = steps;
+    throw error;
+  }
+
+  async function runPipeline() {
+
   const rows = await selectBase(sb, { limit: cap });
   steps.push({ step: "base", people: rows.length });
   if (rows.length === 0) {
@@ -204,10 +217,14 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   // rather than sniffing it, so saying "wav" here would be a lie the dialler
   // acts on.
   const prompt = await obd.uploadVoiceFile(audio, `${name}.mp3`, "campaign", "mp3");
-  steps.push({ step: "prompt", id: prompt?.promptId ?? prompt?.id ?? null });
+  const promptId = prompt?.promptId ?? prompt?.id ?? null;
+  // The keys, not the values: enough to see that an id was read out of the
+  // right field, without pasting a vendor payload into an HTTP response.
+  steps.push({ step: "prompt", id: promptId, returned: Object.keys(prompt ?? {}) });
 
   const base = await obd.uploadBaseFile(buildBaseCsv(rows), name);
-  steps.push({ step: "contacts", id: base?.baseId ?? base?.id ?? null });
+  const baseId = base?.baseId ?? base?.id ?? null;
+  steps.push({ step: "contacts", id: baseId, returned: Object.keys(base ?? {}) });
 
   if (!enabled) {
     // Everything is staged and inspectable in the OBD console; the one call
@@ -222,11 +239,23 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     };
   }
 
+  // Composing with a null id is a guaranteed 400 from the dialler, and its 400
+  // says nothing — run 7 spent a full cycle on "Compose campaign failed: HTTP
+  // 400" with an empty body. If the id was never read out of the upload
+  // response, that is knowable HERE, and it names the field it looked in.
+  if (promptId === null || baseId === null) {
+    throw new Error(
+      `Cannot compose: promptId=${promptId} baseId=${baseId}. ` +
+        `The upload replied with keys [${Object.keys(prompt ?? {})}] and ` +
+        `[${Object.keys(base ?? {})}]; the id is read from promptId/id and baseId/id.`
+    );
+  }
+
   const campaign = await obd.composeCampaign({
     campaignName: name,
     campaignType: "DTMF",
-    promptId: prompt?.promptId ?? prompt?.id ?? null,
-    baseId: base?.baseId ?? base?.id ?? null,
+    promptId,
+    baseId,
     // The whole point of the broadcast: 1 is intent, and it is the only key
     // that does anything.
     dtmfKeys: [{ key: "1", action: "webhook" }],
@@ -241,6 +270,7 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     campaignId: campaign?.campaignId ?? campaign?.id ?? null,
     steps,
   };
+  }
 }
 
 /** The real thing, wired from the environment. */

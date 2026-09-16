@@ -71,7 +71,15 @@ router.post("/run", async (req, res) => {
     const out = await runFlexiloansCampaign(liveDeps(sb()), { cap });
     res.status(out.ok ? 200 : 502).json(out);
   } catch (error) {
-    res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+    // steps rides along on the error. Without it the caller gets one sentence
+    // and no idea how far the run got — which is how "Compose campaign failed:
+    // HTTP 400" cost a whole cycle without saying whether the ids it composed
+    // with had even been read.
+    res.status(500).json({
+      ok: false,
+      error: error?.message ?? String(error),
+      steps: error?.steps ?? [],
+    });
   }
 });
 
