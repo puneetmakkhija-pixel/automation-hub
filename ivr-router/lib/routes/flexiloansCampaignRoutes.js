@@ -87,6 +87,10 @@ router.post("/run", async (req, res) => {
       // field, and the header was always an unverified assumption — so the
       // shape is probeable from here too.
       ...(req.body?.baseFormat !== undefined ? { baseFormat: req.body.baseFormat } : {}),
+      // "csv" | "txt" | anything. Sets the part filename's extension AND the
+      // mime type together, because the two travel as a pair and the dialler
+      // has never said which it reads.
+      ...(req.body?.baseExt !== undefined ? { baseExt: req.body.baseExt } : {}),
     });
     res.status(out.ok ? 200 : 502).json(out);
   } catch (error) {

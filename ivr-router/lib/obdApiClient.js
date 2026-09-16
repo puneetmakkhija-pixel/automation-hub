@@ -268,7 +268,7 @@ class OBDApiClient {
   }
 
   // Base File APIs
-  async uploadBaseFile(baseFile, baseName, contactList = '') {
+  async uploadBaseFile(baseFile, baseName, contactList = '', baseExt = 'csv') {
     await this.ensureToken();
 
     // A Blob, for the same reason uploadVoiceFile needs one: FormData.append()
@@ -280,13 +280,25 @@ class OBDApiClient {
     // And the two names follow the rule runs 4 and 5 taught: the extension
     // stays on the part filename and comes off the baseName field.
     const safeBase = obdSafeFileName(baseName);
+
+    // The extension and the mime type, both probeable.
+    //
+    // The dialler answers "File Upload Failed" to every base file tried so far
+    // — with a header, without one, with and without a name column — so what it
+    // refuses is not the CONTENT. The voice upload turned out to care about the
+    // extension ("Only accepts .wav or .mp3 file ext"), and nothing has ever
+    // established what this one accepts. .csv is the incumbent guess, not a
+    // known answer.
+    const ext = String(baseExt ?? 'csv').replace(/[^A-Za-z0-9]/g, '').toLowerCase() || 'csv';
+    const mime = ext === 'txt' ? 'text/plain' : ext === 'csv' ? 'text/csv' : 'application/octet-stream';
+
     const blob =
       typeof Blob !== 'undefined' && baseFile instanceof Blob
         ? baseFile
-        : new Blob([baseFile], { type: 'text/csv' });
+        : new Blob([baseFile], { type: mime });
 
     const formData = new FormData();
-    formData.append('baseFile', blob, `${safeBase}.csv`);
+    formData.append('baseFile', blob, `${safeBase}.${ext}`);
     formData.append('userId', this.userId);
     formData.append('baseName', safeBase);
     // Back, because removing it made things WORSE, and that is evidence.
