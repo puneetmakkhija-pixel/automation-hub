@@ -91,8 +91,13 @@ await check("switched on, and only then, it broadcasts", async () => {
   assert.equal(out.dialled, true);
   assert.equal(out.campaignId, "c1");
   const compose = calls.find((c) => c[0] === "compose")[1];
-  assert.equal(compose.campaignType, "DTMF");
-  assert.deepEqual(compose.dtmfKeys, [{ key: "1", action: "webhook" }], "1 is intent");
+  // OBD's real contract, from campaignTemplates.js: templateId as a NUMBER,
+  // the prompt in menuPId, and dtmf as a string. The payload this used to
+  // assert -- campaignType "DTMF" and a dtmfKeys array -- shared no field with
+  // it, and got an empty-bodied 400 every time.
+  assert.equal(compose.templateId, 1, "DTMF");
+  assert.equal(compose.dtmf, "1", "1 is intent");
+  assert.equal(compose.menuPId, "p1", "the prompt is the menu prompt");
 });
 
 console.log("\nthe cap\n");
