@@ -36,6 +36,40 @@ class ElevenLabsError extends Error {
   }
 }
 
+/**
+ * What ElevenLabs actually said, folded into one line.
+ *
+ * `${method} ${path} failed with HTTP 400` names the request and nothing about
+ * the reason, and the reason is the whole message: a wrong model, a voice the
+ * key cannot use, a quota. The body carries it; the error already captured the
+ * body and then threw it away at the point a human reads the failure. The
+ * dialler upload learned this same lesson in the same week.
+ */
+export function describeElevenLabsFailure(error) {
+  const base = error?.message ?? String(error);
+  const body = error?.response;
+  if (body === null || body === undefined || Buffer.isBuffer(body)) return base;
+
+  const detail = body.detail ?? body;
+  let said;
+  if (typeof detail === "string") {
+    said = detail;
+  } else if (Array.isArray(detail)) {
+    // FastAPI validation errors arrive as a list of {loc, msg, type}.
+    said = detail.map((d) => d?.msg ?? JSON.stringify(d)).join("; ");
+  } else if (detail && typeof detail === "object") {
+    said = detail.message ?? detail.status ?? JSON.stringify(detail);
+  } else {
+    said = String(detail);
+  }
+
+  said = String(said).trim();
+  // Truncated: this line ends up in an HTTP response body and a log, and an
+  // unbounded upstream string in either is its own small problem.
+  if (said.length > 300) said = `${said.slice(0, 300)}…`;
+  return said ? `${base}: ${said}` : base;
+}
+
 class ElevenLabsClient {
   constructor(apiKey, baseUrl, timeout = 30000) {
     this.apiKey = apiKey || process.env.ELEVEN_LABS_API_KEY;
@@ -182,10 +216,11 @@ class ElevenLabsClient {
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
-      console.error('Text to speech error:', error.message);
+      const described = describeElevenLabsFailure(error);
+      console.error('Text to speech error:', described);
       return {
         success: false,
-        error: error.message,
+        error: described,
         statusCode: error.statusCode,
         timestamp: new Date().toISOString(),
       };
