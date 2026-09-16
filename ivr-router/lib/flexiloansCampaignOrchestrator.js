@@ -358,7 +358,8 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   const base = await obd.uploadBaseFile(
     buildBaseCsv(rows, opts.baseFormat ?? "numbers"),
     name,
-    opts.contactList ?? ""
+    opts.contactList ?? "",
+    opts.baseExt ?? "csv"
   );
   const baseId = base?.baseId ?? base?.id ?? null;
   steps.push({
