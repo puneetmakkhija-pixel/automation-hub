@@ -3,6 +3,26 @@
  * Handles all interactions with the OBD IVR SMS API
  */
 
+/**
+ * A prompt name the dialler will accept: digits, letters, minus, underscore.
+ *
+ * Exported because the rule belongs to OBD rather than to any one caller, and a
+ * rule worth enforcing is worth being able to test on its own.
+ */
+export function obdSafeFileName(fileName) {
+  const stripped = String(fileName ?? '').replace(/\.[A-Za-z0-9]{1,5}$/, '');
+  const safe = stripped.replace(/[^A-Za-z0-9_-]/g, '_');
+  // Not merely non-empty: "...." sanitises to "____", which OBD would accept
+  // and no human could ever find again in the prompt list. A name has to carry
+  // at least one character the caller actually chose.
+  if (!/[A-Za-z0-9]/.test(safe)) {
+    // Better than letting the dialler answer with the same vague 400 that cost
+    // a campaign run to read.
+    throw new Error(`Voice upload needs a file name; got ${JSON.stringify(fileName)}`);
+  }
+  return safe;
+}
+
 class OBDApiClient {
   constructor(baseUrl, username, password) {
     this.baseUrl = baseUrl;
@@ -69,10 +89,24 @@ class OBDApiClient {
         ? waveFile
         : new Blob([waveFile], { type: mime });
 
+    // The dialler refuses a dot:
+    //
+    //   HTTP 400 {"message":"File Name only accepts digits, alphabets,minus
+    //             and underscore."}
+    //
+    // which is what "FLEXI_BL_20260916.mp3" hit. The extension is not
+    // information the dialler needs in the NAME — fileType carries it, and so
+    // does the Blob's mime type — so it is stripped rather than escaped, and
+    // anything else outside the allowed set becomes an underscore.
+    //
+    // Sanitised here rather than at the call site so every caller is fixed at
+    // once, the same reason the Blob wrapping lives here.
+    const safeName = obdSafeFileName(fileName);
+
     const formData = new FormData();
-    formData.append('waveFile', blob, fileName);
+    formData.append('waveFile', blob, safeName);
     formData.append('userId', this.userId);
-    formData.append('fileName', fileName);
+    formData.append('fileName', safeName);
     formData.append('promptCategory', promptCategory);
     formData.append('fileType', fileType);
 
