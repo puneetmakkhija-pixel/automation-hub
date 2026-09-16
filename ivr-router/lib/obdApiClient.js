@@ -94,6 +94,30 @@ export function obdBodySaysFailure(body) {
   return OBD_FAILURE_WORDS.test(message) ? message.trim().slice(0, 200) : null;
 }
 
+/**
+ * The prompt categories OBD accepts.
+ *
+ * Run 10: `Voice upload failed: HTTP 200 — Invalid Voice Category.` The
+ * campaign had always uploaded with promptCategory "campaign", which is not one
+ * of them and never was.
+ *
+ * Not guessed. Read off the 376 prompts already in the account, uploaded
+ * through the vendor's own panel:
+ *
+ *   menu 218 · welcome 143 · thanks 12 · noagent 2 · wronginput 1
+ *
+ * Checked before the request rather than after, because the dialler's answer
+ * arrives as a 200 with the refusal in the body — the exact shape that cost
+ * three runs — and a typo here should not need a round trip to find.
+ */
+export const OBD_PROMPT_CATEGORIES = Object.freeze([
+  'welcome',
+  'menu',
+  'thanks',
+  'noagent',
+  'wronginput',
+]);
+
 class OBDApiClient {
   constructor(baseUrl, username, password) {
     this.baseUrl = baseUrl;
@@ -146,6 +170,13 @@ class OBDApiClient {
 
   // Voice Management APIs
   async uploadVoiceFile(waveFile, fileName, promptCategory, fileType = 'wav') {
+    if (!OBD_PROMPT_CATEGORIES.includes(promptCategory)) {
+      throw new Error(
+        `Voice upload needs one of [${OBD_PROMPT_CATEGORIES.join(', ')}]; got ` +
+          `${JSON.stringify(promptCategory)}`
+      );
+    }
+
     await this.ensureToken();
 
     // A Blob, not a raw Buffer.
