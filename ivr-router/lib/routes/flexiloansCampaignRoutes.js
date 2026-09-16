@@ -6,6 +6,7 @@ import {
   campaignEnabled,
   countDialable,
   liveDeps,
+  obdClient,
   resolveRunCap,
   runFlexiloansCampaign,
 } from "../flexiloansCampaignOrchestrator.js";
@@ -25,6 +26,7 @@ import {
  *   GET  /api/flexiloans-campaign/status         what would happen, touching nothing
  *   POST /api/flexiloans-campaign/run            the pipeline
  *   POST /api/flexiloans-campaign/probe-compose  one compose, both sides shown
+ *   GET  /api/flexiloans-campaign/obd-lookup     the ids the dialler already has
  *
  * /status exists because "is it ready" and "do it" must be different requests.
  * It reads the base and the switches and returns; it calls neither ElevenLabs
@@ -165,7 +167,10 @@ router.post("/probe-compose", async (req, res) => {
       ...(req.body?.campaignConfig ?? {}),
     });
 
-    const { obd } = liveDeps(sb());
+    // obdClient rather than liveDeps: composing talks only to the dialler, and
+    // liveDeps would also demand an ElevenLabs key to build a TTS client this
+    // route never uses.
+    const obd = obdClient();
     const { status, ok, text, payload } = await obd.composeCampaignRaw(config);
 
     res.json({
@@ -178,6 +183,58 @@ router.post("/probe-compose", async (req, res) => {
       body_len: text.length,
       sent: payload,
     });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message ?? String(error) });
+  }
+});
+
+/**
+ * What the dialler already has, so a campaign can be built out of real ids.
+ *
+ * Composing needs ids that exist on the vendor's side: a menu prompt, a thanks
+ * prompt, and -- to send the WhatsApp link on press 1 -- a webhookId. The
+ * prompts can be read with getVoiceFiles, but nothing here ever exposed the
+ * webhook list, so the one id the press-1 hand-off depends on could not be
+ * discovered at all. It had to be typed in by whoever was looking at the panel,
+ * which is how a wrong id gets into a payload that then fails for a reason
+ * nobody can see.
+ *
+ * Read-only on purpose. It lists; it does not upload, compose, edit or dial.
+ * Behind CONSOLE_SECRET with the rest of the router.
+ *
+ *   GET /api/flexiloans-campaign/obd-lookup
+ *   GET /api/flexiloans-campaign/obd-lookup?q=whatsapp
+ *
+ * `q` filters both lists by name, because the account holds several hundred
+ * prompts and scrolling them in a JSON blob is its own kind of blind.
+ */
+router.get("/obd-lookup", async (req, res) => {
+  try {
+    const obd = obdClient();
+    const [webhooks, prompts] = await Promise.all([
+      obd.getWebhooks().catch((e) => ({ error: e?.message ?? String(e) })),
+      obd.getVoiceFiles().catch((e) => ({ error: e?.message ?? String(e) })),
+    ]);
+
+    // Reported side by side rather than one failing the whole call: the webhook
+    // list is the part that matters for press 1, and a prompt-list outage
+    // should not hide it.
+    const q = String(req.query?.q ?? "").toLowerCase();
+    const match = (entry) =>
+      !q ||
+      Object.values(entry ?? {}).some(
+        (v) => typeof v === "string" && v.toLowerCase().includes(q)
+      );
+
+    const listOf = (raw) => {
+      if (!raw || raw.error) return raw;
+      const list = Array.isArray(raw)
+        ? raw
+        : raw.webhooks ?? raw.prompts ?? raw.data ?? raw.result ?? [];
+      return Array.isArray(list) ? list.filter(match) : raw;
+    };
+
+    res.json({ ok: true, webhooks: listOf(webhooks), prompts: listOf(prompts) });
   } catch (error) {
     res.status(500).json({ ok: false, error: error?.message ?? String(error) });
   }
