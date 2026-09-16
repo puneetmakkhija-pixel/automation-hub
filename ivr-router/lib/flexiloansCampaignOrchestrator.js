@@ -433,7 +433,29 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
       ...(opts.campaignConfig ?? {}),
     })
   );
-  steps.push({ step: "campaign", id: campaign?.campaignId ?? campaign?.id ?? null });
+  const campaignId = campaign?.campaignId ?? campaign?.id ?? null;
+  steps.push({
+    step: "campaign",
+    id: campaignId,
+    returned: Object.keys(campaign ?? {}),
+    said: typeof campaign?.message === "string" ? campaign.message.slice(0, 200) : null,
+  });
+
+  // A compose with no id is not a campaign.
+  //
+  // The run reported ok:true, dialled:true and campaignId:null -- it had asked
+  // the dialler to broadcast and had nothing to show that it had. That is the
+  // worst thing this function can say, because at 25,000 it is the difference
+  // between "everyone was called" and "nobody was" with no way to tell them
+  // apart afterwards, and the ledger writes either way.
+  if (campaignId === null) {
+    throw new Error(
+      `Compose returned no campaign id. The dialler replied with keys ` +
+        `[${Object.keys(campaign ?? {})}]` +
+        (typeof campaign?.message === "string" ? ` and said "${campaign.message}"` : "") +
+        ` — refusing to report a broadcast that cannot be pointed at`
+    );
+  }
 
   // AFTER the compose, never before.
   //
@@ -464,7 +486,7 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     dialled: true,
     name,
     people: rows.length,
-    campaignId: campaign?.campaignId ?? campaign?.id ?? null,
+    campaignId,
     // Loud, and at the top level rather than buried in steps: a false here
     // means the next lot will call these people again.
     test: isTest || undefined,
