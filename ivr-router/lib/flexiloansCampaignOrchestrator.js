@@ -248,10 +248,16 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   const cap = opts.cap ?? campaignCap(env);
   const enabled = opts.enabled ?? campaignEnabled(env);
   const stamp = opts.stamp ?? new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  // Named apart, and with the clock in it: a test and the day's real broadcast
-  // must not collide in the dialler's list, and two tests in one day must not
-  // collide with each other.
-  const testStamp = new Date().toISOString().slice(11, 16).replace(":", "");
+  // Named apart, and with the clock in it to the SECOND.
+  //
+  // It was hhmm, and two probes a few seconds apart got:
+  //
+  //   "Voice file name already exists, Please choose another name"
+  //   "Base file name already exists, Please choose another name"
+  //
+  // Minutes are not granular enough for back-to-back tests, which is exactly
+  // how a test gets used. Seconds are.
+  const testStamp = new Date().toISOString().slice(11, 19).replace(/:/g, "");
 
   const steps = [];
 
