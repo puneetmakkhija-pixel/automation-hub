@@ -128,18 +128,33 @@ export const IVR_MODEL_ID = "eleven_multilingual_v2";
  * the press-1 leg can use it and, as the ORI bot found out the expensive way, a
  * name the pipeline never carries is a name the bot cannot say.
  */
-export function buildBaseCsv(rows) {
-  const header = "mobile,name";
-  const lines = (rows ?? [])
-    .map((r) => {
-      const mobile = String(r?.mobile10 ?? "").replace(/\D/g, "").slice(-10);
-      if (mobile.length !== 10) return null;
+export function buildBaseCsv(rows, format = "numbers") {
+  const mobiles = (rows ?? [])
+    .map((r) => ({
+      mobile: String(r?.mobile10 ?? "").replace(/\D/g, "").slice(-10),
       // A comma in a customer name would shift every column after it.
-      const name = String(r?.customer_name ?? "").replace(/[",\r\n]/g, " ").trim();
-      return `${mobile},${name}`;
-    })
-    .filter(Boolean);
-  return [header, ...lines].join("\n");
+      name: String(r?.customer_name ?? "").replace(/[",\r\n]/g, " ").trim(),
+    }))
+    .filter((r) => r.mobile.length === 10);
+
+  // "numbers" is the default now, and the reason is worth writing down.
+  //
+  // The dialler answers the base upload with 200 {"message":"File Upload
+  // Failed"} for every contactList value tried, and 400 when contactList is
+  // absent entirely. Present-but-any-value gets the request accepted and the
+  // FILE rejected — so the file is what it does not like, not the field.
+  //
+  // The header was never verified. The comment here used to assert that
+  // "mobile,name" with a header "is what OBD's base upload takes", and nothing
+  // ever checked it. A dialler reading that first line sees the word "mobile"
+  // where a phone number should be.
+  //
+  // So: bare numbers, one per line, nothing else. The other shapes stay
+  // reachable by name so the right one can be found in seconds rather than a
+  // deploy per guess.
+  if (format === "csv-header") return ["mobile,name", ...mobiles.map((r) => `${r.mobile},${r.name}`)].join("\n");
+  if (format === "csv") return mobiles.map((r) => `${r.mobile},${r.name}`).join("\n");
+  return mobiles.map((r) => r.mobile).join("\n");
 }
 
 /**
@@ -340,7 +355,11 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
 
   // opts.contactList rides through from the request body so the value can be
   // probed without a deploy per attempt. Absent means an empty field.
-  const base = await obd.uploadBaseFile(buildBaseCsv(rows), name, opts.contactList ?? "");
+  const base = await obd.uploadBaseFile(
+    buildBaseCsv(rows, opts.baseFormat ?? "numbers"),
+    name,
+    opts.contactList ?? ""
+  );
   const baseId = base?.baseId ?? base?.id ?? null;
   steps.push({
     step: "contacts",
