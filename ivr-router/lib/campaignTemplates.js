@@ -70,7 +70,20 @@ export function createSimpleIvrCampaign(config) {
     callDurationSMS: config.callDurationSMS || 0,
     retries: config.retries || 2,
     retryInterval: config.retryInterval || 10,
-    agentRows: '""',
+    // '""' is a JSON-encoded EMPTY STRING, and it is a guess that has never
+    // been tested. createCallPatchCampaign -- written by someone who knew the
+    // shape -- sends JSON.stringify({patchList: [...]}), an object. These two
+    // send a string. Something has to explain compose answering 400 with a
+    // ZERO-BYTE body when every earlier refusal named its field
+    // ("locationList is missing", "Invalid Schedule Date and Time !!"), and a
+    // server that did JSON.parse(agentRows).patchList on a string would throw
+    // before it could compose a message. That is exactly what an empty 400
+    // looks like.
+    //
+    // Not changed blind: made overridable so probe-compose can settle it in
+    // one request instead of a deploy per shape. The default stays as it was
+    // until the dialler says otherwise.
+    agentRows: config.agentRows ?? '""',
     menuWaitTime: config.menuWaitTime || '',
     rePrompt: config.rePrompt || '',
     location: config.location || '{}',
@@ -118,7 +131,9 @@ export function createDtmfCampaign(config) {
     callDurationSMS: config.callDurationSMS || 0,
     retries: config.retries || 2,
     retryInterval: config.retryInterval || 10,
-    agentRows: '""',
+    // See the note in createSimpleIvrCampaign: a guess, made overridable so it
+    // can be probed rather than redeployed per shape.
+    agentRows: config.agentRows ?? '""',
     menuWaitTime: config.menuWaitTime || 5,
     rePrompt: config.rePrompt || 2,
     location: config.location || '{}',
@@ -166,9 +181,11 @@ export function createCallPatchCampaign(config) {
     callDurationSMS: config.callDurationSMS || 0,
     retries: config.retries || 2,
     retryInterval: config.retryInterval || 10,
-    agentRows: JSON.stringify({
-      patchList: config.agentGroups || [],
-    }),
+    agentRows:
+      config.agentRows ??
+      JSON.stringify({
+        patchList: config.agentGroups || [],
+      }),
     menuWaitTime: config.menuWaitTime || 5,
     rePrompt: config.rePrompt || 2,
     location: config.location || '{}',
