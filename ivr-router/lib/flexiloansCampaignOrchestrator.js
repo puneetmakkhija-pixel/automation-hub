@@ -104,16 +104,43 @@ export function buildBaseCsv(rows) {
   return [header, ...lines].join("\n");
 }
 
-/** Who to call: the dialable view, best-scoring first, capped. */
+/**
+ * Who to call: best-scoring first, suppression already applied, capped.
+ *
+ * Through crm.lender_campaign_batch rather than the view directly, because the
+ * view cannot be read at this size over PostgREST. Measured on production
+ * 16 Sep: 500 rows takes 345 ms, 50,000 takes 13,192 ms, and the `authenticator`
+ * role PostgREST connects as carries statement_timeout=8s. So a 50,000-row
+ * fetch does not come back short -- it raises, and nobody is dialled.
+ *
+ * The function owns a 120s timeout of its own, which is the right place for it:
+ * a once-a-day batch is not the interactive query the 8s ceiling protects
+ * against, and raising that ceiling would have loosened it for every other
+ * caller.
+ */
 export async function selectBase(sb, { limit, lender = LENDER } = {}) {
-  const { data, error } = await sb
-    .from("v_lender_campaign_dialable")
-    .select("mobile10,customer_name,best_score,best_rank")
-    .eq("lender", lender)
-    .order("best_score", { ascending: false })
-    .limit(limit);
+  const { data, error } = await sb.rpc("lender_campaign_batch", {
+    p_lender: lender,
+    p_limit: limit,
+  });
   if (error) throw new Error(`base select failed: ${error.message}`);
   return data ?? [];
+}
+
+/**
+ * How many people a run WOULD take, without fetching them.
+ *
+ * /status asks this. Counting the base table with the suppression anti-join is
+ * a cheap index scan; fetching the rows to count them would make a readiness
+ * check take the same thirteen seconds as the run it is reporting on.
+ */
+export async function countDialable(sb, { lender = LENDER } = {}) {
+  const { count, error } = await sb
+    .from("lender_campaign_base")
+    .select("mobile10", { count: "exact", head: true })
+    .eq("lender", lender);
+  if (error) throw new Error(`base count failed: ${error.message}`);
+  return count ?? 0;
 }
 
 /**
