@@ -81,8 +81,11 @@ test("compose refuses a 200 whose body says it failed", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true, status: 200,
+    // The body rides in text(): compose reads the response ONCE, as bytes, so
+    // that a 400 with nothing in it stays readable instead of throwing on the
+    // parse. json() is no longer the client's way in.
     json: async () => ({ message: "Invalid Campaign Name" }),
-    text: async () => "",
+    text: async () => '{"message":"Invalid Campaign Name"}',
   });
   try {
     await assert.rejects(
@@ -99,7 +102,7 @@ test("a genuine compose response still comes back", async () => {
   globalThis.fetch = async () => ({
     ok: true, status: 200,
     json: async () => ({ campaignId: 5150, message: "Campaign created successfully" }),
-    text: async () => "",
+    text: async () => '{"campaignId":5150,"message":"Campaign created successfully"}',
   });
   try {
     assert.equal((await c.composeCampaign({ campaignName: "C" })).campaignId, 5150);
