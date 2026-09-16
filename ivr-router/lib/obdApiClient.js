@@ -23,6 +23,22 @@ export function obdSafeFileName(fileName) {
   return safe;
 }
 
+/**
+ * The message an OBD failure should have carried all along.
+ *
+ * response.statusText is EMPTY over HTTP/2, and every call in this file used
+ * it. #83 fixed exactly one of them — uploadVoiceFile — and run 6 then died on
+ * its sibling with "Base upload failed: " and nothing else, which is the same
+ * hour of guessing bought a second time. So the rule lives in one function and
+ * every caller uses it.
+ */
+export async function obdFailure(what, response) {
+  const detail = await response.text().catch(() => '');
+  return new Error(
+    `${what} failed: HTTP ${response.status}` + (detail ? ` — ${detail.slice(0, 300)}` : '')
+  );
+}
+
 class OBDApiClient {
   constructor(baseUrl, username, password) {
     this.baseUrl = baseUrl;
@@ -46,7 +62,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Login failed: ${response.statusText}`);
+        throw await obdFailure('Login', response);
       }
 
       const data = await response.json();
@@ -130,15 +146,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        // statusText is EMPTY over HTTP/2, so the old message was literally
-        // "Voice upload failed: " and threw away both the status code and the
-        // body. An error that names nothing costs an hour of guessing; this one
-        // names the status and whatever the dialler said.
-        const detail = await response.text().catch(() => '');
-        throw new Error(
-          `Voice upload failed: HTTP ${response.status}` +
-            (detail ? ` — ${detail.slice(0, 300)}` : '')
-        );
+        throw await obdFailure('Voice upload', response);
       }
 
       return await response.json();
@@ -158,7 +166,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Get voice files failed: ${response.statusText}`);
+        throw await obdFailure('Get voice files', response);
       }
 
       return await response.json();
@@ -172,10 +180,29 @@ class OBDApiClient {
   async uploadBaseFile(baseFile, baseName) {
     await this.ensureToken();
 
+    // A Blob, for the same reason uploadVoiceFile needs one: FormData.append()
+    // keeps bytes only for Blob-like values, and a bare CSV string is sent as
+    // an ordinary text FIELD rather than as the uploaded FILE. That is the
+    // defect #83 found one method over; this is its twin, untouched because
+    // nothing had reached step 4 to expose it.
+    //
+    // And the two names follow the rule runs 4 and 5 taught: the extension
+    // stays on the part filename and comes off the baseName field.
+    const safeBase = obdSafeFileName(baseName);
+    const blob =
+      typeof Blob !== 'undefined' && baseFile instanceof Blob
+        ? baseFile
+        : new Blob([baseFile], { type: 'text/csv' });
+
     const formData = new FormData();
-    formData.append('baseFile', baseFile);
+    formData.append('baseFile', blob, `${safeBase}.csv`);
     formData.append('userId', this.userId);
-    formData.append('baseName', baseName);
+    formData.append('baseName', safeBase);
+    // Left as it was, deliberately. It has always sent the STRING "null" —
+    // FormData stringifies everything that is not Blob-like — and whether the
+    // dialler wants that, an empty value or no field at all is not something
+    // this run can tell us. The error now names what OBD says, so the next
+    // failure will say if this is the one.
     formData.append('contactList', null);
 
     try {
@@ -188,7 +215,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Base upload failed: ${response.statusText}`);
+        throw await obdFailure('Base upload', response);
       }
 
       return await response.json();
@@ -215,7 +242,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Compose campaign failed: ${response.statusText}`);
+        throw await obdFailure('Compose campaign', response);
       }
 
       return await response.json();
@@ -236,7 +263,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Pause campaign failed: ${response.statusText}`);
+        throw await obdFailure('Pause campaign', response);
       }
 
       return await response.json();
@@ -257,7 +284,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Resume campaign failed: ${response.statusText}`);
+        throw await obdFailure('Resume campaign', response);
       }
 
       return await response.json();
@@ -278,7 +305,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Stop campaign failed: ${response.statusText}`);
+        throw await obdFailure('Stop campaign', response);
       }
 
       return await response.json();
@@ -306,7 +333,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Campaign analysis failed: ${response.statusText}`);
+        throw await obdFailure('Campaign analysis', response);
       }
 
       return await response.json();
@@ -333,7 +360,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Add webhook failed: ${response.statusText}`);
+        throw await obdFailure('Add webhook', response);
       }
 
       return await response.json();
@@ -353,7 +380,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Get webhooks failed: ${response.statusText}`);
+        throw await obdFailure('Get webhooks', response);
       }
 
       return await response.json();
@@ -413,7 +440,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Edit webhook failed: ${response.statusText}`);
+        throw await obdFailure('Edit webhook', response);
       }
 
       const result = await response.json();
@@ -456,7 +483,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Delete webhook failed: ${response.statusText}`);
+        throw await obdFailure('Delete webhook', response);
       }
 
       return await response.json();
@@ -481,7 +508,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Generate report failed: ${response.statusText}`);
+        throw await obdFailure('Generate report', response);
       }
 
       return await response.json();
@@ -501,7 +528,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Download report failed: ${response.statusText}`);
+        throw await obdFailure('Download report', response);
       }
 
       return await response.json();
@@ -527,7 +554,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Add agent group failed: ${response.statusText}`);
+        throw await obdFailure('Add agent group', response);
       }
 
       return await response.json();
@@ -547,7 +574,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Get agent groups failed: ${response.statusText}`);
+        throw await obdFailure('Get agent groups', response);
       }
 
       return await response.json();
@@ -567,7 +594,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Get agent group failed: ${response.statusText}`);
+        throw await obdFailure('Get agent group', response);
       }
 
       return await response.json();
@@ -593,7 +620,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Edit agent group failed: ${response.statusText}`);
+        throw await obdFailure('Edit agent group', response);
       }
 
       return await response.json();
@@ -613,7 +640,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Delete agent group failed: ${response.statusText}`);
+        throw await obdFailure('Delete agent group', response);
       }
 
       return await response.json();
@@ -642,7 +669,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Add SMS webhook failed: ${response.statusText}`);
+        throw await obdFailure('Add SMS webhook', response);
       }
 
       return await response.json();
@@ -662,7 +689,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Get SMS webhooks failed: ${response.statusText}`);
+        throw await obdFailure('Get SMS webhooks', response);
       }
 
       return await response.json();
@@ -682,7 +709,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Get SMS webhook failed: ${response.statusText}`);
+        throw await obdFailure('Get SMS webhook', response);
       }
 
       return await response.json();
@@ -711,7 +738,7 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Edit SMS webhook failed: ${response.statusText}`);
+        throw await obdFailure('Edit SMS webhook', response);
       }
 
       return await response.json();
