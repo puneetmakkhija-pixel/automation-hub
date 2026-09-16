@@ -165,6 +165,28 @@ export async function selectBase(sb, { limit, lender = LENDER } = {}) {
 }
 
 /**
+ * Write the dial list into the ledger the view reads.
+ *
+ * One RPC rather than 25,000 inserts through PostgREST, and it returns the
+ * count it actually wrote so the caller can check that against what it dialled
+ * instead of assuming.
+ */
+export async function recordDispatch(sb, { lender = LENDER, campaign, rows } = {}) {
+  const mobiles = (rows ?? [])
+    .map((r) => String(r?.mobile10 ?? "").replace(/\D/g, "").slice(-10))
+    .filter((m) => m.length === 10);
+  if (mobiles.length === 0) return 0;
+
+  const { data, error } = await sb.rpc("record_campaign_dispatch", {
+    p_lender: lender,
+    p_campaign: campaign,
+    p_mobiles: mobiles,
+  });
+  if (error) throw new Error(`dispatch ledger write failed: ${error.message}`);
+  return typeof data === "number" ? data : Number(data ?? 0);
+}
+
+/**
  * How many people a run WOULD take, without fetching them.
  *
  * /status asks this. Counting the base table with the suppression anti-join is
@@ -301,12 +323,33 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   });
   steps.push({ step: "campaign", id: campaign?.campaignId ?? campaign?.id ?? null });
 
+  // AFTER the compose, never before.
+  //
+  // Recording first and composing second would exclude people who were never
+  // called, and they would sit out the whole 90-day window for a run that
+  // failed. Recording second risks the opposite — a compose that worked and a
+  // ledger write that did not — so that case is reported loudly rather than
+  // swallowed: the next lot would re-dial these people, and somebody has to
+  // know that before firing it.
+  let recorded = null;
+  let recordError = null;
+  try {
+    recorded = await recordDispatch(sb, { lender: LENDER, campaign: name, rows });
+  } catch (error) {
+    recordError = error?.message ?? String(error);
+  }
+  steps.push({ step: "recorded", people: recorded, error: recordError });
+
   return {
     ok: true,
     dialled: true,
     name,
     people: rows.length,
     campaignId: campaign?.campaignId ?? campaign?.id ?? null,
+    // Loud, and at the top level rather than buried in steps: a false here
+    // means the next lot will call these people again.
+    dispatch_recorded: recordError === null && recorded === rows.length,
+    ...(recordError ? { warning: `dialled, but the dispatch ledger was not written: ${recordError}` } : {}),
     steps,
   };
   }

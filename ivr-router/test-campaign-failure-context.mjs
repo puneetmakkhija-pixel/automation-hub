@@ -78,5 +78,8 @@ test("a healthy run still returns its steps and dials", async () => {
   assert.equal(out.ok, true);
   assert.equal(out.dialled, true);
   assert.equal(out.campaignId, "c1");
-  assert.deepEqual(out.steps.map((s) => s.step), ["base", "tts", "prompt", "contacts", "campaign"]);
+  // "recorded" is the dispatch-ledger write, which runs after the compose so a
+  // second lot does not call the same people again.
+  assert.deepEqual(out.steps.map((s) => s.step),
+    ["base", "tts", "prompt", "contacts", "campaign", "recorded"]);
 });
