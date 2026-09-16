@@ -362,7 +362,17 @@ class OBDApiClient {
         throw await obdFailure('Compose campaign', response);
       }
 
-      return await response.json();
+      // The same 200-with-a-refusal-in-the-body check the two uploads got in
+      // #91. Compose was left out of that change, and it is the one call where
+      // a false success is worst: it is the step that rings phones, so a run
+      // that believes it composed reports dialled = true having dialled nobody
+      // -- or, at 25,000, cannot tell you whether it did.
+      const body = await response.json();
+      const said = obdBodySaysFailure(body);
+      if (said) {
+        throw new Error(`Compose campaign failed: HTTP ${response.status} — ${said}`);
+      }
+      return body;
     } catch (error) {
       console.error('Compose Campaign Error:', error);
       throw error;
