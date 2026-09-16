@@ -68,7 +68,18 @@ router.post("/run", async (req, res) => {
     // A cap in the body may only NARROW the run — see resolveRunCap.
     const cap = resolveRunCap(req.body?.cap, campaignCap());
 
-    const out = await runFlexiloansCampaign(liveDeps(sb()), { cap });
+    // testMobile / testMobiles dials exactly those numbers and never the base.
+    // Hearing the recording once, on a number you own, before it goes to
+    // 25,000 strangers is the step this pipeline has never had.
+    //
+    // Passed through as given: the orchestrator decides what is a valid test
+    // and REFUSES a test that resolves to nobody, rather than letting a typo
+    // fall through to a broadcast.
+    const out = await runFlexiloansCampaign(liveDeps(sb()), {
+      cap,
+      ...(req.body?.testMobiles !== undefined ? { testMobiles: req.body.testMobiles } : {}),
+      ...(req.body?.testMobile !== undefined ? { testMobile: req.body.testMobile } : {}),
+    });
     res.status(out.ok ? 200 : 502).json(out);
   } catch (error) {
     // steps rides along on the error. Without it the caller gets one sentence
