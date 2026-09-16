@@ -38,12 +38,16 @@ const rows = (n) =>
 
 const fakeDeps = (n = 3, calls = []) => ({
   sb: {
+    // selectBase goes through crm.lender_campaign_batch, not the view: the view
+    // cannot be read at the owner's volume inside PostgREST's 8s timeout.
+    rpc: async (fn, params) => {
+      calls.push(["rpc", fn, params]);
+      return { data: rows(Math.min(n, params?.p_limit ?? n)), error: null };
+    },
     from: () => {
       const q = {
         select: () => q,
-        eq: () => q,
-        order: () => q,
-        limit: (l) => Promise.resolve({ data: rows(Math.min(n, l)), error: null }),
+        eq: () => Promise.resolve({ count: n, error: null }),
       };
       return q;
     },
@@ -101,8 +105,14 @@ await check("an unset cap is 500, not everybody", () => {
 });
 
 await check("the cap bounds who is selected, not just who is reported", async () => {
-  const out = await runFlexiloansCampaign(fakeDeps(10_000), { cap: 5, enabled: true });
+  const calls = [];
+  const out = await runFlexiloansCampaign(fakeDeps(10_000, calls), { cap: 5, enabled: true });
   assert.equal(out.people, 5);
+  // The cap must reach the database, not just trim the result afterwards --
+  // at 50,000 the difference is a 13-second query nobody asked for.
+  const rpc = calls.find((c) => c[0] === "rpc");
+  assert.equal(rpc[1], "lender_campaign_batch");
+  assert.equal(rpc[2].p_limit, 5);
 });
 
 await check("an empty base does not compose an empty campaign", async () => {

@@ -3,10 +3,10 @@ import SupabaseClient from "../supabaseClient.js";
 import {
   campaignCap,
   campaignEnabled,
+  countDialable,
   liveDeps,
   resolveRunCap,
   runFlexiloansCampaign,
-  selectBase,
 } from "../flexiloansCampaignOrchestrator.js";
 
 /**
@@ -38,13 +38,17 @@ router.get("/status", async (_req, res) => {
   try {
     const enabled = campaignEnabled();
     const cap = campaignCap();
-    const rows = await selectBase(sb(), { limit: cap });
+    // Counted, not fetched: at the owner's volume, fetching the list to measure
+    // it would make a readiness check take as long as the run it reports on.
+    const dialable = await countDialable(sb());
 
     res.json({
       ok: true,
       would_dial: enabled,
       // Named so it cannot be misread as "we called this many".
-      people_in_this_run: rows.length,
+      people_in_this_run: Math.min(dialable, cap),
+      dialable_in_base: dialable,
+      days_to_work_the_base: dialable > 0 ? Math.ceil(dialable / cap) : 0,
       cap,
       switch: enabled
         ? "FLEXI_CAMPAIGN_ENABLED=on — a run WILL broadcast"
@@ -53,11 +57,6 @@ router.get("/status", async (_req, res) => {
         process.env.OBD_BASE_URL && process.env.OBD_USERNAME && process.env.OBD_PASSWORD
       ),
       tts_configured: Boolean(process.env.ELEVEN_LABS_API_KEY),
-      sample: rows.slice(0, 3).map((r) => ({
-        mobile10: r.mobile10,
-        best_score: r.best_score,
-        best_rank: r.best_rank,
-      })),
     });
   } catch (error) {
     res.status(500).json({ ok: false, error: error?.message ?? String(error) });
