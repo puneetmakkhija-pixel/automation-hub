@@ -22,6 +22,33 @@ export const PromptCategories = {
 };
 
 /**
+ * A schedule time the dialler will accept.
+ *
+ * OBD answered compose with:
+ *
+ *   {"message":"Invalid Schedule Date and Time !!"}
+ *
+ * The templates built it as `new Date().toISOString()`, which is UTC. OBD is
+ * an Indian dialler and reads the string as IST, so a campaign composed at
+ * 10:14 UTC arrived asking to be scheduled at 10:14 IST -- five and a half
+ * hours in the PAST, every single time. A past schedule is not a schedule.
+ *
+ * India has no daylight saving, so the offset is a constant +05:30 and a fixed
+ * arithmetic shift is exact rather than approximate.
+ *
+ * The lead is small and deliberate: "now" races the request itself, and by the
+ * time the dialler parses the body a second or two has gone. Two minutes is
+ * comfortably past that and still reads as immediate to a human watching the
+ * campaign list.
+ */
+const IST_OFFSET_MINUTES = 5 * 60 + 30;
+
+export function obdScheduleTime(now = new Date(), leadMinutes = 2) {
+  const at = new Date(now.getTime() + leadMinutes * 60000 + IST_OFFSET_MINUTES * 60000);
+  return at.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/**
  * Simple IVR Campaign Template
  * Basic outbound call with voice prompts
  */
@@ -36,7 +63,7 @@ export function createSimpleIvrCampaign(config) {
     noInputPId: config.noInputPromptId || '',
     wrongInputPId: config.wrongInputPromptId || '',
     thanksPId: config.thanksPromptId || '',
-    scheduleTime: config.scheduleTime || new Date().toISOString().slice(0, 19).replace('T', ' '),
+    scheduleTime: config.scheduleTime || obdScheduleTime(),
     smsSuccessApi: config.smsSuccessApi || '{}',
     smsFailApi: config.smsFailApi || '{}',
     smsDtmfApi: config.smsDtmfApi || '{}',
@@ -74,7 +101,7 @@ export function createDtmfCampaign(config) {
     noInputPId: config.noInputPromptId || '',
     wrongInputPId: config.wrongInputPromptId || '',
     thanksPId: config.thanksPromptId || '',
-    scheduleTime: config.scheduleTime || new Date().toISOString().slice(0, 19).replace('T', ' '),
+    scheduleTime: config.scheduleTime || obdScheduleTime(),
     smsSuccessApi: config.smsSuccessApi || '{}',
     smsFailApi: config.smsFailApi || '{}',
     smsDtmfApi: config.smsDtmfApi || '{}',
@@ -112,7 +139,7 @@ export function createCallPatchCampaign(config) {
     noInputPId: config.noInputPromptId || '',
     wrongInputPId: config.wrongInputPromptId || '',
     thanksPId: config.thanksPromptId || '',
-    scheduleTime: config.scheduleTime || new Date().toISOString().slice(0, 19).replace('T', ' '),
+    scheduleTime: config.scheduleTime || obdScheduleTime(),
     smsSuccessApi: config.smsSuccessApi || '{}',
     smsFailApi: config.smsFailApi || '{}',
     smsDtmfApi: config.smsDtmfApi || '{}',
