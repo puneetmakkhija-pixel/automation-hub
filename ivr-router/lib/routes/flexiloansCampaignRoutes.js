@@ -170,7 +170,18 @@ router.post("/probe-compose", async (req, res) => {
     // obdClient rather than liveDeps: composing talks only to the dialler, and
     // liveDeps would also demand an ElevenLabs key to build a TTS client this
     // route never uses.
-    const obd = obdClient();
+    // obdClient rather than liveDeps: composing talks only to the dialler, and
+    // liveDeps would also demand an ElevenLabs key to build a TTS client this
+    // route never uses.
+    //
+    // baseUrl is how the host question gets settled. The vendor's own panel
+    // talks to obd3api.expressivr.com; this service posts to
+    // obdapi2.ivrsms.com, where uploads succeed and compose answers 400 with
+    // an empty body. A legacy host that still accepts uploads but no longer
+    // composes fits every fact we have, and one probe tells us. Allowlisted in
+    // obdClient -- the server logs in before every call, so an unchecked host
+    // here would hand OBD credentials to whoever asked.
+    const obd = obdClient(req.body?.baseUrl);
     const { status, ok, text, payload } = await obd.composeCampaignRaw(config);
 
     res.json({
@@ -181,6 +192,8 @@ router.post("/probe-compose", async (req, res) => {
       // route is that the last one was empty.
       body_raw: text,
       body_len: text.length,
+      // Echoed so a result can never be attributed to the wrong host.
+      host: obd.baseUrl,
       sent: payload,
     });
   } catch (error) {
