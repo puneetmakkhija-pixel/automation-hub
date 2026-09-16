@@ -67,3 +67,58 @@ test("the campaign's own prompt name survives the round trip", async () => {
   assert.match(obdSafeFileName(sent[0]), /^[A-Za-z0-9_-]+$/);
   assert.equal(obdSafeFileName(sent[0]), "FLEXI_BL_20260916");
 });
+
+// ── run 5: OBD contradicted run 4 ────────────────────────────────────────────
+//
+//   fileName "FLEXI_BL_20260916.mp3" -> "File Name only accepts digits,
+//                                        alphabets,minus and underscore."
+//   fileName "FLEXI_BL_20260916"     -> "Only accepts .wav or .mp3 file ext"
+//
+// Two fields, two opposite rules. Sending one string for both cannot satisfy
+// them, which is what run 5 proved.
+
+import OBDApiClient from "./lib/obdApiClient.js";
+
+async function capturedUpload(fileName, fileType) {
+  const client = new OBDApiClient();
+  client.token = "t";
+  client.userId = "u";
+  client.ensureToken = async () => {};
+  const original = globalThis.fetch;
+  let form = null;
+  globalThis.fetch = async (_url, init) => {
+    form = init.body;
+    return { ok: true, status: 200, json: async () => ({ promptId: 1 }), text: async () => "" };
+  };
+  try {
+    await client.uploadVoiceFile(Buffer.from("ID3bytes"), fileName, "campaign", fileType);
+  } finally {
+    globalThis.fetch = original;
+  }
+  return form;
+}
+
+test("the fileName FIELD carries no extension — run 4's error", async () => {
+  const form = await capturedUpload("FLEXI_BL_20260916.mp3", "mp3");
+  assert.equal(form.get("fileName"), "FLEXI_BL_20260916");
+  assert.doesNotMatch(form.get("fileName"), /\./, "a dot in fileName is what OBD refused");
+});
+
+test("the uploaded FILE keeps its extension — run 5's error", async () => {
+  const form = await capturedUpload("FLEXI_BL_20260916.mp3", "mp3");
+  assert.equal(form.get("waveFile").name, "FLEXI_BL_20260916.mp3");
+});
+
+test("the extension follows fileType, not whatever the caller typed", async () => {
+  // A caller naming it .mp3 while declaring wav would otherwise upload a file
+  // whose extension contradicts the type field the dialler reads.
+  const form = await capturedUpload("PROMPT.mp3", "wav");
+  assert.equal(form.get("waveFile").name, "PROMPT.wav");
+  assert.equal(form.get("fileName"), "PROMPT");
+});
+
+test("the two fields are never the same string", async () => {
+  // The single fix that satisfied run 4 broke run 5 precisely because they were.
+  const form = await capturedUpload("FLEXI_BL_20260916.mp3", "mp3");
+  assert.notEqual(form.get("fileName"), form.get("waveFile").name);
+});
