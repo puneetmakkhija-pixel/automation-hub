@@ -39,6 +39,43 @@ export async function obdFailure(what, response) {
   );
 }
 
+/**
+ * Find an uploaded prompt's id by the name it was uploaded under.
+ *
+ * The upload itself does NOT return an id. Run 8 proved it: promptupload and
+ * baseupload both reply with {message} and nothing else, so
+ * `prompt.promptId ?? prompt.id` was always null and the compose that followed
+ * was always going to be a 400.
+ *
+ * The list endpoint does carry ids, so the id is looked up after the upload
+ * rather than read out of a reply that never had one.
+ *
+ * Tolerant about which key holds the name because the vendor is not consistent
+ * about it, and exported so the matching is testable without an upload.
+ */
+export function findPromptId(prompts, wantedName) {
+  const list = Array.isArray(prompts)
+    ? prompts
+    : prompts?.prompts ?? prompts?.data ?? prompts?.result ?? [];
+  if (!Array.isArray(list)) return null;
+
+  const wanted = String(wantedName ?? '').toLowerCase();
+  if (!wanted) return null;
+
+  // The uploaded name may come back with the extension the file carried, so
+  // "FLEXI_BL_20260916" has to match "FLEXI_BL_20260916.mp3".
+  const named = (entry) =>
+    [entry?.fileName, entry?.promptName, entry?.name, entry?.file_name, entry?.prompt_name]
+      .filter((v) => typeof v === 'string')
+      .map((v) => v.toLowerCase());
+
+  const hit = list.find((entry) =>
+    named(entry).some((n) => n === wanted || n.replace(/\.[a-z0-9]{1,5}$/, '') === wanted)
+  );
+  if (!hit) return null;
+  return hit.promptId ?? hit.prompt_id ?? hit.id ?? null;
+}
+
 class OBDApiClient {
   constructor(baseUrl, username, password) {
     this.baseUrl = baseUrl;

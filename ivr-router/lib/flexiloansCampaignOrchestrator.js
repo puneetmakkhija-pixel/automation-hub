@@ -1,5 +1,6 @@
 import OBDApiClient from "./obdApiClient.js";
 import ElevenLabsClient from "./elevenLabsClient.js";
+import { findPromptId } from "./obdApiClient.js";
 
 /**
  * The Flexiloans (Epimoney) press-1 broadcast, end to end.
@@ -134,12 +135,55 @@ export function buildBaseCsv(rows) {
  * caller.
  */
 export async function selectBase(sb, { limit, lender = LENDER } = {}) {
-  const { data, error } = await sb.rpc("lender_campaign_batch", {
+  // The _json form, because PostgREST caps EVERY result at db-max-rows = 1000
+  // and says nothing. The table-returning function is correct — it gives 50,000
+  // from SQL — but over the API it came back as exactly 1000, and run 8 reported
+  // {"step":"base","people":1000} against a cap of 50,000.
+  //
+  // The cap counts ROWS, so one jsonb row carrying the whole array is not
+  // subject to it. See the migration for why raising db-max-rows globally was
+  // not the trade to make.
+  const { data, error } = await sb.rpc("lender_campaign_batch_json", {
     p_lender: lender,
     p_limit: limit,
   });
   if (error) throw new Error(`base select failed: ${error.message}`);
-  return data ?? [];
+
+  const rows = Array.isArray(data) ? data : [];
+
+  // Belt and braces. If this ever comes back at exactly the row cap while more
+  // was asked for, that is the truncation signature and it must be loud —
+  // quietly dialling 2% of the base is the failure mode this whole change
+  // exists to end.
+  if (limit > 1000 && rows.length === 1000) {
+    throw new Error(
+      `base select returned exactly 1000 rows for a limit of ${limit} — ` +
+        `that is PostgREST's db-max-rows cap, not the real base size`
+    );
+  }
+  return rows;
+}
+
+/**
+ * Write the dial list into the ledger the view reads.
+ *
+ * One RPC rather than 25,000 inserts through PostgREST, and it returns the
+ * count it actually wrote so the caller can check that against what it dialled
+ * instead of assuming.
+ */
+export async function recordDispatch(sb, { lender = LENDER, campaign, rows } = {}) {
+  const mobiles = (rows ?? [])
+    .map((r) => String(r?.mobile10 ?? "").replace(/\D/g, "").slice(-10))
+    .filter((m) => m.length === 10);
+  if (mobiles.length === 0) return 0;
+
+  const { data, error } = await sb.rpc("record_campaign_dispatch", {
+    p_lender: lender,
+    p_campaign: campaign,
+    p_mobiles: mobiles,
+  });
+  if (error) throw new Error(`dispatch ledger write failed: ${error.message}`);
+  return typeof data === "number" ? data : Number(data ?? 0);
 }
 
 /**
@@ -217,14 +261,31 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   // rather than sniffing it, so saying "wav" here would be a lie the dialler
   // acts on.
   const prompt = await obd.uploadVoiceFile(audio, `${name}.mp3`, "campaign", "mp3");
-  const promptId = prompt?.promptId ?? prompt?.id ?? null;
-  // The keys, not the values: enough to see that an id was read out of the
-  // right field, without pasting a vendor payload into an HTTP response.
-  steps.push({ step: "prompt", id: promptId, returned: Object.keys(prompt ?? {}) });
+  // The upload replies {message} and no id — run 8 established that — so the
+  // id comes from the list endpoint, which does carry one.
+  let promptId = prompt?.promptId ?? prompt?.id ?? null;
+  if (promptId === null && typeof obd.getVoiceFiles === "function") {
+    promptId = findPromptId(await obd.getVoiceFiles(), name);
+  }
+  steps.push({
+    step: "prompt",
+    id: promptId,
+    // The keys, not the values: enough to see which field an id was read from,
+    // without pasting a vendor payload into an HTTP response.
+    returned: Object.keys(prompt ?? {}),
+  });
 
   const base = await obd.uploadBaseFile(buildBaseCsv(rows), name);
   const baseId = base?.baseId ?? base?.id ?? null;
-  steps.push({ step: "contacts", id: baseId, returned: Object.keys(base ?? {}) });
+  steps.push({
+    step: "contacts",
+    id: baseId,
+    returned: Object.keys(base ?? {}),
+    // The MESSAGE this time, not just the key. baseupload has no list endpoint
+    // to fall back on and nothing in the repo documents one, so what the
+    // dialler actually says is the only lead we have on where its id lives.
+    said: typeof base?.message === "string" ? base.message.slice(0, 200) : null,
+  });
 
   if (!enabled) {
     // Everything is staged and inspectable in the OBD console; the one call
@@ -262,12 +323,33 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   });
   steps.push({ step: "campaign", id: campaign?.campaignId ?? campaign?.id ?? null });
 
+  // AFTER the compose, never before.
+  //
+  // Recording first and composing second would exclude people who were never
+  // called, and they would sit out the whole 90-day window for a run that
+  // failed. Recording second risks the opposite — a compose that worked and a
+  // ledger write that did not — so that case is reported loudly rather than
+  // swallowed: the next lot would re-dial these people, and somebody has to
+  // know that before firing it.
+  let recorded = null;
+  let recordError = null;
+  try {
+    recorded = await recordDispatch(sb, { lender: LENDER, campaign: name, rows });
+  } catch (error) {
+    recordError = error?.message ?? String(error);
+  }
+  steps.push({ step: "recorded", people: recorded, error: recordError });
+
   return {
     ok: true,
     dialled: true,
     name,
     people: rows.length,
     campaignId: campaign?.campaignId ?? campaign?.id ?? null,
+    // Loud, and at the top level rather than buried in steps: a false here
+    // means the next lot will call these people again.
+    dispatch_recorded: recordError === null && recorded === rows.length,
+    ...(recordError ? { warning: `dialled, but the dispatch ledger was not written: ${recordError}` } : {}),
     steps,
   };
   }
