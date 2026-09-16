@@ -27,6 +27,35 @@
  *   const voices = await voiceClient.listVoices();
  */
 
+/**
+ * The model every call here renders with unless told otherwise.
+ *
+ * eleven_monolingual_v1 was the default in three places and ElevenLabs has
+ * RETIRED it:
+ *
+ *   "The models eleven_monolingual_v1 and eleven_multilingual_v1 have been
+ *    deprecated and are no longer available. Please migrate to a newer TTS
+ *    model such as eleven_v3, eleven_multilingual_v2, or eleven_flash_v2_5."
+ *
+ * So /api/voice/tts, /api/voice/ivr-menu and /api/voice/greeting have all been
+ * answering HTTP 400 for every caller, in every language. #84 fixed the
+ * campaign by passing a model explicitly and left the default — and the three
+ * endpoints that rely on it — exactly as broken as before.
+ *
+ * ONE constant, because three copies of a model id is how one of them gets
+ * left behind, which is the whole story above.
+ *
+ * v2 rather than flash: nothing here is realtime. These render a file and hand
+ * it over, so latency buys nothing and the better pronunciation is worth having.
+ */
+export const DEFAULT_MODEL_ID = 'eleven_multilingual_v2';
+
+/** Models ElevenLabs has retired. Sending one is an HTTP 400, always. */
+export const RETIRED_MODEL_IDS = Object.freeze([
+  'eleven_monolingual_v1',
+  'eleven_multilingual_v1',
+]);
+
 class ElevenLabsError extends Error {
   constructor(message, statusCode, response) {
     super(message);
@@ -175,7 +204,7 @@ class ElevenLabsClient {
    * @param {string} options.voiceId - Voice ID (default: Rachel)
    * @param {number} options.stability - Stability (0-1, default: 0.5)
    * @param {number} options.similarityBoost - Similarity boost (0-1, default: 0.75)
-   * @param {string} options.modelId - Model ID (default: eleven_monolingual_v1)
+   * @param {string} options.modelId - Model ID (default: DEFAULT_MODEL_ID)
    * @returns {Promise<Buffer>} Audio data in MP3 format
    */
   async textToSpeech(options) {
@@ -184,7 +213,7 @@ class ElevenLabsClient {
       voiceId = this.defaultVoices.rachel,
       stability = 0.5,
       similarityBoost = 0.75,
-      modelId = 'eleven_monolingual_v1',
+      modelId = DEFAULT_MODEL_ID,
     } = options;
 
     if (!text) {
@@ -307,7 +336,12 @@ class ElevenLabsClient {
    * Create IVR menu audio with multiple options
    */
   async createIVRMenu(options) {
-    const { menuTitle, options: menuOptions, voiceId = this.defaultVoices.rachel } = options;
+    const {
+      menuTitle,
+      options: menuOptions,
+      voiceId = this.defaultVoices.rachel,
+      modelId = DEFAULT_MODEL_ID,
+    } = options;
 
     if (!menuTitle || !Array.isArray(menuOptions) || menuOptions.length === 0) {
       throw new ElevenLabsError('menuTitle and options array are required', null, null);
@@ -325,7 +359,7 @@ class ElevenLabsClient {
         `/text-to-speech/${voiceId}`,
         {
           text: menuText,
-          model_id: 'eleven_monolingual_v1',
+          model_id: modelId,
           voice_settings: {
             stability: 0.7,
             similarity_boost: 0.75,
@@ -355,7 +389,12 @@ class ElevenLabsClient {
    * Generate personalized greeting
    */
   async generatePersonalizedGreeting(options) {
-    const { customerName, loanAmount, voiceId = this.defaultVoices.rachel } = options;
+    const {
+      customerName,
+      loanAmount,
+      voiceId = this.defaultVoices.rachel,
+      modelId = DEFAULT_MODEL_ID,
+    } = options;
 
     if (!customerName) {
       throw new ElevenLabsError('customerName is required', null, null);
@@ -373,7 +412,7 @@ class ElevenLabsClient {
         `/text-to-speech/${voiceId}`,
         {
           text,
-          model_id: 'eleven_monolingual_v1',
+          model_id: modelId,
           voice_settings: {
             stability: 0.6,
             similarity_boost: 0.8,
