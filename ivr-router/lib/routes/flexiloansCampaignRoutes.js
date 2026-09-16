@@ -83,6 +83,10 @@ router.post("/run", async (req, res) => {
       // with the field absent, and says nothing useful either way. Until the
       // right value is known it is probeable from here rather than baked in.
       ...(req.body?.contactList !== undefined ? { contactList: req.body.contactList } : {}),
+      // "numbers" | "csv" | "csv-header". The dialler rejects the FILE, not the
+      // field, and the header was always an unverified assumption — so the
+      // shape is probeable from here too.
+      ...(req.body?.baseFormat !== undefined ? { baseFormat: req.body.baseFormat } : {}),
     });
     res.status(out.ok ? 200 : 502).json(out);
   } catch (error) {

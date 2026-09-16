@@ -142,9 +142,11 @@ await check("a request body can narrow the cap but never widen it", () => {
 console.log("\nthe contact file\n");
 
 await check("a comma in a name cannot shift the phone column", () => {
-  const csv = buildBaseCsv([{ mobile10: "9800000001", customer_name: "Kumar, Rajesh" }]);
-  assert.equal(csv.split("\n")[1], "9800000001,Kumar  Rajesh");
-  assert.equal(csv.split("\n")[1].split(",").length, 2);
+  // The "csv" shape, which is the only one that carries a name at all. The
+  // default is bare numbers now -- see buildBaseCsv for why.
+  const csv = buildBaseCsv([{ mobile10: "9800000001", customer_name: "Kumar, Rajesh" }], "csv");
+  assert.equal(csv.split("\n")[0], "9800000001,Kumar  Rajesh");
+  assert.equal(csv.split("\n")[0].split(",").length, 2);
 });
 
 await check("a number that is not ten digits is not dialled", () => {
@@ -153,14 +155,15 @@ await check("a number that is not ten digits is not dialled", () => {
     { mobile10: "919800000002", customer_name: "With Country Code" },
     { mobile10: "9800000003", customer_name: "Fine" },
   ]);
-  const lines = csv.split("\n").slice(1);
+  const lines = csv.split("\n");
   assert.equal(lines.length, 2, "the short one is dropped, the +91 one is trimmed");
   assert.ok(lines[0].startsWith("9800000002"));
 });
 
 await check("a missing name is an empty column, not the word undefined", () => {
-  const csv = buildBaseCsv([{ mobile10: "9800000004" }]);
-  assert.equal(csv.split("\n")[1], "9800000004,");
+  assert.equal(buildBaseCsv([{ mobile10: "9800000004" }], "csv"), "9800000004,");
+  // ...and in the default shape there is no column to be empty.
+  assert.equal(buildBaseCsv([{ mobile10: "9800000004" }]), "9800000004");
 });
 
 console.log("\nthe script\n");
