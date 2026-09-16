@@ -498,14 +498,27 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
 }
 
 /** The real thing, wired from the environment. */
+/**
+ * Just the dialler, for the calls that only talk to the dialler.
+ *
+ * liveDeps builds an ElevenLabsClient too, and that constructor THROWS without
+ * ELEVEN_LABS_API_KEY. So a read-only OBD lookup -- list the webhooks, list the
+ * prompts -- failed with "Missing ELEVEN_LABS_API_KEY", naming a credential it
+ * has no use for and would never have called. A route that reads the dialler
+ * should need the dialler's credentials and nothing else.
+ */
+export function obdClient() {
+  return new OBDApiClient(
+    process.env.OBD_BASE_URL,
+    process.env.OBD_USERNAME,
+    process.env.OBD_PASSWORD
+  );
+}
+
 export function liveDeps(sb) {
   return {
     sb,
-    obd: new OBDApiClient(
-      process.env.OBD_BASE_URL,
-      process.env.OBD_USERNAME,
-      process.env.OBD_PASSWORD
-    ),
+    obd: obdClient(),
     tts: new ElevenLabsClient(process.env.ELEVEN_LABS_API_KEY),
   };
 }
