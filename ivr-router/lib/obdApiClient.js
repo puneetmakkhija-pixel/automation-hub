@@ -101,10 +101,20 @@ class OBDApiClient {
     //
     // Sanitised here rather than at the call site so every caller is fixed at
     // once, the same reason the Blob wrapping lives here.
+    // TWO fields, TWO opposite rules, learned one 400 at a time:
+    //
+    //   fileName ".mp3"  -> "File Name only accepts digits, alphabets,minus
+    //                        and underscore."
+    //   fileName ""      -> "Only accepts .wav or .mp3 file ext"
+    //
+    // The first is about the fileName FIELD; the second is about the uploaded
+    // FILE. So the extension comes off the field and stays on the part
+    // filename — sending the same string for both cannot satisfy them.
     const safeName = obdSafeFileName(fileName);
+    const ext = fileType === 'mp3' ? 'mp3' : 'wav';
 
     const formData = new FormData();
-    formData.append('waveFile', blob, safeName);
+    formData.append('waveFile', blob, `${safeName}.${ext}`);
     formData.append('userId', this.userId);
     formData.append('fileName', safeName);
     formData.append('promptCategory', promptCategory);
