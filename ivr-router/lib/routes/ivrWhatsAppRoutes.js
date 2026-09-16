@@ -286,7 +286,10 @@ export function recordSend(row) {
         direction: "outbound",
         type: "ivr_dtmf_template",
         metadata: {
-          source: "ivr_keypress_webhook",
+          // Which mechanism produced this message. The press webhook is the
+          // default; a re-broadcast marks itself so it can never select the
+          // same customer twice on a repeat run.
+          source: row.source || "ivr_keypress_webhook",
           status: row.status, // sent | failed
           digit: row.digit,
           template: row.template,
