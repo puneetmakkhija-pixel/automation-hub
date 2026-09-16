@@ -34,7 +34,7 @@ import { addAliasToLinks } from "../applyLinkAlias.js";
 
 const router = express.Router();
 
-const WABA_URL =
+export const WABA_URL =
   process.env.ANANTA_WABA_URL || "https://utilsapi.anantadot.com/waba/sendmessage";
 
 /**
@@ -42,7 +42,7 @@ const WABA_URL =
  * Digits with no entry send nothing, so a misconfigured map cannot spend money
  * on every call. JSON so digits can be added without a code change.
  */
-function templateMap() {
+export function templateMap() {
   const raw = process.env.IVR_DTMF_TEMPLATES;
   if (!raw) return {};
   try {
@@ -149,7 +149,7 @@ function variantLink(variant) {
  * Not having this is what let a Hero Fincorp campaign send Poonawalla links
  * through a correctly-resolved variant without anything looking wrong.
  */
-function rawPlaceholders(digit, body, variant) {
+export function rawPlaceholders(digit, body, variant) {
   const key = String(variant || body.campaign_id || "").trim();
   const digitList = parseJsonEnv("IVR_DTMF_PLACEHOLDERS")?.[String(digit)];
 
@@ -176,7 +176,7 @@ function rawPlaceholders(digit, body, variant) {
   return { list: [], source: "none" };
 }
 
-function interpolate(list, fields) {
+export function interpolate(list, fields) {
   return list.map((v) =>
     String(v).replace(/\{\{(\w+)\}\}/g, (_, k) => (fields[k] == null ? "" : String(fields[k])))
   );
@@ -187,7 +187,7 @@ function interpolate(list, fields) {
  * says "10-digit ... without (+91) country code", the sample payloads show
  * "+916384xxxxxx". Default to the description; ANANTA_PHONE_FORMAT=e164 switches.
  */
-function formatPhone(raw) {
+export function formatPhone(raw) {
   const digits = String(raw || "").replace(/\D/g, "");
   const ten = digits.length > 10 ? digits.slice(-10) : digits;
   if (ten.length !== 10 || !/^[6-9]/.test(ten)) {
@@ -271,7 +271,7 @@ function database() {
  * Fire and forget: never awaited, so a slow or broken database cannot add
  * latency to the webhook or fail a send that already happened.
  */
-function recordSend(row) {
+export function recordSend(row) {
   const client = database()?.client;
   if (!client) return;
 
@@ -632,4 +632,10 @@ const guard = verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "IVR_WA");
 router.post("/whatsapp", guard, handleKeypress);
 router.post("/whatsapp/:variant", guard, handleKeypress);
 
+/**
+ * Exported for lib/routes/resendFailedRoutes.js, which has to compose a message
+ * EXACTLY as this route does — same template, same placeholder source, same
+ * alias, same pre-verified link. A resend that quietly differs from the
+ * original send is a second bug wearing the first one's clothes.
+ */
 export default router;
