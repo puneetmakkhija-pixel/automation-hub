@@ -1,6 +1,7 @@
 import OBDApiClient from "./obdApiClient.js";
 import ElevenLabsClient from "./elevenLabsClient.js";
 import { findPromptId } from "./obdApiClient.js";
+import { createDtmfCampaign } from "./campaignTemplates.js";
 
 /**
  * The Flexiloans (Epimoney) press-1 broadcast, end to end.
@@ -403,15 +404,35 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     );
   }
 
-  const campaign = await obd.composeCampaign({
-    campaignName: name,
-    campaignType: "DTMF",
-    promptId,
-    baseId,
-    // The whole point of the broadcast: 1 is intent, and it is the only key
-    // that does anything.
-    dtmfKeys: [{ key: "1", action: "webhook" }],
-  });
+  // Through createDtmfCampaign, which is OBD's ACTUAL compose contract and has
+  // been sitting in campaignTemplates.js — used by /api/obd/campaigns/dtmf —
+  // the whole time. What this function used to hand-build shared no field with
+  // it:
+  //
+  //   sent                              wanted
+  //   campaignType: "DTMF"   (string)   templateId: 1        (number)
+  //   promptId                          menuPId
+  //   dtmfKeys: [{key, action}]         dtmf: "1"
+  //   -                                 ~20 more required fields
+  //
+  // An unrecognised payload is exactly what answers with a 400 and an empty
+  // body, which is what every compose attempt got.
+  //
+  // menuPId is also why the prompt category had to be "menu": this is the menu
+  // prompt, the one that asks for the keypress.
+  const campaign = await obd.composeCampaign(
+    createDtmfCampaign({
+      campaignName: name,
+      baseId,
+      menuPromptId: promptId,
+      // 1 is intent, and the only key that does anything.
+      dtmf: opts.dtmf ?? "1",
+      // Left to the template's defaults unless a caller says otherwise: these
+      // are the dialler's own field names and guessing values for them is what
+      // produced the payload above.
+      ...(opts.campaignConfig ?? {}),
+    })
+  );
   steps.push({ step: "campaign", id: campaign?.campaignId ?? campaign?.id ?? null });
 
   // AFTER the compose, never before.

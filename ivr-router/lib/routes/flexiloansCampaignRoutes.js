@@ -91,6 +91,9 @@ router.post("/run", async (req, res) => {
       // mime type together, because the two travel as a pair and the dialler
       // has never said which it reads.
       ...(req.body?.baseExt !== undefined ? { baseExt: req.body.baseExt } : {}),
+      // Anything else createDtmfCampaign takes — webhookId, retries, clis,
+      // scheduleTime — without a deploy per field.
+      ...(req.body?.campaignConfig !== undefined ? { campaignConfig: req.body.campaignConfig } : {}),
     });
     res.status(out.ok ? 200 : 502).json(out);
   } catch (error) {
