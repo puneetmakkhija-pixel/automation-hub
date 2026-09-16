@@ -4,6 +4,7 @@ import SupabaseClient from "../supabaseClient.js";
 import { aliasFor } from "../mobileAlias.js";
 import { addAliasToLinks } from "../applyLinkAlias.js";
 import { resolveSsoLink, upgradeApplyLinks } from "../crmSsoLink.js";
+import { forwardPressToCrm } from "../crmPressForward.js";
 import {
   WABA_URL,
   templateMap,
@@ -66,6 +67,21 @@ const REBROADCAST_SOURCE = "ivr_rebroadcast";
 
 /** A re-broadcast is a whole base, not an outage cohort, so it has its own ceiling. */
 const MAX_REBROADCAST = 20000;
+
+/**
+ * Where the press backfill starts, and why not the 1st.
+ *
+ * 02 Sep has 688 presses with no CRM event, but the forward did not exist yet
+ * that day — those presses were never lost, they were never meant to arrive.
+ * Recovering them would create 688 leads for an integration that was not live,
+ * dated today, which is a different decision from repairing an outage. Pass an
+ * earlier `since` deliberately if that is what is wanted.
+ *
+ * From the 3rd the forward WAS live, so a missing event is a failure:
+ *   03 Sep  718 lost
+ *   11 Sep  562 lost
+ */
+const DEFAULT_BACKFILL_SINCE = "2026-09-03T00:00:00.000Z";
 
 function db() {
   try {
@@ -464,6 +480,226 @@ router.post("/rebroadcast", async (req, res) => {
     sent,
     failed: batch.length - sent,
     remaining: rows.length - sent,
+    results: results.slice(0, 50),
+    results_truncated: results.length > 50,
+  });
+});
+
+/**
+ * ── The presses the CRM never recorded ────────────────────────────────────
+ *
+ * forwardPressToCrm is fire-and-forget: the customer's WhatsApp must never wait
+ * on the CRM, so every failure there is a log line and nothing more. Correct
+ * for the customer, and it makes a CRM outage completely silent — the press
+ * simply never happened, as far as everything downstream is concerned.
+ *
+ * It has happened twice and neither was noticed at the time:
+ *
+ *   03 Sep   761 presses handled,  43 recorded   718 lost
+ *   11 Sep   705 presses handled, 142 recorded   563 lost
+ *
+ * 1,281 people pressed 1, were sent their WhatsApp, and never entered the CRM:
+ * no ivr_campaign_events row, no bdl_leads row, no case, no agent. Both
+ * incidents ended only because a deploy restarted the router.
+ *
+ * This replays those presses through the SAME path a live press takes —
+ * forwardPressToCrm, POST /api/ivr/press — so a recovered lead is built by the
+ * CRM's own logic: campaign resolved, ivr_lead_lookup enrichment applied,
+ * lead_ref minted. Reimplementing any of that here would drift from it.
+ *
+ * WHAT IT DOES NOT DO
+ *
+ * It does not send a WhatsApp and it does not dial. These people already got
+ * their message; the press record is the only thing missing.
+ *
+ * The CRM's own /api/ivr/press CAN send the apply link, at step 4. It cannot
+ * here: that send is gated on crm.app_config 'campaign_nudge_enabled', which is
+ * 'off', is read per call rather than cached, fails closed on an unreadable
+ * switch, and carries a second bdl_nudge_log guard behind it. If somebody turns
+ * that switch on, this route WILL start messaging the people it recovers —
+ * which is why the status endpoint reports the switch and the run refuses while
+ * it is on.
+ *
+ * THE TIMESTAMPS ARE TODAY'S
+ *
+ * public.ivr_press_lead stamps now() and takes no override, so a recovered
+ * press is dated today and the lead is created today. The original press time
+ * is carried in the event metadata as pressed_at_original instead, alongside
+ * backfill: true, so these rows can always be told apart from live ones and the
+ * historical daily counts are NOT rewritten. crm.v_press_reconciliation keeps
+ * reporting 03 and 11 Sep as incidents, which is the truth.
+ *
+ * SAFE TO RE-RUN
+ *
+ * ivr_press_lead does NOT dedupe the event insert — calling it twice for one
+ * mobile writes two rows. Selection is therefore the only guard, and it is
+ * exact: a mobile is a candidate only while it has NO dtmf event at all. Once
+ * recovered it stops being selected, so an interrupted run resumes cleanly and
+ * a repeated run sends nothing.
+ */
+
+/** Presses the router handled that the CRM has no event for. */
+export async function findUnrecordedPresses(client, { sinceIso, variant }) {
+  if (!client) return { rows: [], error: "no_client" };
+  const ten = (v) => String(v ?? "").replace(/\D/g, "").slice(-10);
+
+  const { data: msgs, error } = await client
+    .from("whatsapp_messages")
+    .select("phone_number, created_at, metadata")
+    .eq("direction", "outbound")
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: true })
+    .limit(50000);
+  if (error) return { rows: [], error: error.message };
+
+  const handled = new Map();
+  for (const row of msgs ?? []) {
+    const m = ten(row.phone_number);
+    if (m.length !== 10) continue;
+    if (String(row.metadata?.digit ?? "") !== "1") continue;
+    if (variant && (row.metadata?.variant ?? null) !== variant) continue;
+    // A re-broadcast is not a press and must never be recovered as one.
+    if (row.metadata?.source === REBROADCAST_SOURCE) continue;
+    if (!handled.has(m)) {
+      handled.set(m, {
+        mobile: m,
+        pressedAt: row.created_at,
+        campaignId: row.metadata?.campaign_id ?? null,
+        campaignName: row.metadata?.campaign_name ?? null,
+        uniqueId: row.metadata?.unique_id ?? null,
+      });
+    }
+  }
+
+  const { data: events, error: evError } = await client
+    .from("ivr_campaign_events")
+    .select("phone_number, dtmf_input, event_type")
+    .limit(200000);
+  // Fails CLOSED: an unreadable event table would make every press look
+  // unrecorded and replay the entire month.
+  if (evError) throw new Error(`ivr_campaign_events unreadable: ${evError.message}`);
+
+  let recorded = 0;
+  for (const row of events ?? []) {
+    const m = ten(row.phone_number);
+    if (m.length !== 10) continue;
+    if (handled.delete(m)) recorded++;
+  }
+
+  return { rows: [...handled.values()], excluded: { already_recorded: recorded } };
+}
+
+/** Is the CRM's own link-send switched on? While it is, this route refuses. */
+async function nudgeIsOn(client) {
+  if (!client) return null;
+  try {
+    const { data, error } = await client
+      .schema("crm")
+      .from("app_config")
+      .select("value")
+      .eq("key", "campaign_nudge_enabled")
+      .maybeSingle();
+    if (error) return null;
+    return String(data?.value ?? "").trim().toLowerCase() === "on";
+  } catch {
+    return null;
+  }
+}
+
+/** Who is missing from the CRM. Writes nothing. */
+router.get("/press-backfill/status", async (req, res) => {
+  const since = String(req.query.since || "").trim() || DEFAULT_BACKFILL_SINCE;
+  const variant = String(req.query.variant || "").trim() || "businessloans";
+  const client = db();
+  try {
+    const { rows, excluded, error } = await findUnrecordedPresses(client, { sinceIso: since, variant });
+    if (error) return res.status(503).json({ ok: false, error });
+
+    const byDay = {};
+    for (const r of rows) {
+      const d = new Date(new Date(r.pressedAt).getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
+      byDay[d] = (byDay[d] ?? 0) + 1;
+    }
+    const nudge = await nudgeIsOn(client);
+    res.json({
+      ok: true, since, variant,
+      unrecorded: rows.length,
+      by_ist_day: byDay,
+      excluded,
+      campaign_nudge_enabled: nudge === null ? "unreadable" : nudge ? "ON" : "off",
+      will_send_whatsapp: nudge === true,
+      note: nudge === true
+        ? "REFUSING to run: crm.app_config campaign_nudge_enabled is ON, so the CRM would message every recovered lead. Turn it off first."
+        : "Recovered leads are dated TODAY; the original press time is kept in the event metadata as pressed_at_original.",
+    });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
+
+/** Replay them into the CRM. */
+router.post("/press-backfill", async (req, res) => {
+  const since = String(req.body?.since || "").trim() || DEFAULT_BACKFILL_SINCE;
+  const variant = String(req.body?.variant || "").trim() || "businessloans";
+  const client = db();
+
+  const nudge = await nudgeIsOn(client);
+  if (nudge !== false) {
+    return res.status(409).json({
+      ok: false,
+      error: nudge === true
+        ? "campaign_nudge_enabled is ON — recovering these leads would send each of them a WhatsApp. Refusing."
+        : "Could not read campaign_nudge_enabled. Refusing rather than risk messaging every recovered lead.",
+    });
+  }
+
+  let rows;
+  let excluded;
+  try {
+    const found = await findUnrecordedPresses(client, { sinceIso: since, variant });
+    if (found.error) return res.status(503).json({ ok: false, error: found.error });
+    rows = found.rows;
+    excluded = found.excluded;
+  } catch (e) {
+    return res.status(503).json({ ok: false, error: e.message });
+  }
+
+  const cap = resolveRunCap(req.body?.limit, rows.length, MAX_REBROADCAST);
+  const batch = rows.slice(0, cap);
+
+  const results = [];
+  for (const p of batch) {
+    // Serial. The CRM timing out under load is what lost these presses in the
+    // first place; replaying 1,281 of them concurrently would repeat it.
+    const r = await forwardPressToCrm(
+      {
+        mobile: p.mobile,
+        campaign_id: p.campaignId ?? undefined,
+        campaign_name: p.campaignName ?? undefined,
+        unique_id: p.uniqueId ?? undefined,
+        // Kept by the CRM as event metadata: these rows must always be
+        // distinguishable from a live press, and the real press time must not
+        // be lost just because the row is dated today.
+        backfill: true,
+        pressed_at_original: p.pressedAt,
+        backfill_reason: "forwardPressToCrm failed at the time; press never reached the CRM",
+      },
+      { digit: "1", variant }
+    );
+    results.push({ mobile: p.mobile, ...r });
+  }
+
+  const ok = results.filter((r) => r.forwarded).length;
+  console.log(`[IVR_BACKFILL] Recovered ${ok}/${batch.length}, ${rows.length} unrecorded`);
+
+  res.json({
+    ok: true,
+    unrecorded: rows.length,
+    excluded,
+    attempted: batch.length,
+    recovered: ok,
+    failed: batch.length - ok,
+    remaining: rows.length - ok,
     results: results.slice(0, 50),
     results_truncated: results.length > 50,
   });
