@@ -507,9 +507,48 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
  * has no use for and would never have called. A route that reads the dialler
  * should need the dialler's credentials and nothing else.
  */
-export function obdClient() {
+/**
+ * The OBD hosts this service is allowed to send its credentials to.
+ *
+ * obdClient takes a baseUrl so compose can be tested against the host the
+ * vendor's own panel uses. That parameter is an EXFILTRATION VECTOR if it is
+ * taken on trust: the client logs in before every call, so a caller who could
+ * name any host could have this server post OBD_USERNAME and OBD_PASSWORD
+ * wherever they liked. CONSOLE_SECRET guards the route, but a secret that has
+ * been pasted into a chat transcript -- as this one has -- is not the only
+ * thing that should stand between a credential and the open internet.
+ *
+ * So: an allowlist, matched on host, not a substring of the URL.
+ * "obdapi2.ivrsms.com.evil.test" contains the string and is a different
+ * machine.
+ */
+export const OBD_ALLOWED_HOSTS = Object.freeze([
+  'obdapi2.ivrsms.com',
+  'obd3api.expressivr.com',
+]);
+
+export function assertAllowedObdHost(baseUrl) {
+  let host;
+  try {
+    host = new URL(baseUrl).host;
+  } catch {
+    throw new Error(`Not a valid OBD base URL: ${JSON.stringify(baseUrl)}`);
+  }
+  if (!OBD_ALLOWED_HOSTS.includes(host)) {
+    throw new Error(
+      `Refusing to send OBD credentials to ${host}. Allowed: ${OBD_ALLOWED_HOSTS.join(', ')}`
+    );
+  }
+  return baseUrl;
+}
+
+/**
+ * @param baseUrl overrides OBD_BASE_URL, for testing compose against the host
+ *   the vendor's panel actually uses. Checked against OBD_ALLOWED_HOSTS.
+ */
+export function obdClient(baseUrl) {
   return new OBDApiClient(
-    process.env.OBD_BASE_URL,
+    baseUrl === undefined ? process.env.OBD_BASE_URL : assertAllowedObdHost(baseUrl),
     process.env.OBD_USERNAME,
     process.env.OBD_PASSWORD
   );
