@@ -75,10 +75,23 @@ test("an empty test list is refused the same way", async () => {
   assert.equal(cap.compose, undefined);
 });
 
+test("two tests a second apart do not collide", async () => {
+  const names = new Set();
+  for (let i = 0; i < 3; i++) {
+    const cap = {};
+    await runFlexiloansCampaign(deps(cap), { testMobile: "9355333379", stamp: "20260916" });
+    names.add(cap.baseName);
+  }
+  // Same minute, so an hhmm stamp would give one name for all three.
+  assert.match([...names][0], /^FLEXI_TEST_20260916_\d{6}$/);
+});
+
 test("a test campaign is named apart from the day's broadcast", async () => {
   const cap = {};
   await runFlexiloansCampaign(deps(cap), { testMobile: "9355333379", stamp: "20260916" });
-  assert.match(cap.baseName, /^FLEXI_TEST_20260916_\d{4}$/);
+  // Seconds, not minutes: two probes in the same minute collided on the
+  // dialler with "name already exists" for both the prompt and the base.
+  assert.match(cap.baseName, /^FLEXI_TEST_20260916_\d{6}$/);
   assert.ok(!cap.baseName.startsWith("FLEXI_BL_"), "it must not collide with the real campaign");
 });
 
