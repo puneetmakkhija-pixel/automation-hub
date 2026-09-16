@@ -83,6 +83,21 @@ export const IVR_SCRIPT =
 export const IVR_VOICE_ID = "rqIg3iVrlZOAkxCMdelQ";
 
 /**
+ * The model the script is rendered with, and it must be a MULTILINGUAL one.
+ *
+ * elevenLabsClient defaults to eleven_monolingual_v1, which is English-only.
+ * Handed the Devanagari above it answers HTTP 400 and no prompt is ever made —
+ * which is exactly what the first live run hit. The voice was never the
+ * problem; the model was. Since the orchestrator is the only caller that knows
+ * the script is Hindi, it is the caller's job to say so rather than lean on a
+ * default written for a different language.
+ *
+ * v2 over flash: this renders one file once, ahead of the calls, so latency
+ * buys nothing here and the better Hindi pronunciation is worth having.
+ */
+export const IVR_MODEL_ID = "eleven_multilingual_v2";
+
+/**
  * The dialler's contact file.
  *
  * Pure so the shape is testable without an upload. One mobile per line with a
@@ -169,6 +184,7 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   const spoken = await tts.textToSpeech({
     text: opts.script ?? IVR_SCRIPT,
     voiceId: opts.voiceId ?? IVR_VOICE_ID,
+    modelId: opts.modelId ?? IVR_MODEL_ID,
   });
   if (spoken && spoken.success === false) {
     throw new Error(`TTS failed: ${spoken.error ?? "no reason given"}`);
