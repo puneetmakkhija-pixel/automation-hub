@@ -49,7 +49,7 @@ test("a test run dials the number given and nobody else", async () => {
   const out = await runFlexiloansCampaign(deps(cap), { testMobile: "9355333379", stamp: "20260916" });
   assert.equal(out.people, 1);
   assert.equal(out.test, true);
-  assert.equal(cap.baseCsv.trim().split("\n").length, 2, "header plus one row");
+  assert.equal(cap.baseCsv.trim().split("\n").length, 1, "one number, no header");
   assert.match(cap.baseCsv, /9355333379/);
   // The base is not merely unused — it is never asked for.
   assert.ok(!(cap.rpc ?? []).includes("lender_campaign_batch_json"),
