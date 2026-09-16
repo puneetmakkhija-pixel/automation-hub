@@ -162,11 +162,27 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
     return { ok: false, dialled: false, reason: "nobody to call", name, steps };
   }
 
-  const audio = await tts.textToSpeech({
+  // textToSpeech returns a WRAPPER — { success, audio, ... } — not the bytes,
+  // and it resolves rather than throws when ElevenLabs fails. Passing the
+  // wrapper straight to the uploader sent the dialler "[object Object]", and a
+  // TTS failure sailed through as if it had worked.
+  const spoken = await tts.textToSpeech({
     text: opts.script ?? IVR_SCRIPT,
     voiceId: opts.voiceId ?? IVR_VOICE_ID,
   });
-  steps.push({ step: "tts", bytes: audio?.byteLength ?? audio?.length ?? null });
+  if (spoken && spoken.success === false) {
+    throw new Error(`TTS failed: ${spoken.error ?? "no reason given"}`);
+  }
+  // Accepts the wrapper or a bare buffer, because obdRoutes and the tests hand
+  // over raw bytes and both shapes are legitimate input.
+  const audio = spoken?.audio ?? spoken;
+  const audioBytes = audio?.byteLength ?? audio?.length ?? 0;
+  // The check that would have caught all of this: a prompt with no bytes is not
+  // a prompt, and uploading it wastes a round trip to fail vaguely.
+  if (!audioBytes) {
+    throw new Error("TTS returned no audio bytes");
+  }
+  steps.push({ step: "tts", bytes: audioBytes });
 
   // mp3 is what ElevenLabs returns; the OBD upload takes the type as a field
   // rather than sniffing it, so saying "wav" here would be a lie the dialler

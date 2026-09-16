@@ -57,8 +57,20 @@ class OBDApiClient {
   async uploadVoiceFile(waveFile, fileName, promptCategory, fileType = 'wav') {
     await this.ensureToken();
 
+    // A Blob, not a raw Buffer.
+    //
+    // FormData.append() only keeps bytes for Blob-like values. Anything else —
+    // a Buffer included — is coerced with String(), so the dialler received the
+    // literal text "[object Object]" or a mangled byte string instead of audio.
+    // Wrapping here fixes every caller at once rather than each one separately.
+    const mime = fileType === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+    const blob =
+      typeof Blob !== 'undefined' && waveFile instanceof Blob
+        ? waveFile
+        : new Blob([waveFile], { type: mime });
+
     const formData = new FormData();
-    formData.append('waveFile', waveFile);
+    formData.append('waveFile', blob, fileName);
     formData.append('userId', this.userId);
     formData.append('fileName', fileName);
     formData.append('promptCategory', promptCategory);
@@ -74,7 +86,15 @@ class OBDApiClient {
       });
 
       if (!response.ok) {
-        throw new Error(`Voice upload failed: ${response.statusText}`);
+        // statusText is EMPTY over HTTP/2, so the old message was literally
+        // "Voice upload failed: " and threw away both the status code and the
+        // body. An error that names nothing costs an hour of guessing; this one
+        // names the status and whatever the dialler said.
+        const detail = await response.text().catch(() => '');
+        throw new Error(
+          `Voice upload failed: HTTP ${response.status}` +
+            (detail ? ` — ${detail.slice(0, 300)}` : '')
+        );
       }
 
       return await response.json();

@@ -89,9 +89,18 @@ class ElevenLabsClient {
 
       if (contentType && contentType.includes('application/json')) {
         data = await response.json();
-      } else if (method === 'GET' && contentType && contentType.includes('audio')) {
-        // Return audio buffer for TTS
-        data = await response.arrayBuffer();
+      } else if (contentType && contentType.includes('audio')) {
+        // Audio comes back as BYTES, never text.
+        //
+        // This used to also require method === 'GET'. Text-to-speech is a POST,
+        // so its audio/mpeg response never matched, fell through to the text
+        // branch below, and the MP3 was read as UTF-8 — which does not
+        // round-trip binary. The campaign then uploaded the mangled result to
+        // the dialler, which rejected it with an error that named nothing.
+        //
+        // A Buffer rather than an ArrayBuffer: every consumer here hands this
+        // to FormData or writes it to disk, and both want Buffer.
+        data = Buffer.from(await response.arrayBuffer());
       } else {
         data = { raw_text: await response.text() };
       }
