@@ -61,6 +61,12 @@ const router = express.Router();
 const DEFAULT_DIGIT = "1";
 const MAX_RUN = 2000;
 
+/** The marker a re-broadcast leaves on its own sends, so it never repeats one. */
+const REBROADCAST_SOURCE = "ivr_rebroadcast";
+
+/** A re-broadcast is a whole base, not an outage cohort, so it has its own ceiling. */
+const MAX_REBROADCAST = 20000;
+
 function db() {
   try {
     return new SupabaseClient().client;
@@ -70,10 +76,10 @@ function db() {
 }
 
 /** A cap in the body may only narrow the run. Never widen it. */
-export function resolveRunCap(requested, available) {
+export function resolveRunCap(requested, available, ceiling = MAX_RUN) {
   const n = Number(requested);
-  if (!Number.isFinite(n) || n <= 0) return Math.min(available, MAX_RUN);
-  return Math.min(Math.floor(n), available, MAX_RUN);
+  if (!Number.isFinite(n) || n <= 0) return Math.min(available, ceiling);
+  return Math.min(Math.floor(n), available, ceiling);
 }
 
 /**
@@ -177,6 +183,7 @@ async function sendOne(client, owed) {
     campaignName: owed.campaignName,
     uniqueId: owed.uniqueId,
     linkSource,
+    source: owed.source,
     ssoMinted: sso.minted,
     ssoReason: sso.reason,
     link: placeholders[placeholders.length - 1],
@@ -259,6 +266,206 @@ router.post("/failed", async (req, res) => {
     failed: batch.length - sent,
     remaining: rows.length - sent,
     results,
+  });
+});
+
+/**
+ * ── The re-broadcast ──────────────────────────────────────────────────────
+ *
+ * A DIFFERENT operation from /failed above, and deliberately a different
+ * endpoint. /failed exists because a message never arrived. This exists
+ * because the message arrived, was read, and led nowhere — until 16 Sep the
+ * link it carried put an OTP screen in front of the customer, and 93% of the
+ * people who opened it stopped there.
+ *
+ * So the safety rule is the opposite one. /failed refuses anybody who already
+ * received a message; this one selects them ON PURPOSE. That makes every other
+ * guard load-bearing:
+ *
+ *   1. crm.contact_suppression, where released_at is null. 10,634 rows. A
+ *      person on this list has asked not to be contacted and the reason is not
+ *      this route's to second-guess.
+ *   2. Anyone the voice bot recorded as DND, NOT_INTERESTED or WRNG. They said
+ *      it out loud on a recorded call; sending them a second link is how a
+ *      WhatsApp sender gets reported.
+ *   3. Anyone who has already had a re-broadcast. Every send this route makes
+ *      is stamped source='ivr_rebroadcast', and a mobile carrying that stamp is
+ *      never selected again. Re-running the whole job is therefore safe: it
+ *      sends only to whoever is left.
+ *   4. Anyone who has since started the apply journey. They do not need
+ *      chasing, and a nudge after somebody has already engaged reads as spam.
+ *
+ * Guard 3 is the one that matters most in practice. This is a 9,765-message
+ * run over a slow serial loop; it will be interrupted, and somebody will run
+ * it again. Without the stamp, the second run sends the whole base a second
+ * time.
+ */
+
+/** Mobiles that were sent a link, never started applying, and may be contacted. */
+export async function findRebroadcast(client, { sinceIso, variant }) {
+  if (!client) return { rows: [], error: "no_client" };
+  const ten = (v) => String(v ?? "").replace(/\D/g, "").slice(-10);
+
+  const { data: msgs, error } = await client
+    .from("whatsapp_messages")
+    .select("phone_number, created_at, metadata")
+    .eq("direction", "outbound")
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: true })
+    .limit(50000);
+  if (error) return { rows: [], error: error.message };
+
+  const candidates = new Map();
+  const alreadyRebroadcast = new Set();
+
+  for (const row of msgs ?? []) {
+    const m = ten(row.phone_number);
+    if (m.length !== 10) continue;
+
+    if (row.metadata?.source === REBROADCAST_SOURCE) {
+      alreadyRebroadcast.add(m);
+      continue;
+    }
+    if (row.metadata?.status !== "sent") continue;
+    if (variant && (row.metadata?.variant ?? null) !== variant) continue;
+
+    if (!candidates.has(m)) {
+      candidates.set(m, {
+        mobile: m,
+        firstSentAt: row.created_at,
+        digit: String(row.metadata?.digit ?? DEFAULT_DIGIT),
+        variant: row.metadata?.variant ?? null,
+        campaignId: row.metadata?.campaign_id ?? null,
+        campaignName: row.metadata?.campaign_name ?? null,
+        uniqueId: null, // a re-broadcast is not tied to the original call
+      });
+    }
+  }
+
+  for (const m of alreadyRebroadcast) candidates.delete(m);
+
+  const excluded = { already_rebroadcast: alreadyRebroadcast.size, started: 0, suppressed: 0, refused_bot: 0 };
+
+  const started = await readSet(client, "portal_otp_sessions", "mobile", { gte: null });
+  for (const m of started) if (candidates.delete(m)) excluded.started++;
+
+  const suppressed = await readSuppressed(client);
+  for (const m of suppressed) if (candidates.delete(m)) excluded.suppressed++;
+
+  const refused = await readBotRefusals(client);
+  for (const m of refused) if (candidates.delete(m)) excluded.refused_bot++;
+
+  return { rows: [...candidates.values()], excluded };
+}
+
+/** Every distinct 10-digit mobile in one column of one table. */
+async function readSet(client, table, column) {
+  const out = new Set();
+  const ten = (v) => String(v ?? "").replace(/\D/g, "").slice(-10);
+  const { data, error } = await client.from(table).select(column).limit(100000);
+  if (error) {
+    console.error(`[IVR_REBROADCAST] Could not read ${table}: ${error.message}`);
+    // Fail CLOSED on the exclusion lists: an unreadable suppression list must
+    // never become an empty one.
+    throw new Error(`exclusion list ${table} unreadable: ${error.message}`);
+  }
+  for (const row of data ?? []) {
+    const m = ten(row[column]);
+    if (m.length === 10) out.add(m);
+  }
+  return out;
+}
+
+async function readSuppressed(client) {
+  const out = new Set();
+  const ten = (v) => String(v ?? "").replace(/\D/g, "").slice(-10);
+  const { data, error } = await client
+    .from("contact_suppression")
+    .select("phone, released_at")
+    .is("released_at", null)
+    .limit(100000);
+  if (error) throw new Error(`suppression list unreadable: ${error.message}`);
+  for (const row of data ?? []) {
+    const m = ten(row.phone);
+    if (m.length === 10) out.add(m);
+  }
+  return out;
+}
+
+const BOT_REFUSALS = new Set(["DND", "NOT_INTERESTED", "WRNG"]);
+
+async function readBotRefusals(client) {
+  const out = new Set();
+  const ten = (v) => String(v ?? "").replace(/\D/g, "").slice(-10);
+  const { data, error } = await client
+    .from("voice_call_events")
+    .select("mobile10, raw")
+    .eq("provider", "oriserve")
+    .limit(100000);
+  if (error) throw new Error(`voice outcomes unreadable: ${error.message}`);
+  for (const row of data ?? []) {
+    const d = row?.raw?.analysis?.DISPOSITION ?? row?.raw?.analysis?.disposition ?? "";
+    if (!BOT_REFUSALS.has(String(d).toUpperCase())) continue;
+    const m = ten(row.mobile10);
+    if (m.length === 10) out.add(m);
+  }
+  return out;
+}
+
+/** Who would receive a re-broadcast. Sends nothing. */
+router.get("/rebroadcast/status", async (req, res) => {
+  const since = String(req.query.since || "").trim() || "2026-09-01T00:00:00.000Z";
+  const variant = String(req.query.variant || "").trim() || "businessloans";
+  try {
+    const { rows, excluded, error } = await findRebroadcast(db(), { sinceIso: since, variant });
+    if (error) return res.status(503).json({ ok: false, error });
+    res.json({ ok: true, since, variant, sendable: rows.length, excluded, max_run: MAX_REBROADCAST });
+  } catch (e) {
+    res.status(503).json({ ok: false, error: e.message });
+  }
+});
+
+/** Send it. */
+router.post("/rebroadcast", async (req, res) => {
+  const since = String(req.body?.since || "").trim() || "2026-09-01T00:00:00.000Z";
+  const variant = String(req.body?.variant || "").trim() || "businessloans";
+
+  const client = db();
+  let rows;
+  let excluded;
+  try {
+    const found = await findRebroadcast(client, { sinceIso: since, variant });
+    if (found.error) return res.status(503).json({ ok: false, error: found.error });
+    rows = found.rows;
+    excluded = found.excluded;
+  } catch (e) {
+    return res.status(503).json({ ok: false, error: e.message });
+  }
+
+  const cap = resolveRunCap(req.body?.limit, rows.length, MAX_REBROADCAST);
+  const batch = rows.slice(0, cap);
+
+  const results = [];
+  for (const owed of batch) {
+    results.push(await sendOne(client, { ...owed, source: REBROADCAST_SOURCE }));
+  }
+
+  const sent = results.filter((r) => r.sent).length;
+  console.log(
+    `[IVR_REBROADCAST] Run complete: ${sent}/${batch.length} sent, ${rows.length} sendable, ` +
+      `excluded ${JSON.stringify(excluded)}`
+  );
+
+  res.json({
+    ok: true,
+    sendable: rows.length,
+    excluded,
+    attempted: batch.length,
+    sent,
+    failed: batch.length - sent,
+    remaining: rows.length - sent,
+    results: results.slice(0, 50),
+    results_truncated: results.length > 50,
   });
 });
 
