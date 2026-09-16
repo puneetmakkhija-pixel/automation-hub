@@ -3,7 +3,7 @@ import axios from "axios";
 import { verifyWebhookSecret } from "../middleware/verifyWebhookSecret.js";
 import SupabaseClient from "../supabaseClient.js";
 import { resolveCustomerId } from "../customerIds.js";
-import { resolveSsoLink } from "../crmSsoLink.js";
+import { resolveSsoLink, upgradeApplyLinks, isPlainApplyLink } from "../crmSsoLink.js";
 import { forwardPressToCrm } from "../crmPressForward.js";
 import { dispatchPressToVoiceBot } from "../oriVoiceDispatch.js";
 import { dispatchPressToOurBot, handledByOurBot } from "../ourVoiceBotDispatch.js";
@@ -453,7 +453,14 @@ async function handleKeypress(req, res) {
   // nothing uses, and put a cross-service dependency on a path that does not
   // need it.
   const { list: raw, source: linkSource } = rawPlaceholders(digit, body, variant);
-  const wantsSso = raw.some((v) => String(v).includes("{{sso_link}}"));
+
+  // Asked for two ways. {{sso_link}} is the explicit one. The second is the
+  // one that matters in production: a configured link that IS our own plain
+  // /apply gets upgraded whether or not anybody remembered the placeholder.
+  // Without it this stayed dormant — one token minted for a press-1 caller in
+  // six weeks, while 8,433 of 9,063 callers met an OTP screen and left.
+  const wantsSso =
+    raw.some((v) => String(v).includes("{{sso_link}}")) || raw.some(isPlainApplyLink);
   const sso = wantsSso
     ? await resolveSsoLink(phone.phone, database()?.client)
     : { url: "", minted: false, expiresAt: null, reason: "not_requested" };
@@ -475,13 +482,19 @@ async function handleKeypress(req, res) {
   // that to whoever edits IVR_LINK_* is why only the Poonawalla link carried
   // one: on 10 Sep, 111 of 15,003 press-1 leads could be found in a lender's
   // MIS, and every single match came off an alias on a link.
+  // Order matters: upgrade the bare link to the pre-verified one FIRST, then
+  // put the alias on whatever link is actually going out. Reversed, the alias
+  // would be added to a URL that is then replaced.
   const placeholders = addAliasToLinks(
-    interpolate(raw, {
-      ...body,
-      customer_id: customerId ?? "",
-      sso_link: sso.url,
-      alias,
-    }),
+    upgradeApplyLinks(
+      interpolate(raw, {
+        ...body,
+        customer_id: customerId ?? "",
+        sso_link: sso.url,
+        alias,
+      }),
+      sso.minted ? sso.url : ""
+    ),
     alias
   );
   const blank = placeholders.findIndex((v) => v === "");

@@ -264,10 +264,27 @@ async function webhookSuite() {
 
   let crmHits = [];
   let anantaHits = [];
+  let ssoHits = [];
   let crmDelayMs = 0;
 
   const crm = await listen(async (req, res) => {
-    crmHits.push({ url: req.url, secret: req.headers["x-sync-secret"], body: await readBody(req) });
+    const body = await readBody(req);
+
+    // The CRM mints pre-verified apply links here. Answering it is what lets
+    // the OTP-free check below assert on a real token rather than on the
+    // fallback link every failure produces.
+    if (String(req.url).startsWith("/api/portal/sso-link")) {
+      ssoHits.push({ body, auth: req.headers.authorization });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        ok: true,
+        url: `${process.env.CRM_BASE_URL}/apply?t=tok_test_1`,
+        expires_at: "2026-09-16T07:00:00.000Z",
+      }));
+      return;
+    }
+
+    crmHits.push({ url: req.url, secret: req.headers["x-sync-secret"], body });
     setTimeout(() => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, created: true, lead_ref: "BDL-AA11" }));
@@ -308,6 +325,7 @@ async function webhookSuite() {
   const check = makeCheck(() => {
     crmHits = [];
     anantaHits = [];
+    ssoHits = [];
     crmDelayMs = 0;
   });
 
@@ -355,6 +373,45 @@ async function webhookSuite() {
       assert.equal(match[1], (9811100007).toString(36).padStart(7, "0"));
     } finally {
       delete process.env.IVR_LINK_BUSINESSLOANS;
+    }
+  });
+
+  await check("the bare apply link goes out OTP-free when a token can be minted", async () => {
+    // The second wiring check, and the one the unit tests cannot make. Both
+    // halves of the OTP-free change have to hold at the same time for anything
+    // to reach a customer:
+    //
+    //   1. resolveSsoLink must no longer refuse a first-time caller, and
+    //   2. the route must ask for a token even though this template is a bare
+    //      URL with no {{sso_link}} in it.
+    //
+    // Reverting EITHER leaves this red while every unit check still passes,
+    // which is how the SSO feature sat deployed and dormant for six weeks.
+    // Same host as CRM_BASE_URL, which is what production has: the configured
+    // link and the CRM are both crmbusinessloans.com. That equality is the rule
+    // isPlainApplyLink uses, and it is deliberate — only OUR apply page gets a
+    // token put on it, never a lender's.
+    process.env.IVR_LINK_BUSINESSLOANS = `${process.env.CRM_BASE_URL}/apply`;
+    process.env.CRM_SSO_SECRET = "test-secret";
+    try {
+      const r = await post("/whatsapp/businessloans", {
+        mobile: "9811100008", dtmf: "1", unique_id: "c-sso-1",
+      });
+      await settle();
+      assert.equal(r.body.sent, true, JSON.stringify(r.body));
+      assert.equal(anantaHits.length, 1);
+
+      const sent = anantaHits[0].message.placeholders.join(" ");
+      const link = sent.split(/\s+/).find((v) => v.includes("/apply"));
+      assert.ok(link, `no apply link went out: ${sent}`);
+      assert.equal(new URL(link).searchParams.get("t"), "tok_test_1",
+        `the customer was sent an OTP-gated link: ${link}`);
+      assert.equal(ssoHits.length, 1, "the CRM was never asked to mint a token");
+      assert.equal(ssoHits[0].body.mobile, "9811100008");
+      assert.equal(ssoHits[0].body.source, "ivr_keypress");
+    } finally {
+      delete process.env.IVR_LINK_BUSINESSLOANS;
+      delete process.env.CRM_SSO_SECRET;
     }
   });
 
