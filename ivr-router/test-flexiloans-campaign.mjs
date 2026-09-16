@@ -38,8 +38,10 @@ const rows = (n) =>
 
 const fakeDeps = (n = 3, calls = []) => ({
   sb: {
-    // selectBase goes through crm.lender_campaign_batch, not the view: the view
-    // cannot be read at the owner's volume inside PostgREST's 8s timeout.
+    // selectBase goes through crm.lender_campaign_batch_json, not the view and
+    // not the table-returning function: the view cannot be read at the owner's
+    // volume inside PostgREST's 8s timeout, and the table-returning form is
+    // silently truncated to 1000 rows by PostgREST's db-max-rows.
     rpc: async (fn, params) => {
       calls.push(["rpc", fn, params]);
       return { data: rows(Math.min(n, params?.p_limit ?? n)), error: null };
@@ -111,7 +113,9 @@ await check("the cap bounds who is selected, not just who is reported", async ()
   // The cap must reach the database, not just trim the result afterwards --
   // at 50,000 the difference is a 13-second query nobody asked for.
   const rpc = calls.find((c) => c[0] === "rpc");
-  assert.equal(rpc[1], "lender_campaign_batch");
+  // _json, because the row-returning form comes back capped at 1000 over the
+  // API however large the limit -- run 8 dialled 1000 of a requested 50,000.
+  assert.equal(rpc[1], "lender_campaign_batch_json");
   assert.equal(rpc[2].p_limit, 5);
 });
 
