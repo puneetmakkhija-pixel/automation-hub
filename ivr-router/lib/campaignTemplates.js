@@ -74,6 +74,16 @@ export function createSimpleIvrCampaign(config) {
     menuWaitTime: config.menuWaitTime || '',
     rePrompt: config.rePrompt || '',
     location: config.location || '{}',
+    // "locationList is missing" -- the dialler's own words, twice in a row, on
+    // an otherwise complete payload. It is a separate field from `location`,
+    // which we were already sending, and nothing here had ever sent it.
+    //
+    // '[]' rather than '{}' because this file stringifies everything it sends
+    // and uses '[]' for the list-shaped fields (ttsRows) and '{}' for the
+    // object-shaped ones (location, smsSuccessApi). A field called
+    // locationList is a list. An empty one is "no location filter", which is
+    // what a nationwide campaign wants.
+    locationList: config.locationList || '[]',
     clis: config.clis || '',
     webhook: config.webhook || false,
     webhookId: config.webhookId || '',
@@ -112,6 +122,16 @@ export function createDtmfCampaign(config) {
     menuWaitTime: config.menuWaitTime || 5,
     rePrompt: config.rePrompt || 2,
     location: config.location || '{}',
+    // "locationList is missing" -- the dialler's own words, twice in a row, on
+    // an otherwise complete payload. It is a separate field from `location`,
+    // which we were already sending, and nothing here had ever sent it.
+    //
+    // '[]' rather than '{}' because this file stringifies everything it sends
+    // and uses '[]' for the list-shaped fields (ttsRows) and '{}' for the
+    // object-shaped ones (location, smsSuccessApi). A field called
+    // locationList is a list. An empty one is "no location filter", which is
+    // what a nationwide campaign wants.
+    locationList: config.locationList || '[]',
     clis: config.clis || '',
     webhook: config.webhook || false,
     webhookId: config.webhookId || '',
@@ -152,6 +172,16 @@ export function createCallPatchCampaign(config) {
     menuWaitTime: config.menuWaitTime || 5,
     rePrompt: config.rePrompt || 2,
     location: config.location || '{}',
+    // "locationList is missing" -- the dialler's own words, twice in a row, on
+    // an otherwise complete payload. It is a separate field from `location`,
+    // which we were already sending, and nothing here had ever sent it.
+    //
+    // '[]' rather than '{}' because this file stringifies everything it sends
+    // and uses '[]' for the list-shaped fields (ttsRows) and '{}' for the
+    // object-shaped ones (location, smsSuccessApi). A field called
+    // locationList is a list. An empty one is "no location filter", which is
+    // what a nationwide campaign wants.
+    locationList: config.locationList || '[]',
     clis: config.clis || '',
     webhook: config.webhook || false,
     webhookId: config.webhookId || '',
