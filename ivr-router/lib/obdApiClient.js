@@ -343,7 +343,28 @@ class OBDApiClient {
   }
 
   // Campaign APIs
-  async composeCampaign(campaignConfig) {
+  /**
+   * Compose, with nothing hidden and nothing thrown.
+   *
+   * Every field this pipeline has had to discover -- promptCategory,
+   * contactList, the IST scheduleTime, locationList -- was learned by sending
+   * a payload and reading what came back. That loop cost a merge, a deploy and
+   * about five minutes per guess, and it only worked while the dialler was
+   * willing to name the field it disliked. It stopped: compose now answers
+   *
+   *   HTTP 400, and an empty body
+   *
+   * so there is nothing left to read, and the next field cannot be guessed
+   * from the reply. What is needed instead is to see BOTH sides -- the exact
+   * bytes sent and the exact bytes returned -- and to be able to vary one
+   * field at a time without a deploy.
+   *
+   * The real composeCampaign is written in terms of this, deliberately. A
+   * probe that built its own payload could drift from the live one and would
+   * then be answering a question nobody asked; sharing this function means
+   * what the probe sends IS what a campaign sends.
+   */
+  async composeCampaignRaw(campaignConfig) {
     await this.ensureToken();
 
     const payload = {
@@ -351,15 +372,27 @@ class OBDApiClient {
       ...campaignConfig,
     };
 
-    try {
-      const response = await fetch(`${this.baseUrl}/api/obd/campaign/compose`, {
-        method: 'POST',
-        headers: this.getAuthHeader(),
-        body: JSON.stringify(payload),
-      });
+    const response = await fetch(`${this.baseUrl}/api/obd/campaign/compose`, {
+      method: 'POST',
+      headers: this.getAuthHeader(),
+      body: JSON.stringify(payload),
+    });
 
-      if (!response.ok) {
-        throw await obdFailure('Compose campaign', response);
+    // .text() rather than .json(): the 400 that prompted this HAD no body, and
+    // a parse would have turned "the dialler said nothing" into a thrown
+    // SyntaxError that looks like a bug in this file.
+    const text = await response.text().catch(() => '');
+    return { status: response.status, ok: response.ok, text, payload };
+  }
+
+  async composeCampaign(campaignConfig) {
+    try {
+      const { status, ok, text } = await this.composeCampaignRaw(campaignConfig);
+
+      if (!ok) {
+        throw new Error(
+          `Compose campaign failed: HTTP ${status}` + (text ? ` — ${text.slice(0, 300)}` : '')
+        );
       }
 
       // The same 200-with-a-refusal-in-the-body check the two uploads got in
@@ -367,10 +400,10 @@ class OBDApiClient {
       // a false success is worst: it is the step that rings phones, so a run
       // that believes it composed reports dialled = true having dialled nobody
       // -- or, at 25,000, cannot tell you whether it did.
-      const body = await response.json();
+      const body = text ? JSON.parse(text) : {};
       const said = obdBodySaysFailure(body);
       if (said) {
-        throw new Error(`Compose campaign failed: HTTP ${response.status} — ${said}`);
+        throw new Error(`Compose campaign failed: HTTP ${status} — ${said}`);
       }
       return body;
     } catch (error) {

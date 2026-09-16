@@ -1,5 +1,6 @@
 import express from "express";
 import SupabaseClient from "../supabaseClient.js";
+import { createDtmfCampaign } from "../campaignTemplates.js";
 import {
   campaignCap,
   campaignEnabled,
@@ -21,8 +22,9 @@ import {
  * and rings real phones, so it answers to the operator credential rather than
  * to a provider webhook secret.
  *
- *   GET  /api/flexiloans-campaign/status   what would happen, touching nothing
- *   POST /api/flexiloans-campaign/run      the pipeline
+ *   GET  /api/flexiloans-campaign/status         what would happen, touching nothing
+ *   POST /api/flexiloans-campaign/run            the pipeline
+ *   POST /api/flexiloans-campaign/probe-compose  one compose, both sides shown
  *
  * /status exists because "is it ready" and "do it" must be different requests.
  * It reads the base and the switches and returns; it calls neither ElevenLabs
@@ -106,6 +108,78 @@ router.post("/run", async (req, res) => {
       error: error?.message ?? String(error),
       steps: error?.steps ?? [],
     });
+  }
+});
+
+/**
+ * Compose one payload and report both sides of the conversation.
+ *
+ * The pipeline is four steps green and stuck on the fifth. Every field before
+ * this one was found by sending a payload and reading the dialler's complaint,
+ * one merge and one deploy per guess. That loop has stopped working, because
+ * the dialler stopped talking:
+ *
+ *   {"ok":false,"error":"Compose campaign failed: HTTP 400", ...}
+ *
+ * -- a 400 with an EMPTY body, so there is no field name to act on. Guessing
+ * blind at five minutes a guess is not a plan.
+ *
+ * This route makes a guess cost about a second and shows what the previous
+ * loop never did: the exact payload that went out, beside the exact bytes that
+ * came back. It reuses a prompt and base that are ALREADY uploaded -- ids from
+ * any earlier run -- so a probe spends no ElevenLabs credit, uploads nothing,
+ * and adds no prompt to the approval queue.
+ *
+ * It is not a way to dial. A composed campaign is scheduled, not placed, and
+ * this route returns the dialler's answer rather than acting on it: nothing
+ * here writes the dispatch ledger, so a probe can never mark 25,000 people as
+ * contacted. Behind CONSOLE_SECRET with the rest of the router.
+ *
+ *   POST /api/flexiloans-campaign/probe-compose
+ *   { "baseId": "2774773", "menuPromptId": "68339",
+ *     "campaignConfig": { "locationList": "{}" } }
+ */
+router.post("/probe-compose", async (req, res) => {
+  try {
+    const baseId = req.body?.baseId;
+    const menuPromptId = req.body?.menuPromptId;
+    // Refused rather than defaulted. A probe composed against a made-up id
+    // would get a 400 for the WRONG reason and read exactly like the failure
+    // being investigated -- which is how three runs were spent last week
+    // believing a base had uploaded when it had not.
+    if (!baseId || !menuPromptId) {
+      return res.status(400).json({
+        ok: false,
+        error: "probe-compose needs baseId and menuPromptId from an earlier run",
+      });
+    }
+
+    const campaignName =
+      req.body?.campaignName ??
+      `FLEXI_PROBE_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}`;
+
+    const config = createDtmfCampaign({
+      campaignName,
+      baseId,
+      menuPromptId,
+      ...(req.body?.campaignConfig ?? {}),
+    });
+
+    const { obd } = liveDeps(sb());
+    const { status, ok, text, payload } = await obd.composeCampaignRaw(config);
+
+    res.json({
+      ok: true,
+      composed: ok,
+      status,
+      // Named body_raw, not body: it is bytes, and the whole point of this
+      // route is that the last one was empty.
+      body_raw: text,
+      body_len: text.length,
+      sent: payload,
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error?.message ?? String(error) });
   }
 });
 
