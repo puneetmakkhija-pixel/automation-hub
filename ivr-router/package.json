@@ -17,7 +17,8 @@
     "test:voice-bot-launch": "node test-voice-bot-launch.mjs",
     "test:ori-press-dispatch": "node test-ori-press-dispatch.mjs",
     "test:flexiloans-campaign": "node test-flexiloans-campaign.mjs",
-    "test:our-voice-bot": "node test-our-voice-bot.mjs"
+    "test:our-voice-bot": "node test-our-voice-bot.mjs",
+    "test:press-queue": "node test-press-queue.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",

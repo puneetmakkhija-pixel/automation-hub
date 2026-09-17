@@ -13,6 +13,7 @@ import lenderRoutingRoutes from "./lib/lenderRoutingRoutes.js";
 import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import { verifyWebhookSecret } from "./lib/middleware/verifyWebhookSecret.js";
 import ivrWhatsAppRoutes from "./lib/routes/ivrWhatsAppRoutes.js";
+import { queueStats as pressQueueStats } from "./lib/pressQueue.js";
 import plTrackerRoutes from "./lib/routes/plTrackerRoutes.js";
 import flexiloansCampaignRoutes from "./lib/routes/flexiloansCampaignRoutes.js";
 import resendFailedRoutes from "./lib/routes/resendFailedRoutes.js";
@@ -67,6 +68,11 @@ app.get("/health", (_req, res) => {
       logger.log('info', 'HEALTH_CHECK', 'Service health check', {
         uptime: process.uptime(),
         memory: process.memoryUsage(),
+        // Press backlog rides along here rather than in the response body,
+        // which Railway's container check reads and which stays "ok".
+        // A non-zero `waiting` during a dial run is the early warning that the
+        // dialler is delivering faster than this service can send.
+        press: pressQueueStats(),
         type: 'health',
       });
     }
