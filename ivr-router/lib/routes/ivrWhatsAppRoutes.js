@@ -15,6 +15,7 @@ import {
   metaErrorCode,
   templateCandidates,
 } from "../wabaErrors.js";
+import { sendPressSms, shouldSendSms, smsMode } from "../smsSender.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -290,7 +291,9 @@ export function recordSend(row) {
       {
         phone_number: row.phone,
         direction: "outbound",
-        type: "ivr_dtmf_template",
+        // SMS rows are the same shape and must not be mistaken for WhatsApp
+        // ones: every count of "did the customer get the link" reads this.
+        type: row.channel === "sms" ? "ivr_dtmf_sms" : "ivr_dtmf_template",
         metadata: {
           // Which mechanism produced this message. The press webhook is the
           // default; a re-broadcast marks itself so it can never select the
@@ -316,6 +319,57 @@ export function recordSend(row) {
     .then(({ error }) => {
       if (error) onError(error.message);
     }, (error) => onError(error?.message ?? String(error)));
+}
+
+/**
+ * The second pipe, fired beside the first.
+ *
+ * Never awaited, for the same reason recordSend is not: the IVR panel is
+ * holding the connection open, and a slow SMS gateway must not add latency to
+ * a WhatsApp that already went. Nothing here can fail the webhook -- a thrown
+ * error in a second channel turning a delivered message into a 502 would be a
+ * worse bug than the outage this exists for.
+ *
+ * Called on EVERY exit of the send path, including the permanent one. That is
+ * the case it was built for: on 16 Sep a paused template left 724 press-1
+ * callers with nothing, and an SMS would have reached every one of them.
+ */
+function dispatchSms(whatsappSent, ctx) {
+  if (!shouldSendSms(whatsappSent)) return;
+
+  sendPressSms({ mobile10: ctx.phone, link: ctx.link })
+    .then((out) => {
+      if (out.skipped) return;
+      if (out.ok) {
+        console.log(
+          `[IVR_SMS] Sent phone=${ctx.phone} mode=${smsMode()} ` +
+            `whatsapp_sent=${whatsappSent} id=${out.messageId || "-"}`
+        );
+      } else {
+        console.error(`[IVR_SMS] Failed phone=${ctx.phone}: ${out.error}`);
+      }
+      recordSend({
+        status: out.ok ? "sent" : "failed",
+        channel: "sms",
+        phone: ctx.phone,
+        digit: ctx.digit,
+        template: ctx.smsTemplateId,
+        variant: ctx.variant,
+        campaignId: ctx.campaignId,
+        campaignName: ctx.campaignName,
+        uniqueId: ctx.uniqueId,
+        customerId: ctx.customerId,
+        linkSource: ctx.linkSource,
+        ssoMinted: ctx.ssoMinted,
+        ssoReason: ctx.ssoReason,
+        link: ctx.link,
+        messageId: out.messageId ?? null,
+        error: out.ok ? null : { message: out.error },
+      });
+    })
+    .catch((error) => {
+      console.error(`[IVR_SMS] Dispatch error for ${ctx.phone}: ${error?.message ?? error}`);
+    });
 }
 
 /**
@@ -593,6 +647,21 @@ async function handleKeypress(req, res) {
         messageId: r.data?.message_id,
       });
 
+      dispatchSms(true, {
+        phone: phone.phone,
+        link: placeholders[placeholders.length - 1],
+        digit,
+        variant,
+        campaignId: body.campaign_id,
+        campaignName: campaign_name,
+        uniqueId: unique_id,
+        customerId,
+        linkSource,
+        ssoMinted: sso.minted,
+        ssoReason: sso.reason,
+        smsTemplateId: (process.env.MSG91_PRESS1_TEMPLATE_ID || "").trim() || null,
+      });
+
       return res.json({
         success: true,
         sent: true,
@@ -665,6 +734,23 @@ async function handleKeypress(req, res) {
         `Every press-1 caller is getting nothing until IVR_DTMF_TEMPLATES names ` +
         `a template that Meta will accept.`
     );
+    // The case this was built for: WhatsApp is out for everyone, and SMS is the
+    // only thing that will reach this caller.
+    dispatchSms(false, {
+      phone: phone.phone,
+      link: placeholders[placeholders.length - 1],
+      digit,
+      variant,
+      campaignId: body.campaign_id,
+      campaignName: campaign_name,
+      uniqueId: unique_id,
+      customerId,
+      linkSource,
+      ssoMinted: sso.minted,
+      ssoReason: sso.reason,
+      smsTemplateId: (process.env.MSG91_PRESS1_TEMPLATE_ID || "").trim() || null,
+    });
+
     return res.status(200).json({
       success: false,
       sent: false,
@@ -679,6 +765,21 @@ async function handleKeypress(req, res) {
   // Transient: let the send be retried by dropping it from the dedupe set.
   // sentPreviously() only matches status "sent", so a failed row never blocks
   // the retry.
+  dispatchSms(false, {
+    phone: phone.phone,
+    link: placeholders[placeholders.length - 1],
+    digit,
+    variant,
+    campaignId: body.campaign_id,
+    campaignName: campaign_name,
+    uniqueId: unique_id,
+    customerId,
+    linkSource,
+    ssoMinted: sso.minted,
+    ssoReason: sso.reason,
+    smsTemplateId: (process.env.MSG91_PRESS1_TEMPLATE_ID || "").trim() || null,
+  });
+
   sent.delete(key);
   return res.status(502).json({ success: false, error: "Ananta send failed", detail });
 }
