@@ -17,6 +17,7 @@
 import http from "node:http";
 import express from "express";
 import assert from "node:assert/strict";
+import { drain } from "./lib/pressQueue.js";
 import { forwardPressToCrm } from "./lib/crmPressForward.js";
 
 const listen = async (handler) => {
@@ -46,7 +47,15 @@ const makeCheck = (reset) => async (name, fn) => {
 
 // The forward is not awaited by the route, so give the floating promise a
 // moment to land before asserting on what the CRM saw.
-const settle = (ms = 300) => new Promise((r) => setTimeout(r, ms));
+// The webhook now answers the panel BEFORE doing the work, so "the response
+// came back" no longer means "the message went". Waiting on the press queue is
+// what tells us the send actually finished; the timer after it is still there
+// for the fire-and-forget CRM forward, which nothing awaits.
+const settle = async (ms = 300) => {
+  await drain();
+  await new Promise((r) => setTimeout(r, ms));
+  await drain();
+};
 
 // ── the forwarder on its own ──────────────────────────────────────────────
 async function forwarderSuite() {
@@ -335,7 +344,6 @@ async function webhookSuite() {
     const r = await post("/whatsapp/businessloans", { mobile: "9811100001", dtmf: "1", unique_id: "c-1" });
     await settle();
     assert.equal(r.status, 200);
-    assert.equal(r.body.sent, true, JSON.stringify(r.body));
     assert.equal(anantaHits.length, 1, "Ananta should have been called");
     assert.equal(crmHits.length, 1, "the CRM should have been called");
     assert.equal(crmHits[0].url, "/api/ivr/press");
@@ -360,7 +368,6 @@ async function webhookSuite() {
         mobile: "9811100007", dtmf: "1", unique_id: "c-alias-1",
       });
       await settle();
-      assert.equal(r.body.sent, true, JSON.stringify(r.body));
       assert.equal(anantaHits.length, 1);
 
       const sent = anantaHits[0].message.placeholders.join(" ");
@@ -398,7 +405,6 @@ async function webhookSuite() {
         mobile: "9811100008", dtmf: "1", unique_id: "c-sso-1",
       });
       await settle();
-      assert.equal(r.body.sent, true, JSON.stringify(r.body));
       assert.equal(anantaHits.length, 1);
 
       const sent = anantaHits[0].message.placeholders.join(" ");
@@ -419,7 +425,6 @@ async function webhookSuite() {
     const r = await post("/whatsapp/businessloans", { mobile: "9811100002", dtmf: "9", unique_id: "c-2" });
     await settle();
     assert.equal(r.status, 200);
-    assert.equal(r.body.sent, false);
     assert.equal(anantaHits.length, 0, "no message for an unmapped digit");
     assert.equal(crmHits.length, 1, "the press is a fact worth keeping even with no template");
     assert.equal(crmHits[0].body.dtmf, "9");
@@ -429,7 +434,6 @@ async function webhookSuite() {
     const r = await post("/whatsapp/businessloans", { mobile: "12", dtmf: "1", unique_id: "c-3" });
     await settle();
     assert.equal(r.status, 200);
-    assert.equal(r.body.sent, false);
     assert.equal(anantaHits.length, 0);
     assert.equal(crmHits.length, 1, "the CRM validates the number itself");
   });
@@ -445,7 +449,6 @@ async function webhookSuite() {
     const r = await post("/whatsapp/herofincorp", { mobile: "9811100007", dtmf: "1", unique_id: "c-7" });
     await settle();
     assert.equal(r.status, 200);
-    assert.equal(r.body.sent, true, "herofincorp must still get its WhatsApp");
     assert.equal(anantaHits.length, 1);
     assert.equal(crmHits.length, 0, "but its press must not enter this CRM's book");
   });
@@ -455,8 +458,17 @@ async function webhookSuite() {
     const started = Date.now();
     const r = await post("/whatsapp/businessloans", { mobile: "9811100005", dtmf: "1", unique_id: "c-5" });
     const elapsed = Date.now() - started;
-    assert.equal(r.body.sent, true, "the message must go out while the CRM is still thinking");
     assert.ok(elapsed < 1000, `the webhook answered in ${elapsed}ms — it waited on the CRM`);
+
+    // The acknowledgement being fast is no longer evidence of anything: it is
+    // returned before the work starts. What still has to hold is that the
+    // MESSAGE does not wait on the CRM either, so drain the press queue and
+    // check both that Ananta was called and that it happened well inside the
+    // three seconds the CRM is sitting on.
+    await drain();
+    const sentBy = Date.now() - started;
+    assert.equal(anantaHits.length, 1, "the message must go out while the CRM is still thinking");
+    assert.ok(sentBy < 2000, `the send took ${sentBy}ms — it waited on the CRM`);
     await settle(3200); // let the slow reply land before the next check
   });
 
@@ -467,7 +479,6 @@ async function webhookSuite() {
     await settle();
     process.env.CRM_BASE_URL = good;
     assert.equal(r.status, 200);
-    assert.equal(r.body.sent, true);
     assert.equal(anantaHits.length, 1);
   });
 
