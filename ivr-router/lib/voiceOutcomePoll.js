@@ -91,7 +91,7 @@ const ERROR_TYPE_DISPOSITION = Object.freeze({
  * @param {object} conversation the ElevenLabs conversation object
  * @returns {{terminal: boolean, disposition: string|null, durationSec: number|null,
  *            status: string|null, errorType: string|null, errorReason: string|null,
- *            unmappedErrorType: boolean}}
+ *            agentId: string|null, unmappedErrorType: boolean}}
  */
 export function outcomeOf(conversation) {
   const status = str(conversation?.status);
@@ -99,8 +99,16 @@ export function outcomeOf(conversation) {
   const errorType = str(meta?.error?.error_type);
   const errorReason = str(meta?.error?.reason);
   const durationSec = int(meta?.call_duration_secs);
+  // WHICH agent took the call. There are two "BuddyLoan Sales Agent - Priya"
+  // agents on the workspace with different voices, deliberately kept so the two
+  // can be compared. A comparison needs the arm recorded against the outcome,
+  // and nothing else on this path records it: journey_run_log has no column for
+  // it and the dialler reads one VOICEBOT_AGENT_ID. The conversation carries it
+  // already, so reading it here costs a field and makes the comparison possible
+  // the moment calls start connecting.
+  const agentId = str(conversation?.agent_id);
 
-  const base = { status, errorType, errorReason, durationSec, unmappedErrorType: false };
+  const base = { status, errorType, errorReason, durationSec, agentId, unmappedErrorType: false };
 
   // Not over yet. Write nothing, keep the row, ask again next run.
   if (!status || !TERMINAL_STATUSES.has(status)) {
@@ -262,6 +270,9 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
           error_type: outcome.errorType,
           error_reason: outcome.errorReason,
           disposition: outcome.disposition,
+          // Queryable as raw->>'agent_id' -- which is how the two Priya agents
+          // get compared without a schema change.
+          agent_id: outcome.agentId,
         },
       });
       if (eventError) result.errors.push(`${callId}: event ${eventError.message}`);

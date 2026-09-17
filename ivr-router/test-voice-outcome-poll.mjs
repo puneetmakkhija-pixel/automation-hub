@@ -250,6 +250,37 @@ await check("an outcome is also filed alongside Oriserve's, under our own name",
   assert.equal(event.row.provider, "elevenlabs", "not 'oriserve', and not left to default");
 });
 
+console.log("\nwhich agent took the call\n");
+
+await check("the agent is read off the conversation", () => {
+  assert.equal(outcomeOf({ ...SPOKE, agent_id: "agent_A" }).agentId, "agent_A");
+  assert.equal(outcomeOf(SPOKE).agentId, null, "absent is null, never guessed");
+});
+
+await check("the outcome records which agent produced it", async () => {
+  const sb = stubSb([ROW]);
+  await pollVoiceOutcomes(
+    {},
+    { sb, apiKey: "k", fetch: okFetch({ ...SPOKE, agent_id: "agent_A" }) }
+  );
+  const event = sb.sink.inserts.find((i) => i.table === "voice_call_events");
+  assert.equal(
+    event.row.raw.agent_id,
+    "agent_A",
+    "without this, two agents' outcomes are indistinguishable and no comparison is possible"
+  );
+});
+
+await check("two agents' outcomes stay distinguishable", async () => {
+  const seen = [];
+  for (const id of ["agent_A", "agent_B"]) {
+    const sb = stubSb([ROW]);
+    await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch({ ...SPOKE, agent_id: id }) });
+    seen.push(sb.sink.inserts.find((i) => i.table === "voice_call_events").row.raw.agent_id);
+  }
+  assert.deepEqual(seen, ["agent_A", "agent_B"]);
+});
+
 console.log("\nthe route wiring\n");
 
 const indexSrc = readFileSync(new URL("./index.js", import.meta.url), "utf8");
