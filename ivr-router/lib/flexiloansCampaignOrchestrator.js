@@ -2,6 +2,7 @@ import OBDApiClient from "./obdApiClient.js";
 import ElevenLabsClient from "./elevenLabsClient.js";
 import { findPromptId } from "./obdApiClient.js";
 import { createDtmfCampaign } from "./campaignTemplates.js";
+import { getOrCreateRecording } from "./recordingLibrary.js";
 
 /**
  * The Flexiloans (Epimoney) press-1 broadcast, end to end.
@@ -311,24 +312,27 @@ export async function runFlexiloansCampaign(deps, opts = {}) {
   // and it resolves rather than throws when ElevenLabs fails. Passing the
   // wrapper straight to the uploader sent the dialler "[object Object]", and a
   // TTS failure sailed through as if it had worked.
-  const spoken = await tts.textToSpeech({
+  // The library first. This script does not change between runs, so neither
+  // does its audio, and regenerating it billed a fresh generation and made
+  // every run wait for ElevenLabs before a single number could be dialled.
+  // lib/recordingLibrary.js has why a miss still generates rather than failing,
+  // and why the server does not try to save what it generates.
+  //
+  // getOrCreateRecording keeps both checks this block was built around -- a
+  // resolved-but-failed TTS, and zero bytes -- because caching either would
+  // turn one bad generation into silence played at customers for ever.
+  const spec = {
     text: opts.script ?? IVR_SCRIPT,
     voiceId: opts.voiceId ?? IVR_VOICE_ID,
     modelId: opts.modelId ?? IVR_MODEL_ID,
-  });
-  if (spoken && spoken.success === false) {
-    throw new Error(`TTS failed: ${spoken.error ?? "no reason given"}`);
-  }
-  // Accepts the wrapper or a bare buffer, because obdRoutes and the tests hand
-  // over raw bytes and both shapes are legitimate input.
-  const audio = spoken?.audio ?? spoken;
+  };
+  const recording = await getOrCreateRecording(spec, { tts });
+  const audio = recording.audio;
   const audioBytes = audio?.byteLength ?? audio?.length ?? 0;
-  // The check that would have caught all of this: a prompt with no bytes is not
-  // a prompt, and uploading it wastes a round trip to fail vaguely.
   if (!audioBytes) {
     throw new Error("TTS returned no audio bytes");
   }
-  steps.push({ step: "tts", bytes: audioBytes });
+  steps.push({ step: "tts", bytes: audioBytes, cached: recording.cached });
 
   // mp3 is what ElevenLabs returns; the OBD upload takes the type as a field
   // rather than sniffing it, so saying "wav" here would be a lie the dialler
