@@ -16,6 +16,7 @@ import {
   templateCandidates,
 } from "../wabaErrors.js";
 import { sendPressSms, shouldSendSms, smsMode } from "../smsSender.js";
+import { runQueued } from "../pressQueue.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -784,14 +785,80 @@ async function handleKeypress(req, res) {
   return res.status(502).json({ success: false, error: "Ananta send failed", detail });
 }
 
+/**
+ * A `res` that goes nowhere.
+ *
+ * handleKeypress answers the panel in a dozen places, and every one of those
+ * answers is load-bearing reasoning that took incidents to get right — which
+ * failures return 200 so the panel will not retry, which return 502 so it
+ * will. None of it should be rewritten just to run the same work behind an
+ * early acknowledgement, so the work keeps its `res` and this one absorbs it.
+ *
+ * What the panel would have been told is kept and returned to the caller, so a
+ * test can still assert on it and the queued path is not a black box.
+ */
+function capturedResponse() {
+  const captured = { statusCode: 200, body: null };
+  const res = {
+    status(code) {
+      captured.statusCode = code;
+      return res;
+    },
+    json(body) {
+      captured.body = body;
+      return res;
+    },
+  };
+  return { res, captured };
+}
+
+/**
+ * Answer the dialler first, then do the work.
+ *
+ * The panel's webhook call is not the place to wait on five network round
+ * trips. On 17 Sep, 227 presses arrived in a minute and every one of them held
+ * an open request — and a database connection — for the two and a half seconds
+ * it took to mint a link and try two templates. Supabase ran out of pool and
+ * started answering 522, which cost the send log, the SSO links, and any way
+ * of telling afterwards who had been reached.
+ *
+ * So: 200 immediately, then the same handler runs behind a bounded queue. The
+ * dialler stops waiting, the database stops being asked for 227 things at
+ * once, and a burst drains instead of collapsing.
+ *
+ * The tradeoff, stated plainly: the two config failures that used to answer
+ * 503 (no ANANTA_API_KEY, a placeholder resolving empty) can no longer reach
+ * the panel. Neither was ever fixed by a retry — both need a variable edited —
+ * and both still log loudly. Losing a retry that could not have worked is the
+ * cheaper side of this trade.
+ */
+export async function acknowledgeThenHandle(req, res) {
+  res.json({ success: true, queued: true });
+
+  const { res: sink, captured } = capturedResponse();
+  const outcome = await runQueued(() => handleKeypress(req, sink));
+
+  if (outcome && outcome.ok === false && outcome.error) {
+    // Previously this was Express's problem and it answered 500. Now nobody is
+    // listening, so an uncaught throw here would be silent — and silence is
+    // exactly what made the 17 Sep losses take a day to find.
+    console.error(
+      `[IVR_PRESS] Press handling threw after acknowledgement ` +
+        `(mobile=${req.body?.mobile ?? "-"} unique_id=${req.body?.unique_id ?? "-"}): ` +
+        `${outcome.error?.message ?? outcome.error}`
+    );
+  }
+  return captured;
+}
+
 const guard = verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "IVR_WA");
 
 // Two ways in, same handler. The bare path is the original webhook and stays
 // the default; /whatsapp/<variant> lets the panel hold one webhook per
 // destination, which is how an operator thinks about it and does not depend on
 // campaign_id being in the configured body.
-router.post("/whatsapp", guard, handleKeypress);
-router.post("/whatsapp/:variant", guard, handleKeypress);
+router.post("/whatsapp", guard, acknowledgeThenHandle);
+router.post("/whatsapp/:variant", guard, acknowledgeThenHandle);
 
 /**
  * Exported for lib/routes/resendFailedRoutes.js, which has to compose a message
