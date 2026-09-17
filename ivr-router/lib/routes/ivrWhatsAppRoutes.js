@@ -9,6 +9,12 @@ import { dispatchPressToVoiceBot } from "../oriVoiceDispatch.js";
 import { dispatchPressToOurBot, handledByOurBot } from "../ourVoiceBotDispatch.js";
 import { aliasFor } from "../mobileAlias.js";
 import { addAliasToLinks } from "../applyLinkAlias.js";
+import {
+  isPermanentFailure,
+  isTemplateFailure,
+  metaErrorCode,
+  templateCandidates,
+} from "../wabaErrors.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -398,7 +404,10 @@ async function handleKeypress(req, res) {
     dispatchPressToVoiceBot(body, { digit, variant });
   }
 
-  const template = templateMap()[digit];
+  // Best first. A single id is still a single id; a list is a primary and its
+  // standbys, tried in order when Meta rejects the template itself.
+  const candidates = templateCandidates(templateMap()[digit]);
+  const template = candidates[0];
 
   // Every non-send below returns 200. A non-2xx makes the IVR panel retry a
   // decision that will never change, and some panels disable a webhook that
@@ -514,8 +523,8 @@ async function handleKeypress(req, res) {
       .json({ success: false, error: "Placeholder resolved empty", position: blank + 1 });
   }
 
-  const payload = {
-    template,
+  // Everything except the template, which is chosen per attempt below.
+  const basePayload = {
     phone: phone.phone,
     // Ananta's shortener, ON by default.
     //
@@ -539,91 +548,139 @@ async function handleKeypress(req, res) {
     message: { placeholders },
   };
 
-  try {
-    const r = await axios.post(WABA_URL, payload, {
-      headers: { api_key: apiKey, "Content-Type": "application/json" },
-      timeout: 10000,
-    });
+  // Meta rejects a TEMPLATE, not the account, so a paused primary can fall
+  // through to a standby. Only a template-level rejection advances the list:
+  // an invalid API key must not burn one paid call per configured template.
+  let detail = null;
+  let lastTemplate = template;
 
-    console.log(
-      `[IVR_WA] Sent template=${template} digit=${digit} phone=${phone.phone} ` +
-        `variant=${variant || "-"} campaign=${campaign_name || "-"} ` +
-        // Which configuration produced the link. A variant that resolved from
-        // the URL but drew its link from IVR_DTMF_PLACEHOLDERS is a lender
-        // sending another lender's link, and this is the only place it shows.
-        `link_source=${linkSource} message_id=${r.data?.message_id || "-"}`
-    );
-
-    recordSend({
-      status: "sent",
-      phone: phone.phone,
-      digit,
-      template,
-      variant,
-      campaignId: body.campaign_id,
-      campaignName: campaign_name,
-      uniqueId: unique_id,
-      customerId,
-      linkSource,
-      ssoMinted: sso.minted,
-      ssoReason: sso.reason,
-      // The link is the placeholder that differs between campaigns, so record
-      // which one this customer actually received.
-      link: placeholders[placeholders.length - 1],
-      messageId: r.data?.message_id,
-    });
-
-    return res.json({
-      success: true,
-      sent: true,
-      digit,
-      template,
-      variant: variant || undefined,
-      messageId: r.data?.message_id,
-      anantaStatus: r.data?.status,
-    });
-  } catch (error) {
-    // Ananta signals failures in the body (1301 bad key, 1304 IP not
-    // whitelisted, 1314 insufficient balance, 1324 template not approved...),
-    // so surface theirs rather than a bare axios message.
-    const detail = error.response?.data ?? error.message;
-    console.error(
-      `[IVR_WA] Send FAILED template=${template} phone=${phone.phone} key=${key}:`,
-      detail
-    );
-
-    // 1310 is "api_key is invalid" — the panel will retry this on every call
-    // and every retry fails the same way, so say what to check once per hit.
-    if (String(detail?.code) === "1310") {
-      console.error(
-        `[IVR_WA] ANANTA_API_KEY is set (${apiKey.length} chars) but Ananta rejects it. ` +
-          "This is the WABA send key from utilsapi.anantadot.com — not ANANTA_API_TOKEN " +
-          "or ANANTA_API_SECRET_KEY, which belong to the separate Data API."
+  for (let i = 0; i < candidates.length; i++) {
+    const attempt = candidates[i];
+    lastTemplate = attempt;
+    try {
+      const r = await axios.post(
+        WABA_URL,
+        { template: attempt, ...basePayload },
+        { headers: { api_key: apiKey, "Content-Type": "application/json" }, timeout: 10000 }
       );
+
+      console.log(
+        `[IVR_WA] Sent template=${attempt} digit=${digit} phone=${phone.phone} ` +
+          `variant=${variant || "-"} campaign=${campaign_name || "-"} ` +
+          // Which configuration produced the link. A variant that resolved from
+          // the URL but drew its link from IVR_DTMF_PLACEHOLDERS is a lender
+          // sending another lender's link, and this is the only place it shows.
+          `link_source=${linkSource} message_id=${r.data?.message_id || "-"}` +
+          (i > 0 ? ` (standby #${i}, primary ${template} was rejected)` : "")
+      );
+
+      recordSend({
+        status: "sent",
+        phone: phone.phone,
+        digit,
+        template: attempt,
+        variant,
+        campaignId: body.campaign_id,
+        campaignName: campaign_name,
+        uniqueId: unique_id,
+        customerId,
+        linkSource,
+        ssoMinted: sso.minted,
+        ssoReason: sso.reason,
+        // The link is the placeholder that differs between campaigns, so record
+        // which one this customer actually received.
+        link: placeholders[placeholders.length - 1],
+        messageId: r.data?.message_id,
+      });
+
+      return res.json({
+        success: true,
+        sent: true,
+        digit,
+        template: attempt,
+        variant: variant || undefined,
+        messageId: r.data?.message_id,
+        anantaStatus: r.data?.status,
+      });
+    } catch (error) {
+      // Ananta signals failures in the body (1301 bad key, 1304 IP not
+      // whitelisted, 1314 insufficient balance, 1324 template not approved...),
+      // so surface theirs rather than a bare axios message.
+      detail = error.response?.data ?? error.message;
+      console.error(
+        `[IVR_WA] Send FAILED template=${attempt} phone=${phone.phone} key=${key}:`,
+        detail
+      );
+
+      // 1310 is "api_key is invalid" — the panel will retry this on every call
+      // and every retry fails the same way, so say what to check once per hit.
+      if (String(detail?.code) === "1310") {
+        console.error(
+          `[IVR_WA] ANANTA_API_KEY is set (${apiKey.length} chars) but Ananta rejects it. ` +
+            "This is the WABA send key from utilsapi.anantadot.com — not ANANTA_API_TOKEN " +
+            "or ANANTA_API_SECRET_KEY, which belong to the separate Data API."
+        );
+      }
+
+      recordSend({
+        status: "failed",
+        phone: phone.phone,
+        digit,
+        template: attempt,
+        variant,
+        campaignId: body.campaign_id,
+        campaignName: campaign_name,
+        uniqueId: unique_id,
+        customerId,
+        linkSource,
+        ssoMinted: sso.minted,
+        ssoReason: sso.reason,
+        link: placeholders[placeholders.length - 1],
+        error: detail,
+      });
+
+      if (isTemplateFailure(detail) && i < candidates.length - 1) {
+        console.warn(
+          `[IVR_WA] Template ${attempt} rejected (#${metaErrorCode(detail) || "?"}) — ` +
+            `trying standby ${candidates[i + 1]}`
+        );
+        continue;
+      }
+      break;
     }
-
-    recordSend({
-      status: "failed",
-      phone: phone.phone,
-      digit,
-      template,
-      variant,
-      campaignId: body.campaign_id,
-      campaignName: campaign_name,
-      uniqueId: unique_id,
-      customerId,
-      linkSource,
-      ssoMinted: sso.minted,
-      ssoReason: sso.reason,
-      link: placeholders[placeholders.length - 1],
-      error: detail,
-    });
-
-    // Let the send be retried: drop it from the dedupe set. sentPreviously()
-    // only matches status "sent", so a failed row never blocks the retry.
-    sent.delete(key);
-    return res.status(502).json({ success: false, error: "Ananta send failed", detail });
   }
+
+  if (isPermanentFailure(detail)) {
+    // 200, and the dedupe key STAYS. Both are deliberate: a non-2xx is the IVR
+    // panel's cue to retry, and this is a refusal no retry changes. On 17 Sep
+    // that cue turned 724 callers into 2,151 paid calls and zero messages.
+    //
+    // Loud, because the failure is now invisible to the panel: a paused
+    // template ends the WhatsApp leg for everyone until somebody edits the
+    // WABA console, and nothing else in this service will say so.
+    console.error(
+      `[IVR_WA] PERMANENT send failure — NOT retrying and NOT falling back. ` +
+        `template=${lastTemplate} meta=#${metaErrorCode(detail) || "?"} ` +
+        `tried=[${candidates.join(", ")}] phone=${phone.phone}. ` +
+        `Every press-1 caller is getting nothing until IVR_DTMF_TEMPLATES names ` +
+        `a template that Meta will accept.`
+    );
+    return res.status(200).json({
+      success: false,
+      sent: false,
+      permanent: true,
+      reason: "template rejected by Meta",
+      template: lastTemplate,
+      metaCode: metaErrorCode(detail),
+      detail,
+    });
+  }
+
+  // Transient: let the send be retried by dropping it from the dedupe set.
+  // sentPreviously() only matches status "sent", so a failed row never blocks
+  // the retry.
+  sent.delete(key);
+  return res.status(502).json({ success: false, error: "Ananta send failed", detail });
 }
 
 const guard = verifyWebhookSecret("ANANTA_WEBHOOK_SECRET", "IVR_WA");
