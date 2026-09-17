@@ -17,6 +17,7 @@ import { queueStats as pressQueueStats } from "./lib/pressQueue.js";
 import plTrackerRoutes from "./lib/routes/plTrackerRoutes.js";
 import flexiloansCampaignRoutes from "./lib/routes/flexiloansCampaignRoutes.js";
 import resendFailedRoutes from "./lib/routes/resendFailedRoutes.js";
+import voicePollRoutes from "./lib/routes/voicePollRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
@@ -648,6 +649,21 @@ app.use('/api/flexiloans-campaign', consoleAuth('CONSOLE_FLEXI', null), flexiloa
 // out for ninety minutes, 257 people who had pressed 1 got no WhatsApp, and
 // there was no way to send it to them afterwards.
 app.use('/api/resend', consoleAuth('CONSOLE_RESEND', null), resendFailedRoutes);
+
+// ==================== Our voice bot's call outcomes ====================
+//
+// Behind CONSOLE_SECRET and failClosed: /run writes customer rows and spends
+// ElevenLabs requests, and /status counts calls made to real people.
+//
+// This asks ElevenLabs what happened on the calls our own bot placed, because
+// nothing tells us otherwise: journey-run records "sent" when the request is
+// accepted, and the post-call webhook that would correct it is a workspace
+// setting nobody has pointed at us. On 17 Sep 2026 that gap was hiding the
+// fact that no call our bot placed since 2 Sep had connected at all.
+//
+// lib/voiceOutcomePoll.js has the rest, including why a poll rather than a
+// webhook and why a call still ringing is never written.
+app.use('/api/voice-poll', consoleAuth('CONSOLE_VOICE_POLL', null), voicePollRoutes);
 
 const server = app.listen(PORT, () => {
   logger.log('info', 'SERVICE_START', 'IVR Router service started', {
