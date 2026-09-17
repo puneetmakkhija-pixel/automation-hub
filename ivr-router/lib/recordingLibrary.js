@@ -92,6 +92,36 @@ export function slugFor(text, max = 40) {
   return slug || "recording";
 }
 
+/**
+ * An ElevenLabs history item, read into the spec that keys it.
+ *
+ * Pure, and exported so it can be tested without the API, because getting it
+ * wrong is not visible at import time: a recording filed under the wrong key is
+ * simply never found again, and the next run pays to generate what we already
+ * had. `settings` is where that happens — history items carry the voice
+ * settings in a nested object, and a missing one has to fall back to the SAME
+ * defaults the library keys with or the two halves disagree.
+ *
+ * `settingsKnown` is false when the item did not report them. The importer
+ * warns rather than guessing quietly: the audio is real, but if it was made
+ * with settings the API does not tell us, the key is our default's, not its.
+ */
+export function specFromHistoryItem(item = {}) {
+  const settings = item.settings ?? null;
+  const stability = settings?.stability;
+  const similarity = settings?.similarity_boost;
+  return {
+    spec: {
+      text: item.text ?? "",
+      voiceId: item.voice_id ?? "",
+      modelId: item.model_id ?? "",
+      stability: stability == null ? DEFAULT_STABILITY : Number(stability),
+      similarityBoost: similarity == null ? DEFAULT_SIMILARITY : Number(similarity),
+    },
+    settingsKnown: stability != null && similarity != null,
+  };
+}
+
 /** The manifest, or an empty one. A missing or corrupt file is not an error. */
 export function loadManifest(dir = RECORDINGS_DIR) {
   const path = join(dir, MANIFEST_NAME);
@@ -132,6 +162,50 @@ export function lookupRecording(spec, { dir = RECORDINGS_DIR } = {}) {
     return null;
   }
   return { key, entry, path, audio: readFileSync(path) };
+}
+
+/**
+ * Put audio we already have into the library.
+ *
+ * The import path: the bytes exist (ElevenLabs generated them weeks ago and
+ * kept them), so there is nothing to generate and nothing to bill. Everything
+ * else is the same as a generated recording, including the refusal to file
+ * empty audio — an import that writes a 0-byte mp3 poisons the key just as
+ * thoroughly as a failed generation does, and is likelier, because a download
+ * can be truncated where a failure is at least loud.
+ *
+ * @param {object} spec   the same shape recordingKey takes
+ * @param {Buffer} audio  the bytes
+ * @param {object} opts   { dir, source } — source is recorded as provenance
+ * @returns {{key: string, file: string, bytes: number, replaced: boolean}}
+ */
+export function putRecording(spec, audio, { dir = RECORDINGS_DIR, source = null } = {}) {
+  const bytes = audio?.byteLength ?? audio?.length ?? 0;
+  if (!bytes) throw new Error("refusing to file a recording with no audio bytes");
+
+  const key = recordingKey(spec);
+  const manifest = loadManifest(dir);
+  const replaced = Boolean(manifest.recordings[key]);
+
+  const file = `${slugFor(spec.text)}-${key}.mp3`;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, file), audio);
+
+  manifest.recordings[key] = {
+    file,
+    text: normaliseText(spec.text),
+    voiceId: spec.voiceId ?? null,
+    modelId: spec.modelId ?? null,
+    stability: spec.stability ?? DEFAULT_STABILITY,
+    similarityBoost: spec.similarityBoost ?? DEFAULT_SIMILARITY,
+    bytes,
+    sha256: createHash("sha256").update(audio).digest("hex"),
+    createdAt: new Date().toISOString(),
+    ...(source ? { source } : {}),
+  };
+  saveManifest(manifest, dir);
+
+  return { key, file, bytes, replaced };
 }
 
 /**

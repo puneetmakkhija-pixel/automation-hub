@@ -8,6 +8,31 @@ audio was made with. The key is a hash of **text + voice + model + stability +
 similarity** — everything that changes how a line sounds. Change any of them
 and it is a different recording, because it is a different sound.
 
+## Importing what ElevenLabs already has
+
+ElevenLabs keeps every generation and its audio. Those are already paid for, so
+importing them is the cheapest way to fill this directory — nothing is generated
+and nothing is billed.
+
+```bash
+# ALWAYS look first. Lists what would be imported; downloads nothing.
+ELEVEN_LABS_API_KEY=... node scripts/import-history.mjs --dry-run
+
+# then narrow it and run for real
+ELEVEN_LABS_API_KEY=... node scripts/import-history.mjs --voice dVTC43Yewy5fAIcmsISI
+```
+
+Filters: `--voice`, `--model`, `--contains <text>`, `--since YYYY-MM-DD`,
+`--limit`, `--max-pages`. History is usually mostly experiments, so the dry run
+and a filter matter more than they look.
+
+Re-running is safe — anything already in the manifest is skipped, so an
+interrupted import continues where it stopped.
+
+One caveat the script warns about: a history item that does not report the voice
+settings it was made with is keyed on this library's defaults (0.5 / 0.75). If a
+run still misses such a prompt, regenerate that one with `add-recording.mjs`.
+
 ## Adding one
 
 ```bash
