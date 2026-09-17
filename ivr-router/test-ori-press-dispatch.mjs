@@ -349,9 +349,11 @@ await check("the keypress route dispatches before the template lookup", async ()
   const { readFileSync } = await import("node:fs");
   const src = readFileSync(new URL("./lib/routes/ivrWhatsAppRoutes.js", import.meta.url), "utf8");
   const dispatch = src.indexOf("dispatchPressToVoiceBot(body");
-  const template = src.indexOf("const template = templateMap()[digit]");
+  // The lookup site, not the line around it: the template is resolved through
+  // templateCandidates() now, and this check is about ORDER, not spelling.
+  const template = src.indexOf("templateMap()[digit]");
   assert.ok(dispatch > -1, "the route never dispatches to the voice bot");
-  assert.ok(template > -1);
+  assert.ok(template > -1, "the route never looks up a template");
   assert.ok(
     dispatch < template,
     "a press-1 with no mapped template must still get the call"
