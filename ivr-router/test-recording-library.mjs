@@ -22,8 +22,10 @@ import {
   loadManifest,
   lookupRecording,
   normaliseText,
+  putRecording,
   recordingKey,
   slugFor,
+  specFromHistoryItem,
 } from "./lib/recordingLibrary.js";
 
 let failed = 0;
@@ -190,6 +192,79 @@ await check("the voice settings reach ElevenLabs, not just the key", async () =>
   await getOrCreateRecording(SPEC, { dir, persist: true, tts: ttsThat("ID3aaa", seen) });
   assert.equal(seen[0].stability, 0.3, "keying on a setting we never send is a lie");
   assert.equal(seen[0].similarityBoost, 0.9);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+console.log("\nimporting what ElevenLabs already generated\n");
+
+/** A history item as /v1/history returns it. */
+const HISTORY_ITEM = {
+  history_item_id: "hist_1",
+  text: "नमस्ते, Buddy Loan से",
+  voice_id: "voiceA",
+  model_id: "eleven_flash_v2_5",
+  settings: { stability: 0.3, similarity_boost: 0.9 },
+  date_unix: 1787000000,
+  state: "created",
+  source: "TTS",
+};
+
+await check("a history item keys identically to generating the same thing", () => {
+  const { spec, settingsKnown } = specFromHistoryItem(HISTORY_ITEM);
+  assert.equal(settingsKnown, true);
+  assert.equal(
+    recordingKey(spec),
+    recordingKey(SPEC),
+    "an import that keys differently is never found again, and the next run pays to regenerate it"
+  );
+});
+
+await check("a history item with no settings falls back to the library's own defaults", () => {
+  const { spec, settingsKnown } = specFromHistoryItem({ ...HISTORY_ITEM, settings: null });
+  assert.equal(settingsKnown, false, "the caller must be able to warn");
+  assert.equal(spec.stability, 0.5);
+  assert.equal(spec.similarityBoost, 0.75);
+  assert.equal(
+    recordingKey(spec),
+    recordingKey({ ...SPEC, stability: 0.5, similarityBoost: 0.75 }),
+    "the two halves must agree on the default, or the import is unfindable"
+  );
+});
+
+await check("a partially reported settings object is treated as unknown", () => {
+  const { settingsKnown } = specFromHistoryItem({ ...HISTORY_ITEM, settings: { stability: 0.3 } });
+  assert.equal(settingsKnown, false, "half the settings is not the settings");
+});
+
+await check("imported audio lands under the key the campaign will look up", async () => {
+  const dir = tmp();
+  const { spec } = specFromHistoryItem(HISTORY_ITEM);
+  putRecording(spec, Buffer.from("IMPORTED"), { dir, source: { from: "elevenlabs_history" } });
+
+  const hit = await getOrCreateRecording(SPEC, { dir, tts: ttsThat("SHOULD-NOT-GENERATE") });
+  assert.equal(hit.cached, true, "the campaign must find the imported file");
+  assert.equal(hit.audio.toString(), "IMPORTED");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await check("an import keeps where it came from", () => {
+  const dir = tmp();
+  const { spec } = specFromHistoryItem(HISTORY_ITEM);
+  const out = putRecording(spec, Buffer.from("IMPORTED"), {
+    dir,
+    source: { from: "elevenlabs_history", history_item_id: "hist_1" },
+  });
+  const entry = loadManifest(dir).recordings[out.key];
+  assert.equal(entry.source.history_item_id, "hist_1");
+  assert.equal(entry.stability, 0.3, "the settings it was MADE with, not the defaults");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+await check("an empty download is never filed", () => {
+  const dir = tmp();
+  const { spec } = specFromHistoryItem(HISTORY_ITEM);
+  assert.throws(() => putRecording(spec, Buffer.alloc(0), { dir }), /no audio bytes/);
+  assert.deepEqual(loadManifest(dir).recordings, {}, "a truncated download is silence, kept for ever");
   rmSync(dir, { recursive: true, force: true });
 });
 
