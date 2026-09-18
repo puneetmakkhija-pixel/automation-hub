@@ -51,6 +51,17 @@ export const MANIFEST_NAME = "manifest.json";
 /** ElevenLabs' own defaults, repeated here so an omitted setting still keys. */
 const DEFAULT_STABILITY = 0.5;
 const DEFAULT_SIMILARITY = 0.75;
+/**
+ * The three our own textToSpeech never sends -- and which an import can still
+ * carry. A generation made in the ElevenLabs web UI with style turned up is a
+ * DIFFERENT recording of the same words, and without these in the key it
+ * imports straight onto the campaign's key and is served back as a confident
+ * `cached: true`. That is the silent-wrong-hit this library exists to prevent,
+ * left open on the one path that can actually produce it.
+ */
+const DEFAULT_STYLE = 0;
+const DEFAULT_SPEAKER_BOOST = true;
+const DEFAULT_SPEED = 1;
 
 /**
  * Whitespace is not speech.
@@ -62,7 +73,19 @@ const DEFAULT_SIMILARITY = 0.75;
  * change how a line is spoken.
  */
 export function normaliseText(text) {
-  return String(text ?? "").replace(/\s+/g, " ").trim();
+  return String(text ?? "")
+    .replace(/\r\n?/g, "\n")
+    // Split on BLANK LINES first, so the paragraph structure survives the
+    // whitespace collapse that follows. IVR_SCRIPT uses \n\n as a deliberate
+    // pause cue and the raw text -- newlines intact -- is what goes to
+    // ElevenLabs, so the same words re-typed as one paragraph are a different
+    // recording. Collapsing every run of whitespace made the two collide.
+    .split(/\n[^\S\n]*\n\s*/)
+    // Inside a paragraph, whitespace is not speech: runs of spaces, tabs and a
+    // single wrapped line break all read the same.
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+    .filter((paragraph) => paragraph !== "")
+    .join("\n\n");
 }
 
 /**
@@ -78,6 +101,9 @@ export function recordingKey(spec = {}) {
     modelId: String(spec.modelId ?? "").trim(),
     stability: Number(spec.stability ?? DEFAULT_STABILITY),
     similarityBoost: Number(spec.similarityBoost ?? DEFAULT_SIMILARITY),
+    style: Number(spec.style ?? DEFAULT_STYLE),
+    useSpeakerBoost: Boolean(spec.useSpeakerBoost ?? DEFAULT_SPEAKER_BOOST),
+    speed: Number(spec.speed ?? DEFAULT_SPEED),
   };
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex").slice(0, 16);
 }
@@ -110,6 +136,12 @@ export function specFromHistoryItem(item = {}) {
   const settings = item.settings ?? null;
   const stability = settings?.stability;
   const similarity = settings?.similarity_boost;
+  // style / use_speaker_boost / speed: our own generations never set these, so
+  // for them the defaults are the truth. An item generated elsewhere can carry
+  // any of them, and reading them is what keeps it off the campaign's key.
+  const style = settings?.style;
+  const speakerBoost = settings?.use_speaker_boost;
+  const speed = settings?.speed;
   return {
     spec: {
       text: item.text ?? "",
@@ -117,6 +149,9 @@ export function specFromHistoryItem(item = {}) {
       modelId: item.model_id ?? "",
       stability: stability == null ? DEFAULT_STABILITY : Number(stability),
       similarityBoost: similarity == null ? DEFAULT_SIMILARITY : Number(similarity),
+      style: style == null ? DEFAULT_STYLE : Number(style),
+      useSpeakerBoost: speakerBoost == null ? DEFAULT_SPEAKER_BOOST : Boolean(speakerBoost),
+      speed: speed == null ? DEFAULT_SPEED : Number(speed),
     },
     settingsKnown: stability != null && similarity != null,
   };
@@ -198,6 +233,9 @@ export function putRecording(spec, audio, { dir = RECORDINGS_DIR, source = null 
     modelId: spec.modelId ?? null,
     stability: spec.stability ?? DEFAULT_STABILITY,
     similarityBoost: spec.similarityBoost ?? DEFAULT_SIMILARITY,
+    style: spec.style ?? DEFAULT_STYLE,
+    useSpeakerBoost: spec.useSpeakerBoost ?? DEFAULT_SPEAKER_BOOST,
+    speed: spec.speed ?? DEFAULT_SPEED,
     bytes,
     sha256: createHash("sha256").update(audio).digest("hex"),
     createdAt: new Date().toISOString(),
@@ -258,25 +296,13 @@ export async function getOrCreateRecording(spec, deps = {}) {
     return { audio, key, cached: false, file: null, persisted: false };
   }
 
-  const file = `${slugFor(spec.text)}-${key}.mp3`;
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, file), audio);
+  // putRecording, not a second copy of it. This branch used to re-implement
+  // the write and had already drifted: it dropped the provenance and, more to
+  // the point, the zero-byte refusal -- the guard that stops an empty file
+  // being filed under a good key and played as silence for ever.
+  const put = putRecording(spec, audio, { dir, source: { from: "generated" } });
 
-  const manifest = loadManifest(dir);
-  manifest.recordings[key] = {
-    file,
-    text: normaliseText(spec.text),
-    voiceId: spec.voiceId ?? null,
-    modelId: spec.modelId ?? null,
-    stability: spec.stability ?? DEFAULT_STABILITY,
-    similarityBoost: spec.similarityBoost ?? DEFAULT_SIMILARITY,
-    bytes,
-    sha256: createHash("sha256").update(audio).digest("hex"),
-    createdAt: new Date().toISOString(),
-  };
-  saveManifest(manifest, dir);
-
-  return { audio, key, cached: false, file, persisted: true };
+  return { audio, key: put.key, cached: false, file: put.file, persisted: true };
 }
 
 export default getOrCreateRecording;
