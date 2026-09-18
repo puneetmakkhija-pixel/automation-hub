@@ -14,6 +14,7 @@
  * and read back for ever.
  */
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,6 +28,7 @@ import {
   slugFor,
   specFromHistoryItem,
 } from "./lib/recordingLibrary.js";
+import { IVR_MODEL_ID } from "./lib/flexiloansCampaignOrchestrator.js";
 
 let failed = 0;
 const check = async (name, fn) => {
@@ -280,6 +282,128 @@ await check("the campaign asks the library, not ElevenLabs directly", () => {
     "a direct call bypasses the library and pays for the same audio again"
   );
 });
+
+
+console.log("\nthe key the campaign will actually look up\n");
+
+await check("the CLI's default model is the campaign's, end to end", () => {
+  // THE DEFECT THIS FILE EXISTS TO CATCH NOW. add-recording defaulted --model
+  // to eleven_flash_v2_5 while the campaign renders with IVR_MODEL_ID
+  // (eleven_multilingual_v2), so a recording added exactly as the README
+  // documented was filed under a key nothing ever looks up: the library filled
+  // up and every run still generated, and still paid.
+  //
+  // Spawned rather than source-matched, because what matters is the key the
+  // CLI really produces. --dry-run prints it and exits before needing a key.
+  const text = "Press 1 for a business loan";
+  const voiceId = "voiceA";
+  const out = execFileSync(
+    process.execPath,
+    ["scripts/add-recording.mjs", "--text", text, "--voice", voiceId, "--dry-run"],
+    { cwd: new URL(".", import.meta.url).pathname, encoding: "utf8" }
+  );
+  const printed = /-([0-9a-f]{16})\.mp3/.exec(out);
+  assert.ok(printed, `no key in CLI output: ${out}`);
+  assert.equal(
+    printed[1],
+    recordingKey({ text, voiceId, modelId: IVR_MODEL_ID }),
+    "the CLI must file recordings under the key the campaign looks up"
+  );
+});
+
+console.log("\nthe three settings the key was blind to\n");
+
+for (const [field, changed] of [
+  ["style", { style: 0.6 }],
+  ["useSpeakerBoost", { useSpeakerBoost: false }],
+  ["speed", { speed: 1.15 }],
+]) {
+  await check(`${field} changes the key`, () => {
+    assert.notEqual(
+      recordingKey(SPEC),
+      recordingKey({ ...SPEC, ...changed }),
+      `two recordings differing only in ${field} would collide and one be served for the other`
+    );
+  });
+}
+
+await check("a styled web-UI generation does not import onto the campaign's key", () => {
+  // The one path that can actually produce these: our textToSpeech never sends
+  // style/speed, but a generation made in the ElevenLabs UI carries them, and
+  // it is a different recording of the same words.
+  const styled = specFromHistoryItem({
+    ...HISTORY_ITEM,
+    settings: { stability: 0.3, similarity_boost: 0.9, style: 0.7, speed: 1.2 },
+  });
+  assert.equal(styled.spec.style, 0.7);
+  assert.equal(styled.spec.speed, 1.2);
+  assert.notEqual(
+    recordingKey(styled.spec),
+    recordingKey(SPEC),
+    "a styled import landing on the plain key is served back as a confident wrong hit"
+  );
+});
+
+await check("an item reporting no style still keys as the plain default", () => {
+  const { spec } = specFromHistoryItem(HISTORY_ITEM);
+  assert.equal(recordingKey(spec), recordingKey(SPEC), "our own generations must still match");
+});
+
+console.log("\na blank line is a pause, not whitespace\n");
+
+await check("a paragraph break is not the same prompt as a space", () => {
+  // IVR_SCRIPT uses \n\n as a deliberate pause cue and the RAW text -- newlines
+  // intact -- is what goes to ElevenLabs. Collapsing every run of whitespace
+  // made the same words re-typed as one paragraph collide with it.
+  const broken = { ...SPEC, text: "Namaste ji.\n\nAapka business hai na?" };
+  const flat = { ...SPEC, text: "Namaste ji. Aapka business hai na?" };
+  assert.notEqual(recordingKey(broken), recordingKey(flat));
+});
+
+await check("a wrapped line is still just a space", () => {
+  assert.equal(normaliseText("a   b\n c"), "a b c");
+  assert.equal(normaliseText("one\ntwo"), "one two");
+});
+
+await check("blank lines survive normalisation, extra ones collapse", () => {
+  assert.equal(normaliseText("one\n\ntwo"), "one\n\ntwo");
+  assert.equal(normaliseText("one\n\n\n\ntwo"), "one\n\ntwo");
+  assert.equal(normaliseText("\n\n  one\n\ntwo  \n\n"), "one\n\ntwo");
+});
+
+console.log("\none write path, not two\n");
+
+await check("a persisted generation records that it was generated", () => {
+  // The persist branch used to re-implement putRecording and had already
+  // drifted: no provenance, and -- the one that matters -- no zero-byte
+  // refusal, the guard that stops silence being filed under a good key.
+  const dir = tmp();
+  return getOrCreateRecording(SPEC, { dir, persist: true, tts: ttsThat("ID3aaa") }).then((made) => {
+    const entry = loadManifest(dir).recordings[made.key];
+    assert.equal(entry.source?.from, "generated");
+    assert.equal(entry.style, SPEC.style ?? 0, "the manifest records every field it was keyed on");
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+console.log("\na cap that is not a cap\n");
+
+await check("a non-numeric --limit is refused, not silently unbounded", () => {
+  // Number("all") is NaN and `imported >= NaN` is false for ever, so a typo
+  // removed the ceiling on a script that downloads files and commits them.
+  const r = spawnSync(
+    process.execPath,
+    ["scripts/import-history.mjs", "--limit", "all", "--dry-run"],
+    {
+      cwd: new URL(".", import.meta.url).pathname,
+      encoding: "utf8",
+      env: { ...process.env, ELEVEN_LABS_API_KEY: "not-used-before-the-check" },
+    }
+  );
+  assert.equal(r.status, 2, `expected exit 2, got ${r.status}: ${r.stderr}`);
+  assert.match(r.stderr, /--limit must be a positive whole number/);
+});
+
 
 console.log(failed ? `\n${failed} failed\n` : "\nall passed\n");
 process.exit(failed ? 1 : 0);
