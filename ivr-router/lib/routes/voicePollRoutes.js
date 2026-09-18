@@ -19,10 +19,11 @@ const router = express.Router();
  * POST /api/voice-poll/run  { limit? }
  *
  * Safe to call repeatedly and safe to call concurrently: every write is
- * conditioned on the disposition still being null, so a second run in flight
- * fills nothing twice. Answers 200 with what it did, including partial
- * failures -- one conversation ElevenLabs will not return is not a reason to
- * throw away the outcomes that did come back.
+ * conditioned on the disposition still being null AND asks for the ids back,
+ * so a row another writer has already filled is counted as `claimed` and not
+ * written again. Answers 200 with what it did, including partial failures --
+ * one conversation ElevenLabs will not return is not a reason to throw away
+ * the outcomes that did come back.
  */
 router.post("/run", async (req, res) => {
   const limit = req.body?.limit;
@@ -31,11 +32,13 @@ router.post("/run", async (req, res) => {
   if (result.reason === "not_configured") {
     // 200, not 500: the service is behaving correctly, it just has no key.
     // A 500 here reads as "the poller is broken" to anything watching.
+    // Spread FIRST: result carries reason:"not_configured", so spreading it
+    // after would overwrite the sentence explaining what to do about it.
     return res.json({
+      ...result,
       success: true,
       ran: false,
       reason: "ELEVEN_LABS_API_KEY is not set on this service",
-      ...result,
     });
   }
 
@@ -55,14 +58,25 @@ router.get("/status", async (_req, res) => {
     const { default: SupabaseClient } = await import("../supabaseClient.js");
     const sb = new SupabaseClient().client.schema("crm");
 
-    const { data, error } = await sb
-      .from("journey_run_log")
-      .select("voice_disposition, voice_status")
-      .eq("voice_provider", "elevenlabs");
+    // Paged, because PostgREST caps a plain select at its max-rows setting
+    // (1000 by default) and returns the truncated page as though it were the
+    // whole table. This endpoint exists to answer "is the backlog growing",
+    // so a count that quietly stops rising at 1000 is worse than no count.
+    const PAGE = 1000;
+    const rows = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await sb
+        .from("journey_run_log")
+        .select("voice_disposition, voice_status")
+        .eq("voice_provider", "elevenlabs")
+        .order("id", { ascending: true })
+        .range(from, from + PAGE - 1);
 
-    if (error) throw new Error(error.message);
-
-    const rows = data ?? [];
+      if (error) throw new Error(error.message);
+      const page = data ?? [];
+      rows.push(...page);
+      if (page.length < PAGE) break;
+    }
     const byDisposition = {};
     let pending = 0;
     for (const row of rows) {
