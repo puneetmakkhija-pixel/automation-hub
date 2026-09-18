@@ -49,13 +49,29 @@ if (!apiKey) {
   process.exit(1);
 }
 
+/**
+ * A cap that silently is not one is worse than no cap. Number("all") is NaN,
+ * and `imported >= NaN` is false for ever, so a typo here removes the ceiling
+ * on a script that downloads files and commits them. --since is validated;
+ * these were not.
+ */
+function positiveInt(raw, flagName) {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    console.error(`${flagName} must be a positive whole number, got ${JSON.stringify(raw)}`);
+    process.exit(2);
+  }
+  return n;
+}
+
 const wantVoice = arg("voice");
 const wantModel = arg("model");
 const contains = (arg("contains") ?? "").toLowerCase();
 const sinceUnix = arg("since") ? Math.floor(new Date(arg("since")).getTime() / 1000) : null;
-const limit = Number(arg("limit", "50"));
-const maxPages = Number(arg("max-pages", "10"));
+const limit = positiveInt(arg("limit", "50"), "--limit");
+const maxPages = positiveInt(arg("max-pages", "10"), "--max-pages");
 const dryRun = flag("dry-run");
+
 
 if (arg("since") && !Number.isFinite(sinceUnix)) {
   console.error(`--since ${arg("since")} is not a date I can read; use YYYY-MM-DD`);
@@ -142,7 +158,16 @@ for await (const item of historyItems()) {
   try {
     const audio = await getAudio(item.history_item_id);
     const out = putRecording(spec, audio, {
-      source: { from: "elevenlabs_history", history_item_id: item.history_item_id, date_unix: item.date_unix ?? null },
+      source: {
+        from: "elevenlabs_history",
+        history_item_id: item.history_item_id,
+        date_unix: item.date_unix ?? null,
+        // Recorded per entry, not just counted in a closing summary: a key
+        // built from guessed settings is indistinguishable from a known one
+        // once it is in the manifest, and that is exactly when somebody needs
+        // to know which of the two they are looking at.
+        settingsKnown,
+      },
     });
     manifest.recordings[out.key] = { file: out.file }; // keep the in-memory index in step
     imported++;
