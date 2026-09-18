@@ -310,6 +310,14 @@ async function placeCall(body, { digit, variant } = {}) {
       // IVR_QUALIFY_ENFORCE and loses calls.
       qualify_enforced: qualifyEnforcing(),
       qualification: outcome.verdict ?? null,
+      // Null on a dialled call and on a decision this service made itself
+      // (duplicate, unqualified); set only when the provider was actually
+      // asked and said no, or the request never completed. Queryable as
+      // raw->>'provider_error' / raw->>'provider_status', so a morning of
+      // refusals can be diagnosed from the table rather than from logs that
+      // the next deploy deletes.
+      provider_error: outcome.providerError ?? null,
+      provider_status: outcome.providerStatus ?? null,
       // Whether the bot was given a name to greet them by. Recorded as a fact
       // of the dispatch so the share of calls that can say one is readable
       // from this table, without re-deriving it from the callbacks.
@@ -402,7 +410,24 @@ async function decideAndDial(body, { variant } = {}) {
       );
       // Nothing rang, so release the key: the next press may still get through.
       dialled.delete(key);
-      return { dialled: false, reason: "refused", verdict };
+      // WHAT the provider said, not just that it said no.
+      //
+      // On 18 Sep 2026 Oriserve refused all 964 press-1 dispatches of a
+      // morning campaign, having dialled 1,169 the day before with no code
+      // change on this path. `reason: "refused"` was all crm.voice_dispatch
+      // held, the error itself lived only in the log line above, and Railway
+      // purges a deployment's logs when the next one replaces it — which it
+      // had, forty minutes later. So the one fact that would have said whether
+      // this was an expired key, an archived campaign or an empty balance was
+      // gone before anybody looked, and the answer had to be inferred from the
+      // shape of the outage instead.
+      return {
+        dialled: false,
+        reason: "refused",
+        providerError: result.error ?? null,
+        providerStatus: result.statusCode ?? null,
+        verdict,
+      };
     }
 
     console.log(
@@ -419,7 +444,17 @@ async function decideAndDial(body, { variant } = {}) {
   } catch (error) {
     console.error(`[ORI_PRESS] Call failed for ${mobile}: ${error?.message ?? error}`);
     dialled.delete(key);
-    return { dialled: false, reason: "error", verdict };
+    // A throw here is a timeout, a DNS failure or a bug — never the provider
+    // answering. It is recorded the same way as a refusal for the same reason:
+    // "error" alone sends the next person reading this table back to logs that
+    // may no longer exist.
+    return {
+      dialled: false,
+      reason: "error",
+      providerError: error?.message ?? String(error),
+      providerStatus: null,
+      verdict,
+    };
   }
 }
 

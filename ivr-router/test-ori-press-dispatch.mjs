@@ -15,6 +15,7 @@
  * Each check was confirmed to fail under a targeted mutation of the module.
  */
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 process.env.ORISERVE_API_KEY ||= "test-key";
 process.env.ORISERVE_CAMPAIGN_ID ||= "test-oriserve-campaign";
@@ -203,6 +204,56 @@ await check("a refused call releases the key so the next press can retry", async
   reply = { success: true, campaign_id: "ori-2" };
   const second = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
   assert.equal(second.dialled, true, "a refusal must not permanently block the number");
+});
+
+// Mutation that breaks this: return { dialled: false, reason: "refused" } as it
+// did before, dropping the provider's own words. On 18 Sep 2026 Oriserve
+// refused 964 dispatches and "refused" was the only thing written down; the
+// error lived in a log line that the next deploy deleted forty minutes later.
+await check("a refusal carries WHAT Oriserve said, not just that it said no", async () => {
+  reply = { success: false, error: "insufficient balance", statusCode: 402 };
+  const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
+  assert.equal(r.reason, "refused");
+  assert.equal(r.providerError, "insufficient balance");
+  assert.equal(r.providerStatus, 402);
+});
+
+// Mutation that breaks this: drop providerError from the catch branch. A
+// timeout or a DNS failure then records "error" and nothing else, which sends
+// the next reader to the same logs that are already gone.
+await check("a thrown request carries its message too", async () => {
+  reply = () => {
+    throw new Error("socket hang up");
+  };
+  const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
+  assert.equal(r.dialled, false);
+  assert.equal(r.reason, "error");
+  assert.match(r.providerError, /socket hang up/);
+  assert.equal(r.providerStatus, null);
+  reply = { success: true, campaign_id: "ori-ok" };
+});
+
+// Mutation that breaks this: set provider_error on every row rather than only
+// the failures. A dialled call would then read as though the provider had
+// complained about it, which is worse than no column at all.
+await check("a call that went through records no provider error", async () => {
+  reply = { success: true, campaign_id: "ori-3" };
+  const r = await dispatchPressToVoiceBot(press(), { digit: "1", variant: "businessloans" });
+  assert.equal(r.dialled, true);
+  assert.equal(r.providerError ?? null, null);
+  assert.equal(r.providerStatus ?? null, null);
+});
+
+// Mutation that breaks this: capture the fields on the outcome but forget to
+// put them in the `raw` the row is written from. Every check above would still
+// pass and crm.voice_dispatch would still say nothing — the exact gap this
+// change exists to close. Read from the source because the write itself needs
+// a database, and a test that cannot reach the branch cannot guard it.
+await check("the recorded row carries them into crm.voice_dispatch", async () => {
+  const src = await readFile(new URL("./lib/oriVoiceDispatch.js", import.meta.url), "utf8");
+  const rawBlock = src.slice(src.indexOf("await recordVoiceDispatch("));
+  assert.match(rawBlock, /provider_error:\s*outcome\.providerError/);
+  assert.match(rawBlock, /provider_status:\s*outcome\.providerStatus/);
 });
 
 console.log("\nwhat Oriserve is sent\n");
