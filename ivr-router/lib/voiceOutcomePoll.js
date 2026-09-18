@@ -99,6 +99,10 @@ export function outcomeOf(conversation) {
   const errorType = str(meta?.error?.error_type);
   const errorReason = str(meta?.error?.reason);
   const durationSec = int(meta?.call_duration_secs);
+  // When the call actually started, so the row can record when it ENDED rather
+  // than when we happened to ask. Seconds since epoch, per the ElevenLabs
+  // conversation payload.
+  const startedAtUnix = int(meta?.start_time_unix_secs ?? conversation?.start_time_unix_secs);
   // WHICH agent took the call. There are two "BuddyLoan Sales Agent - Priya"
   // agents on the workspace with different voices, deliberately kept so the two
   // can be compared. A comparison needs the arm recorded against the outcome,
@@ -108,7 +112,15 @@ export function outcomeOf(conversation) {
   // the moment calls start connecting.
   const agentId = str(conversation?.agent_id);
 
-  const base = { status, errorType, errorReason, durationSec, agentId, unmappedErrorType: false };
+  const base = {
+    status,
+    errorType,
+    errorReason,
+    durationSec,
+    startedAtUnix,
+    agentId,
+    unmappedErrorType: false,
+  };
 
   // Not over yet. Write nothing, keep the row, ask again next run.
   if (!status || !TERMINAL_STATUSES.has(status)) {
@@ -121,7 +133,13 @@ export function outcomeOf(conversation) {
     // Reading `status` alone and calling it "failed" loses the single most
     // useful distinction in the table -- the customer's phone rang, and they
     // did not pick up, which is a retry; a call that never rang is a fault.
-    const mapped = errorType ? ERROR_TYPE_DISPOSITION[errorType] : undefined;
+    // Object.hasOwn, not a bare index: an error_type of "constructor" or
+    // "toString" indexes Object.prototype and yields a function, which would
+    // be written to voice_disposition as-is. Object.freeze does not stop that.
+    const mapped =
+      errorType && Object.hasOwn(ERROR_TYPE_DISPOSITION, errorType)
+        ? ERROR_TYPE_DISPOSITION[errorType]
+        : undefined;
     return {
       ...base,
       terminal: true,
@@ -177,7 +195,7 @@ async function fetchConversation(conversationId, { apiKey, baseUrl, fetchImpl })
  */
 export async function pollVoiceOutcomes(options = {}, deps = {}) {
   const limit = Math.max(1, Math.min(Number(options.limit) || DEFAULT_BATCH, 200));
-  const result = { polled: 0, updated: 0, pending: 0, skipped: 0, errors: [] };
+  const result = { polled: 0, updated: 0, claimed: 0, pending: 0, skipped: 0, errors: [] };
 
   try {
     const apiKey = deps.apiKey ?? process.env.ELEVEN_LABS_API_KEY;
@@ -206,7 +224,11 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
       .not("voice_provider_call_id", "is", null)
       .lt("created_at", settledBefore)
       .gt("created_at", notOlderThan)
-      .order("created_at", { ascending: false })
+      // OLDEST first. Newest-first plus a batch ceiling means a backlog larger
+      // than one batch never reaches its oldest rows: each run re-polls the
+      // newest `limit` and the stragglers age out under MAX_AGE_DAYS still
+      // unresolved -- silently, because they simply stop being selected.
+      .order("created_at", { ascending: true })
       .limit(limit);
 
     if (error) throw new Error(`journey_run_log unreadable: ${error.message}`);
@@ -235,22 +257,44 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
         );
       }
 
+      // When the call ended, from the call. Falling back to `now` records the
+      // moment we asked, which on a backlog can be days after the fact.
+      const endedAtMs =
+        outcome.startedAtUnix != null
+          ? (outcome.startedAtUnix + (outcome.durationSec ?? 0)) * 1000
+          : now;
+
       const patch = {
         voice_disposition: outcome.disposition,
-        voice_ended_at: new Date(now).toISOString(),
+        voice_ended_at: new Date(endedAtMs).toISOString(),
       };
       if (outcome.durationSec != null) patch.voice_duration_sec = outcome.durationSec;
 
-      const { error: updateError } = await sb
+      const { data: claimedRows, error: updateError } = await sb
         .from("journey_run_log")
         .update(patch)
         .eq("id", row.id)
         // Re-check under the write: between the SELECT above and here, the
         // webhook may have landed. Last writer must not be the one that wins.
-        .is("voice_disposition", null);
+        .is("voice_disposition", null)
+        // .select() is what makes that re-check OBSERVABLE, and without it the
+        // guard only half works. PostgREST matches zero rows and returns
+        // success, so `error` is null whether we wrote the row or the webhook
+        // beat us to it -- the update is correctly skipped, and then this
+        // function counts it as updated and inserts a SECOND voice_call_events
+        // row for a call another writer has already filed. Asking for the ids
+        // back is the only way to tell the two apart.
+        .select("id");
 
       if (updateError) {
         result.errors.push(`${callId}: update ${updateError.message}`);
+        continue;
+      }
+
+      // Zero rows back: somebody else filled this in between the select and
+      // here. Their disposition stands and there is nothing more to write.
+      if (!claimedRows || claimedRows.length === 0) {
+        result.claimed++;
         continue;
       }
       result.updated++;
@@ -262,7 +306,13 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
         provider: "elevenlabs",
         call_id: callId,
         mobile: row.mobile ?? null,
-        event_status: outcome.status,
+        // The DISPOSITION, not the transport status. crm.voice_call_events is
+        // shared with Oriserve, whose rows put dispositions here (RNR,
+        // VOICEMAIL, QUALIFIED_LEAD...), so writing "done"/"failed" would both
+        // break that convention and collapse no_answer, busy and cancelled
+        // into one value -- the exact distinction this poller exists to
+        // recover. The raw status stays in `raw.status` below.
+        event_status: outcome.disposition,
         duration_sec: outcome.durationSec,
         raw: {
           via: "voice-outcome-poll",

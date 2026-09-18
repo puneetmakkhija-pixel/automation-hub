@@ -131,6 +131,10 @@ function stubSb(rows, sink = {}) {
   sink.filters = [];
   sink.updates = [];
   sink.inserts = [];
+  sink.order = [];
+  // What the UPDATE ... .select("id") hands back. [] is the webhook having
+  // filled the row between our select and our write.
+  sink.claims = sink.claims ?? [{ id: "row-1" }];
   const query = {
     select: () => query,
     eq: (col, val) => (sink.filters.push(`eq:${col}=${val}`), query),
@@ -138,7 +142,7 @@ function stubSb(rows, sink = {}) {
     not: (col, op) => (sink.filters.push(`not:${col}:${op}`), query),
     lt: (col) => (sink.filters.push(`lt:${col}`), query),
     gt: (col) => (sink.filters.push(`gt:${col}`), query),
-    order: () => query,
+    order: (col, opts) => (sink.order.push(`${col}:${opts?.ascending ? "asc" : "desc"}`), query),
     limit: () => Promise.resolve({ data: rows, error: null }),
     then: (resolve) => resolve({ data: rows, error: null }),
   };
@@ -151,7 +155,11 @@ function stubSb(rows, sink = {}) {
         sink.updates.push(u);
         const chain = {
           eq: () => chain,
-          is: (col, val) => (u.guards.push(`is:${col}=${val}`), Promise.resolve({ error: null })),
+          is: (col, val) => (u.guards.push(`is:${col}=${val}`), chain),
+          select: (cols) => {
+            u.selected = cols;
+            return Promise.resolve({ data: sink.claims, error: null });
+          },
         };
         return chain;
       },
@@ -291,6 +299,124 @@ await check("the poller is behind CONSOLE_SECRET, not open", () => {
     /app\.use\(\s*['"]\/api\/voice-poll['"]\s*,\s*consoleAuth\(/,
     "/run writes customer rows and spends money"
   );
+});
+
+console.log("\nthe guard that stops a double write\n");
+
+await check("a row the webhook already filled is claimed, not written twice", async () => {
+  // PostgREST matches zero rows and still returns error: null, so without
+  // asking for the ids back this reads exactly like a successful write -- and
+  // files a SECOND voice_call_events row for a call somebody else already
+  // recorded. This is the check that fails if .select("id") is dropped.
+  const sb = stubSb([ROW], { claims: [] });
+  const out = await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(NEVER_RANG) });
+  assert.equal(out.updated, 0, "nothing of ours was written");
+  assert.equal(out.claimed, 1, "and the row is accounted for, not silently dropped");
+  assert.equal(sb.sink.inserts.length, 0, "a duplicate event row is the bug this exists to stop");
+});
+
+await check("the update asks for the ids back", async () => {
+  const sb = stubSb([ROW]);
+  await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(NEVER_RANG) });
+  assert.equal(sb.sink.updates[0].selected, "id", "without a select the guard is unobservable");
+});
+
+await check("a row we did win is written exactly once", async () => {
+  const sb = stubSb([ROW]);
+  const out = await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(NEVER_RANG) });
+  assert.equal(out.updated, 1);
+  assert.equal(out.claimed, 0);
+  assert.equal(sb.sink.inserts.length, 1);
+});
+
+console.log("\nwhat lands in the shared events table\n");
+
+await check("event_status carries the disposition, not the transport status", async () => {
+  // crm.voice_call_events is shared with Oriserve, whose rows put dispositions
+  // in this column (RNR, VOICEMAIL, QUALIFIED_LEAD). Writing "failed" here
+  // collapses no_answer, busy and cancelled into one value -- the distinction
+  // this whole module exists to recover.
+  const sb = stubSb([ROW]);
+  await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(RANG_NOT_PICKED_UP) });
+  const row = sb.sink.inserts[0].row;
+  assert.equal(row.event_status, "no_answer");
+  assert.notEqual(row.event_status, "failed", "status and disposition are not the same fact");
+  assert.equal(row.raw.status, "failed", "the raw status is still kept");
+});
+
+console.log("\nthe backlog drains from the oldest end\n");
+
+await check("rows are polled oldest first", async () => {
+  // Newest-first plus a batch ceiling re-polls the same newest rows every run
+  // and never reaches the oldest, which then age out under MAX_AGE_DAYS
+  // unresolved -- invisibly, because they just stop being selected.
+  const sb = stubSb([ROW]);
+  await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(NEVER_RANG) });
+  assert.ok(
+    sb.sink.order.includes("created_at:asc"),
+    `expected created_at ascending, got ${JSON.stringify(sb.sink.order)}`
+  );
+});
+
+console.log("\nwhen the call ended, not when we asked\n");
+
+await check("voice_ended_at comes from the conversation", async () => {
+  const started = 1789600000;
+  const sb = stubSb([ROW]);
+  const body = {
+    ...NEVER_RANG,
+    metadata: { ...NEVER_RANG.metadata, start_time_unix_secs: started, call_duration_secs: 42 },
+  };
+  await pollVoiceOutcomes(
+    {},
+    { sb, apiKey: "k", fetch: okFetch(body), now: () => 1789999999000 }
+  );
+  assert.equal(
+    sb.sink.updates[0].patch.voice_ended_at,
+    new Date((started + 42) * 1000).toISOString(),
+    "recording the poll time back-dates nothing and mis-dates everything on a backlog"
+  );
+});
+
+await check("with no start time it falls back to now", async () => {
+  const sb = stubSb([ROW]);
+  const now = 1789999999000;
+  await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(NEVER_RANG), now: () => now });
+  assert.equal(sb.sink.updates[0].patch.voice_ended_at, new Date(now).toISOString());
+});
+
+console.log("\nan error_type is data, not a property name\n");
+
+await check("an error_type that names an Object member is not trusted", () => {
+  // ERROR_TYPE_DISPOSITION["constructor"] is a function, and Object.freeze
+  // does not stop the lookup reaching the prototype. Without Object.hasOwn
+  // that function is what goes into voice_disposition.
+  for (const evil of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+    const out = outcomeOf({
+      status: "failed",
+      metadata: { error: { error_type: evil } },
+    });
+    assert.equal(out.disposition, "failed", `${evil} must map to the coarse failure`);
+    assert.equal(typeof out.disposition, "string");
+    assert.equal(out.unmappedErrorType, true, `${evil} is not a known error_type`);
+  }
+});
+
+console.log("\nthe not-configured reply keeps its explanation\n");
+
+const routeSrc = readFileSync(new URL("./lib/routes/voicePollRoutes.js", import.meta.url), "utf8");
+
+await check("the spread cannot overwrite the reason", () => {
+  // result carries reason:"not_configured"; spreading it after the sentence
+  // replaces the one thing the reply exists to say.
+  const spreadAt = routeSrc.indexOf("...result,");
+  const reasonAt = routeSrc.indexOf('reason: "ELEVEN_LABS_API_KEY');
+  assert.ok(spreadAt !== -1 && reasonAt !== -1);
+  assert.ok(spreadAt < reasonAt, "the spread must come before the reason it would clobber");
+});
+
+await check("/status pages past the PostgREST row cap", () => {
+  assert.match(routeSrc, /\.range\(/, "a bare select stops at max-rows and reports it as the total");
 });
 
 console.log(failed ? `\n${failed} failed\n` : "\nall passed\n");
