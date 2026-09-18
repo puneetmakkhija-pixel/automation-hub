@@ -39,7 +39,7 @@ run still misses such a prompt, regenerate that one with `add-recording.mjs`.
 ELEVEN_LABS_API_KEY=... node scripts/add-recording.mjs \
   --text-file ./my-script.txt \
   --voice dVTC43Yewy5fAIcmsISI \
-  --model eleven_flash_v2_5
+  --model eleven_multilingual_v2   # the campaign's model, and the default
 ```
 
 Then **play the file**, and commit both the mp3 and the manifest.
