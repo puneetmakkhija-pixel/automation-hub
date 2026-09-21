@@ -1,5 +1,6 @@
 import SupabaseClient from "./supabaseClient.js";
 import { recordVoiceDispatch } from "./voiceDispatchLog.js";
+import { dispatchPressToVoiceBot } from "./oriVoiceDispatch.js";
 
 /**
  * A press of 1, handed to OUR voice bot instead of Oriserve's.
@@ -29,12 +30,33 @@ import { recordVoiceDispatch } from "./voiceDispatchLog.js";
  * same reason it was made that way there: a one-word edit in a dashboard must
  * not be able to point a paid bot at a book it was never meant to call.
  *
- * `businessloans` is deliberately NOT in this list. That variant is Oriserve's
- * live campaign at 700-1,500 calls a day; moving it is a decision with a blast
- * radius, not a side effect of adding a second bot. Our bot starts on the
- * Flexiloans campaign, which has no traffic yet.
+ * `businessloans` was deliberately NOT in this list, and the reason was sound:
+ * that variant is Oriserve's live campaign at 700-1,500 calls a day, and moving
+ * it wholesale is a decision with a blast radius rather than a side effect of
+ * adding a second bot.
+ *
+ * It is here now because the DAILY CAP below changes what including it means.
+ * Our bot does not take the variant; it takes the first OUR_BOT_DAILY_CAP
+ * presses of each day from it. Press 101 goes to Oriserve exactly as press 1
+ * did yesterday. The blast radius is the cap, and the cap is a number.
+ *
+ * The allowlist still cannot be widened from a dashboard -- OUR_BOT_VARIANTS
+ * can only subtract from this set -- so the one-word edit that would point a
+ * paid bot at a book it was never meant to call is still impossible.
  */
-const OUR_BOT_VARIANTS = new Set(["flexiloans"]);
+const OUR_BOT_VARIANTS = new Set(["flexiloans", "businessloans"]);
+
+/** Presses our bot may take per IST day. Anything unparseable means the default. */
+const DEFAULT_DAILY_CAP = 100;
+
+export function ourBotDailyCap(env = process.env) {
+  const raw = String(env.OUR_BOT_DAILY_CAP ?? "").trim();
+  if (!raw) return DEFAULT_DAILY_CAP;
+  const n = Number(raw);
+  // Not a number, negative, or fractional: fall back to the default rather than
+  // guess. A typo in a dashboard must not silently become "no cap" or "no calls".
+  return Number.isInteger(n) && n >= 0 ? n : DEFAULT_DAILY_CAP;
+}
 
 /** Off unless explicitly on. Absent, blank and anything else are off. */
 export function ourBotEnabled(env = process.env) {
@@ -81,6 +103,57 @@ async function journeyEndpoint(sb) {
 }
 
 /**
+ * Our bot is not taking this press, for a reason that has nothing to do with
+ * the caller. Hand it to Oriserve and say so in the ledger.
+ *
+ * Only reached from the branch that already chose our bot, so the press still
+ * goes to exactly one vendor -- the route's "TWO BOTS, ONE PRESS, NEVER BOTH"
+ * holds, with this function being how our branch declines.
+ */
+function overflowToOriserve(body, { digit, variant } = {}, deps = {}, reason = "daily_cap") {
+  console.log(`[OUR_BOT] ${reason} — press for ${String(body?.mobile ?? "")} goes to Oriserve`);
+  const toOri = deps.dispatchToOri ?? dispatchPressToVoiceBot;
+  // Fire-and-forget, exactly as the route calls it: this whole path is already
+  // unawaited and must not start rejecting now.
+  try {
+    toOri(body, { digit, variant });
+  } catch (error) {
+    console.error(`[OUR_BOT] handover to Oriserve failed: ${error?.message ?? error}`);
+  }
+  return { dialled: false, reason, handedToOriserve: true };
+}
+
+/**
+ * Reserve one of today's slots. True when this press may go to our bot.
+ *
+ * The count and the decision happen inside crm.claim_our_bot_slot() in one
+ * statement, because the obvious version here is a race:
+ *
+ *     const used = await count(today);   // two presses both read 99
+ *     if (used < cap) dial();            // two presses both dial
+ *
+ * The IVR panel delivers presses in bursts and retries them, so simultaneous
+ * presses are normal rather than the tail. Every overshoot is a real phone
+ * ringing on a vendor we are paying.
+ *
+ * Any failure here returns false, which sends the press to Oriserve. A database
+ * we cannot read is not a reason to skip the cap and dial anyway.
+ */
+async function claimDailySlot(sb, cap) {
+  try {
+    const { data, error } = await sb.rpc("claim_our_bot_slot", { p_cap: cap });
+    if (error) {
+      console.error(`[OUR_BOT] slot claim failed, deferring to Oriserve: ${error.message}`);
+      return false;
+    }
+    return data === true;
+  } catch (error) {
+    console.error(`[OUR_BOT] slot claim threw, deferring to Oriserve: ${error?.message ?? error}`);
+    return false;
+  }
+}
+
+/**
  * Hand one press to our bot. Never throws: the keypress route does not await
  * this, and a dialler that rejected would surface as an unhandled rejection
  * rather than as a lead nobody called.
@@ -98,10 +171,31 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
     }
 
     const sb = deps.sb ?? new SupabaseClient().client.schema("crm");
+
+    // ── THE COHORT CAP ──────────────────────────────────────────────────────
+    //
+    // Claimed BEFORE the journey call, not after. The window between dialling
+    // and recording is another way to overshoot, and it is wide: the journey
+    // round trip places a real call inside it.
+    //
+    // A refusal hands the press to Oriserve rather than dropping it. That
+    // direction is the whole safety argument for putting `businessloans` on
+    // our allowlist: over the cap, and on any failure above, the caller reaches
+    // the bot that has been answering 700-1,500 presses a day for weeks. The
+    // worst case of this change is "today behaves like yesterday".
+    const cap = deps.cap ?? ourBotDailyCap();
+    if (!(await claimDailySlot(sb, cap))) {
+      return overflowToOriserve(body, { digit, variant }, deps, "daily_cap");
+    }
+
     const { url, secret } = await journeyEndpoint(sb);
     if (!url || !secret) {
       console.error("[OUR_BOT] journey_fn_url / sync_secret not configured — no call placed");
-      return { dialled: false, reason: "not_configured" };
+      // A slot was claimed and will not be used. Deliberately not released:
+      // releasing it needs a second write that can itself fail, and the failure
+      // mode of leaking a slot is calling 99 instead of 100 today. The failure
+      // mode of a double release is calling someone twice.
+      return overflowToOriserve(body, { digit, variant }, deps, "not_configured");
     }
 
     const post = deps.fetch ?? fetch;
