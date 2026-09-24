@@ -231,6 +231,39 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
 }
 
 /**
+ * Did this attempt provably put NOTHING on the trunk?
+ *
+ * The question the handover turns on, and it is not the same question as "did
+ * it fail". A journey-run that timed out may well have originated the call
+ * before the socket died; handing that press to Oriserve rings one customer
+ * from two numbers, which is the single thing the press route promises never to
+ * do ("TWO BOTS, ONE PRESS, NEVER BOTH"). So this answers true only on positive
+ * evidence of no dial, and an unreachable or 5xx journey-run gets none:
+ *
+ *   voice.skipped   the CRM's own flag for a refusal BEFORE the originate --
+ *                   no recipient, not an Indian mobile, calling hours, backend
+ *                   not configured. Every return after the dial is attempted
+ *                   sets it false, which is what makes it usable here. Reading
+ *                   the flag rather than matching on the message text also
+ *                   means a reworded refusal does not silently stop handing
+ *                   over.
+ *   4xx             journey-run's own validation, which returns before
+ *                   runJourney() is called at all. Its 500 does not: that is
+ *                   the catch-all around the dial, so it is ambiguous and
+ *                   deliberately absent from this list.
+ *
+ * Anything else -- a 5xx, a timeout, a network error, or ok:false with
+ * skipped:false -- stays with our bot and is not dialled twice. The lead reads
+ * as un-dialled in crm.voice_dispatch either way, so the CRM's follow-up sweep
+ * still picks it up on the next pass.
+ */
+function noCallWasPlaced(res, out) {
+  if (out?.voice?.skipped === true) return true;
+  if (res && res.status >= 400 && res.status < 500) return true;
+  return false;
+}
+
+/**
  * The dial, and the ledger row that records what it did.
  *
  * Split out of dispatchPressToOurBot because this half runs LATER — the pacer
@@ -239,10 +272,15 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
  */
 async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps }) {
   const outcome = { dialled: false, reason: null };
+  // Declared out here so the handover decision below can see them even when the
+  // fetch itself threw, where "no response at all" is exactly the ambiguous
+  // case that must NOT be handed on.
+  let res = null;
+  let out = null;
 
   try {
     const post = deps.fetch ?? fetch;
-    const res = await post(url, {
+    res = await post(url, {
       method: "POST",
       headers: { "content-type": "application/json", "x-sync-secret": secret },
       body: JSON.stringify({
@@ -258,7 +296,7 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps 
       }),
     });
 
-    const out = await res.json().catch(() => ({}));
+    out = await res.json().catch(() => ({}));
     outcome.dialled = res.ok && out?.voice?.ok === true;
     outcome.reason = outcome.dialled ? null : (out?.voice?.reason ?? out?.error ?? `http_${res.status}`);
 
@@ -269,6 +307,25 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps 
   } catch (error) {
     outcome.reason = `error: ${error?.message ?? error}`;
     console.error(`[OUR_BOT] Call failed for ${mobile}: ${error?.message ?? error}`);
+  }
+
+  // ── THE PRESS THAT REACHED NEITHER BOT ────────────────────────────────────
+  //
+  // 23 Sep: two presses arrived just before 10:00 IST. Each claimed a slot,
+  // reached journey-run, and came back refused by the calling-hours rule — and
+  // then stopped here. Our bot would not dial them and Oriserve was never
+  // offered them, so two people who pressed 1 were called by nobody.
+  //
+  // Everywhere else in this file a refusal ends at Oriserve. This branch was
+  // the one exception, and it was an oversight rather than a decision.
+  //
+  // The slot stays spent, for the reason given at the not_configured branch
+  // above: releasing it is a second write that can fail on its own, and the
+  // cost of leaking one is calling 199 leads today instead of 200. At two
+  // presses in the 09:5x minute that is a rounding error against the cap.
+  if (!outcome.dialled && noCallWasPlaced(res, out)) {
+    outcome.handedToOriserve = true;
+    overflowToOriserve(body, { digit, variant }, deps, outcome.reason ?? "no_call_placed");
   }
 
   // Logged to the same table as the Oriserve dispatches, with provider naming
