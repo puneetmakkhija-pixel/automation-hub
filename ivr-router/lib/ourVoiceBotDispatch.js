@@ -1,6 +1,7 @@
 import SupabaseClient from "./supabaseClient.js";
 import { recordVoiceDispatch } from "./voiceDispatchLog.js";
 import { dispatchPressToVoiceBot } from "./oriVoiceDispatch.js";
+import { hasRoom, paceDial } from "./dialPacer.js";
 
 /**
  * A press of 1, handed to OUR voice bot instead of Oriserve's.
@@ -160,7 +161,6 @@ async function claimDailySlot(sb, cap) {
  */
 export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps = {}) {
   const mobile = String(body?.mobile ?? "").replace(/\D/g, "");
-  const outcome = { dialled: false, reason: null };
 
   try {
     if (!handledByOurBot(variant)) {
@@ -171,6 +171,15 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
     }
 
     const sb = deps.sb ?? new SupabaseClient().client.schema("crm");
+
+    // ── THE PACE ────────────────────────────────────────────────────────────
+    //
+    // Asked BEFORE the slot is claimed, so a press this service cannot pace
+    // keeps its slot and goes to Oriserve whole. See lib/dialPacer.js for the
+    // measurement: past twenty dials a minute, half of them never connect.
+    if (!(deps.hasRoom ?? hasRoom)()) {
+      return overflowToOriserve(body, { digit, variant }, deps, "dial_queue_full");
+    }
 
     // ── THE COHORT CAP ──────────────────────────────────────────────────────
     //
@@ -198,6 +207,40 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
       return overflowToOriserve(body, { digit, variant }, deps, "not_configured");
     }
 
+    // Everything above decided; only the dial itself waits its turn. A burst of
+    // 200 presses still resolves 200 routing decisions in seconds — it just
+    // does not put 200 calls on the trunk in three minutes.
+    return await (deps.pace ?? paceDial)(() =>
+      placeAndRecord({ url, secret, mobile, body, digit, variant, deps })
+    );
+  } catch (error) {
+    const reason = `error: ${error?.message ?? error}`;
+    console.error(`[OUR_BOT] Call failed for ${mobile}: ${error?.message ?? error}`);
+    await recordVoiceDispatch({
+      mobile: body?.mobile,
+      dispatched: false,
+      reason,
+      variant: variant ?? null,
+      digit: digit ?? null,
+      provider: "ours",
+      uniqueId: body?.unique_id || body?.call_id || null,
+      raw: { bot: "elevenlabs_convai", via: "journey-run" },
+    }).catch(() => {});
+    return { dialled: false, reason };
+  }
+}
+
+/**
+ * The dial, and the ledger row that records what it did.
+ *
+ * Split out of dispatchPressToOurBot because this half runs LATER — the pacer
+ * may hold it for minutes — while the routing decisions above have to be made
+ * the moment the press arrives.
+ */
+async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps }) {
+  const outcome = { dialled: false, reason: null };
+
+  try {
     const post = deps.fetch ?? fetch;
     const res = await post(url, {
       method: "POST",
