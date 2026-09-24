@@ -19,7 +19,8 @@
     "test:flexiloans-campaign": "node test-flexiloans-campaign.mjs",
     "test:our-voice-bot": "node test-our-voice-bot.mjs",
     "test:press-queue": "node test-press-queue.mjs",
-    "test:dial-pacer": "node test-dial-pacer.mjs"
+    "test:dial-pacer": "node test-dial-pacer.mjs",
+    "test:neither-bot": "node test-neither-bot.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
