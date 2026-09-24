@@ -69,6 +69,29 @@ export function callsPerMinute(env = process.env) {
 }
 
 /**
+ * The batch: at most this many dials START in any rolling window of
+ * windowMinutes(). 15 per 10 minutes by default.
+ *
+ * 24 Sep, 10:35 IST: 103 calls in the hour, and 42 rejected by ElevenLabs with
+ * error 4300 -- "Agent ... has reached its maximum concurrent capacity of 30.
+ * Current agent limit: 30, workspace limit: 30". The per-minute pace above
+ * spaces a burst out; this bounds how much of it can overlap at all. Fifteen
+ * in ten minutes keeps even five-minute calls (the agent's max_duration)
+ * well under thirty at once.
+ *
+ * Within a batch the per-minute pace still applies, so fifteen dials take
+ * about two minutes to start and the rest of the window is quiet.
+ */
+export function callsPerWindow(env = process.env) {
+  return readInt(env.OUR_BOT_CALLS_PER_WINDOW, 15, 1);
+}
+
+/** Length of that rolling window, in minutes. */
+export function windowMinutes(env = process.env) {
+  return readInt(env.OUR_BOT_WINDOW_MINUTES, 10, 1);
+}
+
+/**
  * How many dials may WAIT. Past this the press goes to Oriserve instead.
  *
  * Handing it over is better than holding it: Oriserve has its own capacity and
@@ -96,6 +119,8 @@ function readInt(raw, fallback, floor) {
 }
 
 const waiting = [];
+/** Start times of recent dials, oldest first, for the rolling window. */
+const recentStarts = [];
 let pumping = false;
 let lastStartedAt = 0;
 const idleWaiters = [];
@@ -107,7 +132,13 @@ export function intervalMs(env = process.env) {
 
 /** Live depth, for the health endpoint and for tests. */
 export function pacerStats() {
-  return { waiting: waiting.length, callsPerMinute: callsPerMinute(), maxWaiting: maxWaiting() };
+  return {
+    waiting: waiting.length,
+    callsPerMinute: callsPerMinute(),
+    callsPerWindow: callsPerWindow(),
+    windowMinutes: windowMinutes(),
+    maxWaiting: maxWaiting(),
+  };
 }
 
 /**
@@ -123,6 +154,7 @@ export function hasRoom() {
 /** Test seam: drop anything queued and reset the clock. */
 export function resetPacer() {
   waiting.length = 0;
+  recentStarts.length = 0;
   pumping = false;
   lastStartedAt = 0;
   idleWaiters.length = 0;
@@ -144,8 +176,20 @@ async function pump() {
       const due = lastStartedAt + intervalMs() - Date.now();
       if (due > 0) await sleep(due);
 
+      // The batch. When this window's quota is spent, wait for its oldest
+      // dial to age out rather than start one more on top of it.
+      const windowMs = windowMinutes() * 60000;
+      while (recentStarts.length > 0 && recentStarts[0] <= Date.now() - windowMs) recentStarts.shift();
+      if (recentStarts.length >= callsPerWindow()) {
+        // unref: a timer holding for the window must not by itself keep the
+        // process alive through a shutdown.
+        await new Promise((resolve) => setTimeout(resolve, recentStarts[0] + windowMs - Date.now()).unref());
+        continue;
+      }
+
       const job = waiting.shift();
       lastStartedAt = Date.now();
+      recentStarts.push(lastStartedAt);
 
       // Started, not awaited. The rate being capped is calls STARTED per
       // minute; waiting for a two-minute conversation here would throttle the
