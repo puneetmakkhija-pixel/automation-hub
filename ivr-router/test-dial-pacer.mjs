@@ -27,6 +27,12 @@ import {
 } from "./lib/dialPacer.js";
 import { dispatchPressToOurBot } from "./lib/ourVoiceBotDispatch.js";
 
+// This suite asserts defaults, so it must not inherit a rate from the shell
+// that started it: an ambient OUR_BOT_CALLS_PER_MINUTE would make the "defaults
+// to eight" check assert whatever Railway happens to be set to.
+delete process.env.OUR_BOT_CALLS_PER_MINUTE;
+delete process.env.OUR_BOT_DIAL_QUEUE_LIMIT;
+
 let failed = 0;
 const check = async (name, fn) => {
   try {
@@ -133,6 +139,13 @@ await check("the queue has a ceiling and reports it", () => {
 });
 
 console.log("\nrouting still happens at once\n");
+
+// dispatchPressToOurBot re-reads handledByOurBot() against the real
+// process.env. Without this the press is refused at the variant gate and
+// returns before the pacer is ever consulted -- the checks below would then
+// pass or fail on whether the shell happened to export the switch, which is
+// how this file first shipped green while asserting nothing about pacing.
+process.env.OUR_BOT_PRESS_ENABLED = "on";
 
 await check("a press over the pace goes to Oriserve, with its slot intact", async () => {
   resetPacer();
