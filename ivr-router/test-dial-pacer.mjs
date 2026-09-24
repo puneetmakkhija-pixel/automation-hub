@@ -17,6 +17,8 @@
 import assert from "node:assert/strict";
 import {
   callsPerMinute,
+  callsPerWindow,
+  windowMinutes,
   drainPacer,
   hasRoom,
   intervalMs,
@@ -31,6 +33,8 @@ import { dispatchPressToOurBot } from "./lib/ourVoiceBotDispatch.js";
 // that started it: an ambient OUR_BOT_CALLS_PER_MINUTE would make the "defaults
 // to eight" check assert whatever Railway happens to be set to.
 delete process.env.OUR_BOT_CALLS_PER_MINUTE;
+delete process.env.OUR_BOT_CALLS_PER_WINDOW;
+delete process.env.OUR_BOT_WINDOW_MINUTES;
 delete process.env.OUR_BOT_DIAL_QUEUE_LIMIT;
 
 let failed = 0;
@@ -130,12 +134,51 @@ await check("a throwing dial does not take the queue with it", async () => {
   delete process.env.OUR_BOT_CALLS_PER_MINUTE;
 });
 
+await check("no more than the batch starts inside one window", async () => {
+  resetPacer();
+  process.env.OUR_BOT_CALLS_PER_MINUTE = "6000";
+  process.env.OUR_BOT_CALLS_PER_WINDOW = "3";
+  process.env.OUR_BOT_WINDOW_MINUTES = "1";
+  const startedAt = [];
+  try {
+    for (let i = 0; i < 5; i++) {
+      paceDial(async () => {
+        startedAt.push(Date.now());
+        return { dialled: true };
+      });
+    }
+    // The first three go at once; the other two hold for the window.
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(startedAt.length, 3, `${startedAt.length} dials started inside the window`);
+    assert.equal(pacerStats().waiting, 2, "the rest wait for the window instead of dialling");
+  } finally {
+    resetPacer(); // drop the rest rather than wait out a real minute
+    delete process.env.OUR_BOT_CALLS_PER_MINUTE;
+    delete process.env.OUR_BOT_CALLS_PER_WINDOW;
+    delete process.env.OUR_BOT_WINDOW_MINUTES;
+  }
+});
+
+await check("the batch defaults to 15 in 10 minutes and ignores junk", () => {
+  assert.equal(callsPerWindow({}), 15);
+  assert.equal(windowMinutes({}), 10);
+  assert.equal(callsPerWindow({ OUR_BOT_CALLS_PER_WINDOW: "0" }), 15);
+  assert.equal(windowMinutes({ OUR_BOT_WINDOW_MINUTES: "soon" }), 10);
+  assert.equal(callsPerWindow({ OUR_BOT_CALLS_PER_WINDOW: "20" }), 20);
+});
+
 await check("the queue has a ceiling and reports it", () => {
   resetPacer();
   assert.equal(hasRoom(), true);
   assert.equal(maxWaiting({}), 300);
   assert.equal(maxWaiting({ OUR_BOT_DIAL_QUEUE_LIMIT: "2" }), 2);
-  assert.deepEqual(pacerStats(), { waiting: 0, callsPerMinute: 8, maxWaiting: 300 });
+  assert.deepEqual(pacerStats(), {
+    waiting: 0,
+    callsPerMinute: 8,
+    callsPerWindow: 15,
+    windowMinutes: 10,
+    maxWaiting: 300,
+  });
 });
 
 console.log("\nrouting still happens at once\n");
