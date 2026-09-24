@@ -14,6 +14,7 @@ import whatsappBotRoutes from "./lib/routes/whatsappBotRoutes.js";
 import { verifyWebhookSecret } from "./lib/middleware/verifyWebhookSecret.js";
 import ivrWhatsAppRoutes from "./lib/routes/ivrWhatsAppRoutes.js";
 import { queueStats as pressQueueStats } from "./lib/pressQueue.js";
+import { pacerStats as dialPacerStats } from "./lib/dialPacer.js";
 import plTrackerRoutes from "./lib/routes/plTrackerRoutes.js";
 import flexiloansCampaignRoutes from "./lib/routes/flexiloansCampaignRoutes.js";
 import resendFailedRoutes from "./lib/routes/resendFailedRoutes.js";
@@ -74,6 +75,12 @@ app.get("/health", (_req, res) => {
         // A non-zero `waiting` during a dial run is the early warning that the
         // dialler is delivering faster than this service can send.
         press: pressQueueStats(),
+        // And how many DIALS are waiting their turn. These are two different
+        // backlogs: `press` fills when the database cannot keep up, `dial`
+        // fills whenever a burst arrives, which is normal and drains at
+        // OUR_BOT_CALLS_PER_MINUTE. A `dial.waiting` that never falls is the
+        // sign the day's presses cannot be dialled inside the calling window.
+        dial: dialPacerStats(),
         type: 'health',
       });
     }
