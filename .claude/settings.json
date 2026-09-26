@@ -11,7 +11,8 @@
       "Grep",
       "WebFetch",
       "WebSearch",
-      "mcp__*"
+      "mcp__*",
+      "mcp__Supabase__execute_sql"
     ],
     "deny": [
       "Read(./.env)",
