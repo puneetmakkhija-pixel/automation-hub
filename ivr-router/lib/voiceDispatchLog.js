@@ -79,6 +79,13 @@ export function mobile10Of(raw) {
   return ten.length === 10 ? ten : null;
 }
 
+/** raw, plus the A/B labels when there are any. */
+export function withSplit(raw, { arm = null, voiceVariant = null, fallbackReason = null } = {}) {
+  const base = raw ?? {};
+  if (arm == null && voiceVariant == null && fallbackReason == null) return base;
+  return { ...base, arm, voice_variant: voiceVariant, fallback_reason: fallbackReason };
+}
+
 /**
  * Record one dispatch decision. Never throws, never rejects.
  *
@@ -98,6 +105,19 @@ export function mobile10Of(raw) {
  *   passes "ours". This column used to be hardcoded, which was fine while one
  *   bot existed and would have quietly filed a second bot's calls under the
  *   first one's name.
+ * @param {string|null} [args.arm] the A/B arm ('ours' | 'oriserve') under
+ *   BOT_SPLIT_MODE=split, null otherwise.
+ * @param {string|null} [args.voiceVariant] 'A' | 'B', our arm only.
+ * @param {string|null} [args.fallbackReason] why a press assigned to our arm
+ *   was handed to Oriserve (dial_queue_full, daily_cap, not_configured, ...).
+ *
+ *   These three go into `raw`, not columns of their own. raw is the jsonb the
+ *   table already has, so no deploy of this service has to wait for a
+ *   migration, and an insert can never fail on a column that is not there yet.
+ *   docs/migrations-needed/crm_voice_dispatch_arm.sql adds generated columns
+ *   over these keys for anyone who wants to index or group by them. Written
+ *   only when at least one is set, so outside the split every row is byte for
+ *   byte what it was before.
  * @returns {Promise<{recorded: boolean, reason?: string}>} always resolves.
  */
 export async function recordVoiceDispatch({
@@ -109,6 +129,9 @@ export async function recordVoiceDispatch({
   providerCampaignId = null,
   uniqueId = null,
   provider = "oriserve",
+  arm = null,
+  voiceVariant = null,
+  fallbackReason = null,
   raw = {},
 } = {}) {
   try {
@@ -139,7 +162,7 @@ export async function recordVoiceDispatch({
         reason: dispatched ? null : reason || "unspecified",
         provider_campaign_id: providerCampaignId ?? null,
         unique_id: uniqueId ?? null,
-        raw: raw ?? {},
+        raw: withSplit(raw, { arm, voiceVariant, fallbackReason }),
       });
 
     if (error) throw new Error(error.message);

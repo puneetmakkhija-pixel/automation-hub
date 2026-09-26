@@ -1,7 +1,8 @@
 import SupabaseClient from "./supabaseClient.js";
 import { recordVoiceDispatch } from "./voiceDispatchLog.js";
-import { dispatchPressToVoiceBot } from "./oriVoiceDispatch.js";
+import { dispatchPressToVoiceBot, oriDialsVariant } from "./oriVoiceDispatch.js";
 import { hasRoom, paceDial } from "./dialPacer.js";
+import { armFor, splitModeOn, voiceVariantFor } from "./botSplit.js";
 
 /**
  * A press of 1, handed to OUR voice bot instead of Oriserve's.
@@ -92,6 +93,43 @@ export function handledByOurBot(variant, env = process.env) {
   return ourBotVariants(env).has(key);
 }
 
+/**
+ * Which bot takes this press, and under which experiment label.
+ *
+ * Without BOT_SPLIT_MODE=split this IS handledByOurBot(): same answer for every
+ * press as before, arm and voiceVariant null, nothing new written anywhere.
+ *
+ * With it, a press-1 that BOTH bots could take -- on our allowlist (narrowed by
+ * OUR_BOT_VARIANTS as ever) and on Oriserve's (today: businessloans) -- goes to
+ * whichever arm lib/botSplit.js hashes the caller's mobile into, and
+ * OUR_BOT_PRESS_ENABLED stops mattering for it. Everything else keeps the
+ * flag's answer. Flexiloans in particular: Oriserve does not dial it, so
+ * splitting it would hand half its callers to a bot that drops them.
+ *
+ * Still exactly one bot per press. The arm only picks which one.
+ *
+ * @returns {{ours: boolean, arm: 'ours'|'oriserve'|null, voiceVariant: 'A'|'B'|null}}
+ */
+export function routePress({ variant, mobile, digit } = {}, env = process.env, oriDials = oriDialsVariant) {
+  const byFlag = { ours: handledByOurBot(variant, env), arm: null, voiceVariant: null };
+  if (!splitModeOn(env)) return byFlag;
+  if (String(digit ?? "").trim() !== "1") return byFlag;
+
+  const key = String(variant ?? "").trim().toLowerCase();
+  if (!key || !ourBotVariants(env).has(key) || !oriDials(key)) return byFlag;
+
+  // No ten-digit mobile, no hash -- and no call either bot could place. The
+  // flag's answer keeps whatever refusal the dispatcher would have logged.
+  const arm = armFor(mobile, env);
+  if (!arm) return byFlag;
+
+  return {
+    ours: arm === "ours",
+    arm,
+    voiceVariant: arm === "ours" ? voiceVariantFor(mobile, env) : null,
+  };
+}
+
 /** journey-run's URL and the secret it demands, both from crm.app_config. */
 async function journeyEndpoint(sb) {
   const { data, error } = await sb
@@ -111,13 +149,15 @@ async function journeyEndpoint(sb) {
  * goes to exactly one vendor -- the route's "TWO BOTS, ONE PRESS, NEVER BOTH"
  * holds, with this function being how our branch declines.
  */
-function overflowToOriserve(body, { digit, variant } = {}, deps = {}, reason = "daily_cap") {
+function overflowToOriserve(body, { digit, variant, arm = null } = {}, deps = {}, reason = "daily_cap") {
   console.log(`[OUR_BOT] ${reason} — press for ${String(body?.mobile ?? "")} goes to Oriserve`);
   const toOri = deps.dispatchToOri ?? dispatchPressToVoiceBot;
   // Fire-and-forget, exactly as the route calls it: this whole path is already
   // unawaited and must not start rejecting now.
   try {
-    toOri(body, { digit, variant });
+    // arm stays 'ours' on the Oriserve row: the caller was ASSIGNED to our bot,
+    // and an intent-to-treat read of the split must count them there.
+    toOri(body, { digit, variant, arm, fallbackReason: reason });
   } catch (error) {
     console.error(`[OUR_BOT] handover to Oriserve failed: ${error?.message ?? error}`);
   }
@@ -161,9 +201,15 @@ async function claimDailySlot(sb, cap) {
  */
 export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps = {}) {
   const mobile = String(body?.mobile ?? "").replace(/\D/g, "");
+  // Decided again here rather than trusted from the route. It is deterministic,
+  // so it agrees with the route's answer, and a caller that skipped the route
+  // still cannot put a press on our bot that the rules would not.
+  const route = (deps.route ?? routePress)({ variant, mobile: body?.mobile, digit });
+  const { arm, voiceVariant } = route;
+  const ctx = { digit, variant, arm };
 
   try {
-    if (!handledByOurBot(variant)) {
+    if (!route.ours) {
       return { dialled: false, reason: "not_our_variant" };
     }
     if (mobile.length < 10) {
@@ -178,7 +224,7 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
     // keeps its slot and goes to Oriserve whole. See lib/dialPacer.js for the
     // measurement: past twenty dials a minute, half of them never connect.
     if (!(deps.hasRoom ?? hasRoom)()) {
-      return overflowToOriserve(body, { digit, variant }, deps, "dial_queue_full");
+      return overflowToOriserve(body, ctx, deps, "dial_queue_full");
     }
 
     // ── THE COHORT CAP ──────────────────────────────────────────────────────
@@ -194,7 +240,7 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
     // worst case of this change is "today behaves like yesterday".
     const cap = deps.cap ?? ourBotDailyCap();
     if (!(await claimDailySlot(sb, cap))) {
-      return overflowToOriserve(body, { digit, variant }, deps, "daily_cap");
+      return overflowToOriserve(body, ctx, deps, "daily_cap");
     }
 
     const { url, secret } = await journeyEndpoint(sb);
@@ -204,14 +250,14 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
       // releasing it needs a second write that can itself fail, and the failure
       // mode of leaking a slot is calling 99 instead of 100 today. The failure
       // mode of a double release is calling someone twice.
-      return overflowToOriserve(body, { digit, variant }, deps, "not_configured");
+      return overflowToOriserve(body, ctx, deps, "not_configured");
     }
 
     // Everything above decided; only the dial itself waits its turn. A burst of
     // 200 presses still resolves 200 routing decisions in seconds — it just
     // does not put 200 calls on the trunk in three minutes.
     return await (deps.pace ?? paceDial)(() =>
-      placeAndRecord({ url, secret, mobile, body, digit, variant, deps })
+      placeAndRecord({ url, secret, mobile, body, digit, variant, arm, voiceVariant, deps })
     );
   } catch (error) {
     const reason = `error: ${error?.message ?? error}`;
@@ -224,6 +270,8 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
       digit: digit ?? null,
       provider: "ours",
       uniqueId: body?.unique_id || body?.call_id || null,
+      arm,
+      voiceVariant,
       raw: { bot: "elevenlabs_convai", via: "journey-run" },
     }).catch(() => {});
     return { dialled: false, reason };
@@ -270,7 +318,7 @@ function noCallWasPlaced(res, out) {
  * may hold it for minutes — while the routing decisions above have to be made
  * the moment the press arrives.
  */
-async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps }) {
+async function placeAndRecord({ url, secret, mobile, body, digit, variant, arm = null, voiceVariant = null, deps }) {
   const outcome = { dialled: false, reason: null };
   // Declared out here so the handover decision below can see them even when the
   // fetch itself threw, where "no response at all" is exactly the ambiguous
@@ -293,6 +341,10 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps 
         // route itself, and sending it twice from two places is how a customer
         // gets the same message twice.
         channels: { whatsapp: false, voice: true },
+        // Which ElevenLabs agent/voice, under the A/B split. Sent only when
+        // there is one: a journey-run that does not read it ignores an extra
+        // key, and without the split the request is exactly what it was.
+        ...(voiceVariant ? { voice_variant: voiceVariant } : {}),
       }),
     });
 
@@ -325,7 +377,7 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps 
   // presses in the 09:5x minute that is a rounding error against the cap.
   if (!outcome.dialled && noCallWasPlaced(res, out)) {
     outcome.handedToOriserve = true;
-    overflowToOriserve(body, { digit, variant }, deps, outcome.reason ?? "no_call_placed");
+    overflowToOriserve(body, { digit, variant, arm }, deps, outcome.reason ?? "no_call_placed");
   }
 
   // Logged to the same table as the Oriserve dispatches, with provider naming
@@ -338,6 +390,9 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, deps 
     digit: digit ?? null,
     provider: "ours",
     uniqueId: body?.unique_id || body?.call_id || null,
+    arm,
+    voiceVariant,
+    fallbackReason: outcome.handedToOriserve ? outcome.reason ?? "no_call_placed" : null,
     raw: { bot: "elevenlabs_convai", via: "journey-run" },
   }).catch(() => {});
 
