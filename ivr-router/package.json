@@ -20,7 +20,8 @@
     "test:our-voice-bot": "node test-our-voice-bot.mjs",
     "test:press-queue": "node test-press-queue.mjs",
     "test:dial-pacer": "node test-dial-pacer.mjs",
-    "test:neither-bot": "node test-neither-bot.mjs"
+    "test:neither-bot": "node test-neither-bot.mjs",
+    "test:bot-split": "node test-bot-split.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
