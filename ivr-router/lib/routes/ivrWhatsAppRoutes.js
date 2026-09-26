@@ -6,7 +6,7 @@ import { resolveCustomerId } from "../customerIds.js";
 import { resolveSsoLink, upgradeApplyLinks, isPlainApplyLink } from "../crmSsoLink.js";
 import { forwardPressToCrm } from "../crmPressForward.js";
 import { dispatchPressToVoiceBot } from "../oriVoiceDispatch.js";
-import { dispatchPressToOurBot, handledByOurBot } from "../ourVoiceBotDispatch.js";
+import { dispatchPressToOurBot, routePress } from "../ourVoiceBotDispatch.js";
 import { aliasFor } from "../mobileAlias.js";
 import { addAliasToLinks } from "../applyLinkAlias.js";
 import {
@@ -453,10 +453,16 @@ async function handleKeypress(req, res) {
   //
   // if/else rather than two calls: a press routed to both bots is two paid
   // calls to one person, seconds apart, from two different numbers.
-  if (handledByOurBot(variant)) {
+  //
+  // routePress() is handledByOurBot() unless BOT_SPLIT_MODE=split, when it
+  // hashes the caller's mobile into one arm of an A/B split instead
+  // (lib/botSplit.js). The arm rides along to the Oriserve row so a caller
+  // assigned to either side is counted there in crm.voice_dispatch.
+  const route = routePress({ variant, mobile, digit });
+  if (route.ours) {
     dispatchPressToOurBot(body, { digit, variant });
   } else {
-    dispatchPressToVoiceBot(body, { digit, variant });
+    dispatchPressToVoiceBot(body, { digit, variant, arm: route.arm });
   }
 
   // Best first. A single id is still a single id; a list is a primary and its

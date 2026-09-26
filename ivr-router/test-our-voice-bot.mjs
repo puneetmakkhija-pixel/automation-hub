@@ -279,20 +279,22 @@ const routeSrc = await (async () => {
   return readFileSync(new URL("./lib/routes/ivrWhatsAppRoutes.js", import.meta.url), "utf8");
 })();
 
-await check("the press is routed by handledByOurBot, not unconditionally", () => {
+await check("the press is routed by routePress, not unconditionally", () => {
   // Without the guard our bot takes every press-1 on the webhook, including
-  // Oriserve's live businessloans campaign.
+  // Oriserve's live businessloans campaign. routePress() is handledByOurBot()
+  // unless BOT_SPLIT_MODE=split -- test-bot-split.mjs holds it to that.
   assert.match(
     routeSrc,
-    /if\s*\(\s*handledByOurBot\(\s*variant\s*\)\s*\)/,
-    "the routing guard is missing or no longer reads the variant"
+    /const\s+route\s*=\s*routePress\(\s*\{\s*variant\s*,\s*mobile\s*,\s*digit\s*\}\s*\)/,
+    "the routing decision is missing or no longer reads variant, mobile and digit"
   );
+  assert.match(routeSrc, /if\s*\(\s*route\.ours\s*\)/, "the routing guard is missing");
 });
 
 await check("exactly one bot per press: an if with an else, never two calls", () => {
   const ours = routeSrc.indexOf("dispatchPressToOurBot(body");
   const ori = routeSrc.indexOf("dispatchPressToVoiceBot(body");
-  const guard = routeSrc.search(/if\s*\(\s*handledByOurBot/);
+  const guard = routeSrc.search(/if\s*\(\s*route\.ours/);
   assert.ok(guard > -1 && ours > guard, "our dispatch must sit inside the guard");
   assert.ok(ori > ours, "Oriserve must be the else branch");
   assert.match(
