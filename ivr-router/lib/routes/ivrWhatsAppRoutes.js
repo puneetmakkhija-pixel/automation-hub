@@ -17,6 +17,7 @@ import {
 } from "../wabaErrors.js";
 import { sendPressSms, shouldSendSms, smsMode } from "../smsSender.js";
 import { runQueued } from "../pressQueue.js";
+import { applyDedupeHours, recentApplyLink } from "../applyLinkDedupe.js";
 
 /**
  * IVR keypress -> WhatsApp, in one hop.
@@ -300,7 +301,7 @@ export function recordSend(row) {
           // default; a re-broadcast marks itself so it can never select the
           // same customer twice on a repeat run.
           source: row.source || "ivr_keypress_webhook",
-          status: row.status, // sent | failed
+          status: row.status, // sent | failed | skipped_duplicate
           digit: row.digit,
           template: row.template,
           variant: row.variant || null,
@@ -314,6 +315,8 @@ export function recordSend(row) {
           link_source: row.linkSource || null,
           message_id: row.messageId || null,
           error: row.error ?? null,
+          // A skipped_duplicate row names the send it was a duplicate of.
+          ...(row.dedupedAgainst != null ? { deduped_against: row.dedupedAgainst } : {}),
         },
       },
     ])
@@ -398,7 +401,9 @@ async function sentPreviously(uniqueId) {
       .select("id")
       .eq("direction", "outbound")
       .eq("metadata->>unique_id", uniqueId)
-      .eq("metadata->>status", "sent")
+      // skipped_duplicate too: that call has been decided already, and a retry
+      // of it after a restart must not write the same press a second time.
+      .in("metadata->>status", ["sent", "skipped_duplicate"])
       .limit(1);
 
     if (error) {
@@ -507,19 +512,6 @@ async function handleKeypress(req, res) {
     return res.status(503).json({ success: false, error: "WhatsApp sender not configured" });
   }
 
-  // WhatsApp rejects an empty template variable outright (#131008, surfaced by
-  // Ananta as 1353), so a {{field}} that resolved to nothing is a config bug
-  // worth naming here rather than a failed send to debug from the provider's
-  // error. A deliberately blank value is a single space, which passes.
-  // One id per mobile number, minted on first contact. Exposed to placeholders
-  // as {{customer_id}} so an application link can carry per-lead attribution,
-  // and recorded on the send. Null when the database is unreachable — the
-  // message still goes.
-  const customerId = await resolveCustomerId(database()?.client, phone.phone, {
-    campaignId: body.campaign_id,
-    variant,
-  });
-
   // {{sso_link}} puts a pre-verified /apply?t=<token> link in the message, so
   // the customer lands past OTP. Minted only when the configured placeholders
   // actually ask for one — otherwise every send would call the CRM for a value
@@ -534,6 +526,52 @@ async function handleKeypress(req, res) {
   // six weeks, while 8,433 of 9,063 callers met an OTP screen and left.
   const wantsSso =
     raw.some((v) => String(v).includes("{{sso_link}}")) || raw.some(isPlainApplyLink);
+
+  // One /apply link per caller per APPLY_LINK_DEDUPE_HOURS — see
+  // lib/applyLinkDedupe.js. Asked before the customer id and the SSO token are
+  // minted, since a skipped send needs neither. The press is still logged, as
+  // a skipped_duplicate row: the BL leads page counts presses from this table.
+  if (digit === "1" && wantsSso) {
+    const prior = await recentApplyLink(database()?.client, phone.phone, {
+      hours: applyDedupeHours(),
+    });
+    if (prior) {
+      console.log(
+        `[IVR_WA] ${phone.phone} was sent an apply link at ${prior.at} — ` +
+          `not sending another (APPLY_LINK_DEDUPE_HOURS=${applyDedupeHours()})`
+      );
+      recordSend({
+        status: "skipped_duplicate",
+        phone: phone.phone,
+        digit,
+        template,
+        variant,
+        campaignId: body.campaign_id,
+        campaignName: campaign_name,
+        uniqueId: unique_id,
+        linkSource,
+        // The link they already have, so the press still reads as ours in the
+        // views that attribute a press by its link.
+        link: prior.link,
+        dedupedAgainst: prior.id,
+      });
+      return res.json({ success: true, sent: false, reason: "apply link sent recently", digit });
+    }
+  }
+
+  // WhatsApp rejects an empty template variable outright (#131008, surfaced by
+  // Ananta as 1353), so a {{field}} that resolved to nothing is a config bug
+  // worth naming here rather than a failed send to debug from the provider's
+  // error. A deliberately blank value is a single space, which passes.
+  // One id per mobile number, minted on first contact. Exposed to placeholders
+  // as {{customer_id}} so an application link can carry per-lead attribution,
+  // and recorded on the send. Null when the database is unreachable — the
+  // message still goes.
+  const customerId = await resolveCustomerId(database()?.client, phone.phone, {
+    campaignId: body.campaign_id,
+    variant,
+  });
+
   const sso = wantsSso
     ? await resolveSsoLink(phone.phone, database()?.client)
     : { url: "", minted: false, expiresAt: null, reason: "not_requested" };
