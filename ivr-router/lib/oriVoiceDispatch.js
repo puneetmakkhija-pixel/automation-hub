@@ -179,6 +179,16 @@ function dials(variant) {
 }
 
 /**
+ * Would Oriserve take a press-1 from this variant right now? The same gate
+ * placeCall applies, exported so the A/B split (lib/ourVoiceBotDispatch.js
+ * routePress) only splits presses that BOTH bots could take. Splitting a
+ * variant Oriserve refuses would leave its half of the callers with no bot.
+ */
+export function oriDialsVariant(variant) {
+  return dials(variant);
+}
+
+/**
  * Say so, once, when ORI_PRESS_VARIANTS names something the bot may not dial.
  *
  * This is config drift worth seeing: someone put a product on the bot and the
@@ -230,7 +240,8 @@ export function _resetDialled() {
 
 /**
  * @param {object} body the webhook body as received
- * @param {{digit?: string, variant?: string}} context
+ * @param {{digit?: string, variant?: string, arm?: string|null, fallbackReason?: string|null}} context
+ *   arm and fallbackReason only label the ledger row; they change no decision.
  * @returns {Promise<{dialled: boolean, reason?: string, campaignId?: string}>}
  *   always resolves. Not awaited by the route; returned so a test can wait.
  */
@@ -264,7 +275,7 @@ export function dispatchPressToVoiceBot(body, context = {}) {
  * It also means a mis-pointed panel still logs its variant warning while the
  * dispatch is off, instead of going silent for two separate reasons at once.
  */
-async function placeCall(body, { digit, variant } = {}) {
+async function placeCall(body, { digit, variant, arm, fallbackReason } = {}) {
   if (String(digit || "").trim() !== "1") {
     return { dialled: false, reason: "not_press_1" };
   }
@@ -301,6 +312,12 @@ async function placeCall(body, { digit, variant } = {}) {
     digit: digit ?? null,
     providerCampaignId: outcome.campaignId ?? null,
     uniqueId: body.unique_id || body.call_id || null,
+    // The A/B arm this caller was assigned, which is NOT always "oriserve" on
+    // an Oriserve row: our arm's refusals land here too, and intent-to-treat
+    // has to count them against the arm that was assigned, not the bot that
+    // happened to ring. Both null outside BOT_SPLIT_MODE=split.
+    arm: arm ?? null,
+    fallbackReason: fallbackReason ?? null,
     raw: {
       ivr_campaign_id: body.campaign_id ?? null,
       ivr_campaign_name: body.campaign_name ?? null,
