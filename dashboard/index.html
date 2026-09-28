@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IVR Automation Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap">
     <style>
         * {
@@ -996,6 +998,15 @@
         <section id="dashboard" class="section active">
             <h2>Real-Time Overview</h2>
 
+            <div class="card mb-20" style="background: var(--warning-50); border-left: 4px solid var(--warning-500);">
+                <strong style="color: var(--warning-600);">⚠ Not yet wired to live data.</strong>
+                <span style="color: var(--text-secondary); font-size: 13px;">
+                    The metrics below, and the Active Campaigns / Recent Events tables, have no backend
+                    endpoint behind them — <code>/api/db</code> was retired on 1 Sep 2026 and campaign/customer
+                    data now lives in the CRM instead. See <code>docs/RETIRED_ENDPOINTS.md</code>.
+                </span>
+            </div>
+
             <div class="grid grid-4">
                 <div class="card">
                     <div class="card-title">Leads Processed</div>
@@ -1045,7 +1056,7 @@
                     </thead>
                     <tbody id="campaign-status-body">
                         <tr>
-                            <td colspan="6" style="text-align: center;">No active campaigns</td>
+                            <td colspan="6" style="text-align: center; color: var(--text-tertiary);">⏳ Not yet wired to live data — campaign data now lives in the CRM</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1065,7 +1076,7 @@
                     </thead>
                     <tbody id="events-body">
                         <tr>
-                            <td colspan="4" style="text-align: center;">No recent events</td>
+                            <td colspan="4" style="text-align: center; color: var(--text-tertiary);">⏳ Not yet wired to live data — no events endpoint exists yet</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1077,6 +1088,15 @@
             <div class="flex-between">
                 <h2>Campaign Management</h2>
                 <button class="btn btn-primary" onclick="openCampaignModal()">+ New Campaign</button>
+            </div>
+
+            <div class="card mb-20" style="background: var(--warning-50); border-left: 4px solid var(--warning-500);">
+                <strong style="color: var(--warning-600);">⚠ Not yet wired to live data.</strong>
+                <span style="color: var(--text-secondary); font-size: 13px;">
+                    <code>/api/campaigns</code> was retired on 1 Sep 2026 — it wrote to tables that were empty
+                    or didn't exist. Campaign data is moving to <code>crm.campaign</code>; "New Campaign" below
+                    will fail until this tab is reconnected to the CRM.
+                </span>
             </div>
 
             <div class="card">
@@ -1095,7 +1115,7 @@
                     </thead>
                     <tbody id="campaigns-body">
                         <tr>
-                            <td colspan="8" style="text-align: center;">No campaigns yet</td>
+                            <td colspan="8" style="text-align: center; color: var(--text-tertiary);">⏳ Not yet wired to live data — campaign data now lives in the CRM</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1107,6 +1127,15 @@
             <div class="flex-between">
                 <h2>Lead Management</h2>
                 <button class="btn btn-primary" onclick="openUploadModal()">📤 Upload Leads</button>
+            </div>
+
+            <div class="card mb-20" style="background: var(--warning-50); border-left: 4px solid var(--warning-500);">
+                <strong style="color: var(--warning-600);">⚠ Not yet wired to live data.</strong>
+                <span style="color: var(--text-secondary); font-size: 13px;">
+                    Lead data now lives in the CRM, not this dashboard — there is no
+                    <code>GET /api/leads</code> endpoint in this service. Search and Upload below will not
+                    return real results until this tab is reconnected to the CRM.
+                </span>
             </div>
 
             <div class="card mb-20">
@@ -1129,7 +1158,7 @@
                     </thead>
                     <tbody id="leads-body">
                         <tr>
-                            <td colspan="8" style="text-align: center;">No leads yet</td>
+                            <td colspan="8" style="text-align: center; color: var(--text-tertiary);">⏳ Not yet wired to live data — lead data now lives in the CRM</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1140,146 +1169,24 @@
         <section id="analytics" class="section">
             <h2>Analytics & Reports</h2>
 
-            <div class="grid grid-2 mb-20">
-                <div class="card">
-                    <h3>Campaign Distribution</h3>
-                    <div class="pie-chart">
-                        <div class="pie-circle"></div>
-                        <div class="pie-center">64%</div>
-                    </div>
-                    <div class="grid" style="grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px;">
-                        <div style="padding: 12px; background: var(--bg-secondary); border-radius: 8px; text-align: center;">
-                            <div style="font-weight: 700; font-size: 18px; color: var(--primary-600);">35%</div>
-                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">Premium</div>
-                        </div>
-                        <div style="padding: 12px; background: var(--bg-secondary); border-radius: 8px; text-align: center;">
-                            <div style="font-weight: 700; font-size: 18px; color: var(--primary-600);">45%</div>
-                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">Standard</div>
-                        </div>
-                        <div style="padding: 12px; background: var(--bg-secondary); border-radius: 8px; text-align: center;">
-                            <div style="font-weight: 700; font-size: 18px; color: var(--primary-600);">20%</div>
-                            <div style="font-size: 11px; color: var(--text-tertiary); margin-top: 4px;">Follow-up</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3>Hourly Lead Volume</h3>
-                    <div class="chart-container">
-                        <div class="chart-bars">
-                            <div class="chart-bar" style="height: 85%;"></div>
-                            <div class="chart-bar" style="height: 72%;"></div>
-                            <div class="chart-bar" style="height: 95%;"></div>
-                            <div class="chart-bar" style="height: 68%;"></div>
-                            <div class="chart-bar" style="height: 82%;"></div>
-                        </div>
-                        <div class="chart-labels">
-                            <div class="chart-label">12 AM</div>
-                            <div class="chart-label">1 AM</div>
-                            <div class="chart-label">2 AM</div>
-                            <div class="chart-label">3 AM</div>
-                            <div class="chart-label">4 AM</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="grid grid-2 mb-20">
-                <div class="card">
-                    <h3>Conversion Funnel (Today)</h3>
-                    <div style="padding: 20px 0;">
-                        <div style="margin-bottom: 20px;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px;">
-                                <span>Leads Sent</span>
-                                <span style="font-weight: 600;">100</span>
-                            </div>
-                            <div class="progress"><div class="progress-bar" style="width: 100%"></div></div>
-                        </div>
-                        <div style="margin-bottom: 20px;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px;">
-                                <span>WhatsApp</span>
-                                <span style="font-weight: 600;">85 (85%)</span>
-                            </div>
-                            <div class="progress"><div class="progress-bar" style="width: 85%"></div></div>
-                        </div>
-                        <div style="margin-bottom: 20px;">
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px;">
-                                <span>Calls Connected</span>
-                                <span style="font-weight: 600;">59 (59%)</span>
-                            </div>
-                            <div class="progress"><div class="progress-bar" style="width: 59%"></div></div>
-                        </div>
-                        <div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px;">
-                                <span>Interested</span>
-                                <span style="font-weight: 600;">24 (24%)</span>
-                            </div>
-                            <div class="progress"><div class="progress-bar success" style="width: 24%"></div></div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3>Key Metrics</h3>
-                    <div style="padding: 20px 0;">
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
-                            <span style="color: var(--text-secondary);">Cost per Lead</span>
-                            <span style="font-weight: 600; font-size: 16px;">₹8</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
-                            <span style="color: var(--text-secondary);">Avg Call Duration</span>
-                            <span style="font-weight: 600; font-size: 16px;">45 sec</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border);">
-                            <span style="color: var(--text-secondary);">Webhook Success</span>
-                            <span style="font-weight: 600; font-size: 16px; color: var(--success-500);">99.9%</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between;">
-                            <span style="color: var(--text-secondary);">System Uptime</span>
-                            <span style="font-weight: 600; font-size: 16px; color: var(--success-500);">99.95%</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <div class="card">
-                <h3>Rejection Breakdown (Today)</h3>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Reason</th>
-                            <th>Count</th>
-                            <th>Percentage</th>
-                            <th>Trend</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>CIBIL Score Low</td>
-                            <td>450</td>
-                            <td><span class="badge badge-warning">45.9%</span></td>
-                            <td>↑ +2%</td>
-                        </tr>
-                        <tr>
-                            <td>Too Many Inquiries</td>
-                            <td>280</td>
-                            <td><span class="badge badge-warning">28.6%</span></td>
-                            <td>↓ -1%</td>
-                        </tr>
-                        <tr>
-                            <td>Existing Loan</td>
-                            <td>180</td>
-                            <td><span class="badge badge-warning">18.4%</span></td>
-                            <td>→ Stable</td>
-                        </tr>
-                        <tr>
-                            <td>Income Low</td>
-                            <td>70</td>
-                            <td><span class="badge badge-warning">7.1%</span></td>
-                            <td>↓ -1%</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <h3>⏳ Not yet wired to live data</h3>
+                <p style="color: var(--text-secondary); margin-top: 8px;">
+                    This tab used to show fixed example numbers — campaign distribution, hourly lead
+                    volume, a conversion funnel, key metrics and a rejection breakdown — with no fetch
+                    behind any of them. Operators could easily mistake those for live figures, so they've
+                    been removed rather than left in place or replaced with more invented numbers.
+                </p>
+                <p style="color: var(--text-secondary); margin-top: 12px;">
+                    There is no <code>/api/analytics/*</code> endpoint in this service today (see
+                    <code>docs/RETIRED_ENDPOINTS.md</code> and <code>DASHBOARD_API_CONTRACT.md</code>, which
+                    documents a contract that was never implemented for this tab). The closest existing
+                    endpoints are <code>GET /api/rejections/by-reason/:reason</code>,
+                    <code>by-category/:category</code> and <code>by-lender/:lender_id</code> — each needs a
+                    single reason/category/lender passed in, none of them return the "all reasons at once"
+                    breakdown this tab's table implied, so wiring this tab up needs a new aggregate endpoint,
+                    not just a fetch call.
+                </p>
             </div>
         </section>
 
@@ -1416,8 +1323,11 @@
             </div>
 
             <div class="card mt-20">
-                <h3>Recent Submissions</h3>
-                <table class="table" id="flexiloans-table">
+                <div class="flex-between" style="margin-bottom: 0;">
+                    <h3 style="margin-bottom: 0;">Recent Submissions</h3>
+                    <button class="btn btn-secondary btn-small" onclick="refreshFlexiLoansSubmissions()">🔄 Refresh</button>
+                </div>
+                <table class="table" id="flexiloans-table" style="margin-top: 16px;">
                     <thead>
                         <tr>
                             <th>Phone</th>
@@ -1433,6 +1343,11 @@
                         </tr>
                     </tbody>
                 </table>
+                <div class="flex-between" style="margin-bottom: 0; margin-top: 12px;">
+                    <button class="btn btn-secondary btn-small" id="flexiloans-prev" onclick="flexiloansPrevPage()" disabled>← Previous</button>
+                    <span id="flexiloans-page-info" style="font-size: 12px; color: var(--text-tertiary);"></span>
+                    <button class="btn btn-secondary btn-small" id="flexiloans-next" onclick="flexiloansNextPage()" disabled>Next →</button>
+                </div>
             </div>
         </section>
 
@@ -1670,6 +1585,7 @@
             event.target.classList.add('active');
 
             if (tabName === 'flexiloans-documents') loadFlexiLoansSubmissions();
+            if (tabName === 'whatsapp-flow') loadWhatsAppFlow();
         }
 
         function showAlert(message, type = 'success') {
@@ -1811,7 +1727,7 @@
                 if (data.success) {
                     showAlert('Documents submitted! Email ready to send via Gmail.');
                     closeFlexiLoansDocModal();
-                    loadFlexiLoansSubmissions();
+                    loadFlexiLoansSubmissions({ force: true, offset: 0 });
                 } else {
                     showAlert('Error: ' + data.error, 'error');
                 }
@@ -1820,11 +1736,33 @@
             }
         }
 
-        async function loadFlexiLoansSubmissions() {
+        // FlexiLoans submissions: paginated + cached so switching back to the Docs
+        // tab doesn't always re-fetch. Data is considered fresh for
+        // FLEXILOANS_CACHE_MS after a successful load of the same page; a real
+        // refetch happens on tab switch only past that, or via the Refresh
+        // button / Prev / Next (which always force a fetch) / after a new
+        // submission is posted.
+        const FLEXILOANS_PAGE_SIZE = 20;
+        const FLEXILOANS_CACHE_MS = 60000;
+        const flexiloansState = { offset: 0, cachedAt: 0, loading: false, lastCount: 0 };
+
+        async function loadFlexiLoansSubmissions(options = {}) {
+            const { force = false, offset = flexiloansState.offset } = options;
+            const isFreshCurrentPage = !force
+                && offset === flexiloansState.offset
+                && flexiloansState.cachedAt > 0
+                && (Date.now() - flexiloansState.cachedAt) < FLEXILOANS_CACHE_MS;
+            if (isFreshCurrentPage || flexiloansState.loading) return;
+
+            flexiloansState.loading = true;
             try {
-                const res = await fetch(`${API_BASE}/flexiloans/submissions`);
+                const res = await fetch(`${API_BASE}/flexiloans/submissions?limit=${FLEXILOANS_PAGE_SIZE}&offset=${offset}`);
                 const data = await res.json();
                 if (data.success) {
+                    flexiloansState.offset = offset;
+                    flexiloansState.cachedAt = Date.now();
+                    flexiloansState.lastCount = data.data.length;
+
                     const tbody = document.getElementById('flexiloans-list');
                     tbody.innerHTML = data.data.map(sub => `
                         <tr>
@@ -1835,9 +1773,68 @@
                             <td>${new Date(sub.submitted_at).toLocaleDateString()}</td>
                         </tr>
                     `).join('') || '<tr><td colspan="5" style="text-align: center;">No submissions yet</td></tr>';
+
+                    const hasMore = data.pagination ? data.pagination.hasMore : data.data.length === FLEXILOANS_PAGE_SIZE;
+                    document.getElementById('flexiloans-prev').disabled = offset === 0;
+                    document.getElementById('flexiloans-next').disabled = !hasMore;
+                    document.getElementById('flexiloans-page-info').textContent =
+                        `Showing ${data.data.length ? offset + 1 : 0}–${offset + data.data.length}`;
+                } else {
+                    showAlert('Error loading submissions: ' + data.error, 'error');
                 }
             } catch (err) {
                 console.error('Error loading submissions:', err);
+            } finally {
+                flexiloansState.loading = false;
+            }
+        }
+
+        function refreshFlexiLoansSubmissions() {
+            loadFlexiLoansSubmissions({ force: true, offset: flexiloansState.offset });
+        }
+
+        function flexiloansNextPage() {
+            loadFlexiLoansSubmissions({ force: true, offset: flexiloansState.offset + FLEXILOANS_PAGE_SIZE });
+        }
+
+        function flexiloansPrevPage() {
+            loadFlexiLoansSubmissions({ force: true, offset: Math.max(0, flexiloansState.offset - FLEXILOANS_PAGE_SIZE) });
+        }
+
+        // WhatsApp chatbot flow: wires the tab up to the real
+        // /api/whatsapp/flow/stats and /api/whatsapp/flow/conversations
+        // endpoints, which already existed but nothing ever called.
+        async function loadWhatsAppFlow() {
+            try {
+                const [statsRes, convRes] = await Promise.all([
+                    fetch(`${API_BASE}/whatsapp/flow/stats`),
+                    fetch(`${API_BASE}/whatsapp/flow/conversations`)
+                ]);
+                const stats = await statsRes.json();
+                const convos = await convRes.json();
+
+                if (stats.success) {
+                    document.getElementById('flow-active').textContent = stats.data.activeConversations;
+                    document.getElementById('flow-completed').textContent = stats.data.completedConversations;
+                    document.getElementById('flow-messages').textContent = stats.data.totalMessages;
+                    document.getElementById('flow-docs').textContent = stats.data.documentsCollected;
+                }
+
+                if (convos.success) {
+                    const tbody = document.getElementById('conversations-list');
+                    tbody.innerHTML = convos.data.map(c => `
+                        <tr>
+                            <td>${c.phone_number}</td>
+                            <td>${c.customer_name || '—'}</td>
+                            <td>${c.last_message || '—'}</td>
+                            <td><span class="badge badge-info">${c.status}</span></td>
+                            <td>${c.documents_collected ?? 0}/3</td>
+                            <td>—</td>
+                        </tr>
+                    `).join('') || '<tr><td colspan="6" style="text-align: center;">No active conversations</td></tr>';
+                }
+            } catch (err) {
+                console.error('Error loading WhatsApp flow data:', err);
             }
         }
 
@@ -1888,7 +1885,10 @@
         }
 
         // Initialize
-        loadFlexiLoansSubmissions();
+        // FlexiLoans submissions and WhatsApp flow data are no longer fetched
+        // eagerly on page load — they load lazily the first time their tab is
+        // opened (see switchTab above), since the Dashboard tab is what's shown
+        // first and most sessions never visit either of those tabs at all.
     </script>
 </body>
 </html>
