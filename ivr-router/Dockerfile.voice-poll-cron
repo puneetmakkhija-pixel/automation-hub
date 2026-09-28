@@ -1,0 +1,22 @@
+# Dedicated image for the voice-outcome-poll Railway service (root directory
+# ivr-router, dockerfilePath set to this file via the Railway API).
+#
+# NOT ivr-router/Dockerfile: that one is the always-on web server's image and
+# doesn't COPY scripts/, so a service built from it can't run
+# `npm run voice-poll:cron` -- it built fine and then crashed at runtime with
+# a missing module. Discovered that way, on the first live deploy of this
+# service, 28 Sep 2026.
+#
+# Also not a railway.toml builder override: setting one via the Railway API
+# is refused outright ("Config as Code (railway.json / railway.toml) is
+# deprecated"), and a committed ivr-router/railway.toml setting
+# builder = "railpack" was silently never honored -- two deploys from it
+# produced the byte-identical Docker image. Do not re-add one; use
+# dockerfilePath on the service instead, which is what actually took effect.
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --prefer-offline --no-audit
+COPY lib ./lib
+COPY scripts ./scripts
+CMD ["npm", "run", "voice-poll:cron"]
