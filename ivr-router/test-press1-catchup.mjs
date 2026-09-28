@@ -1,6 +1,6 @@
 /**
- * The end-of-gap sweep: everyone who pressed 1 today and got no bot dispatch
- * attempt, called oldest press first, through the one dispatcher.
+ * The end-of-gap sweep: everyone who pressed 1 today or yesterday and got no
+ * bot dispatch attempt, called oldest press first, through the one dispatcher.
  *
  *   node test-press1-catchup.mjs
  */
@@ -10,6 +10,7 @@ import {
   catchupEnabled,
   catchupLimit,
   istDayStartIso,
+  istLookbackStartIso,
   runPress1Catchup,
 } from "./lib/press1Catchup.js";
 
@@ -73,6 +74,14 @@ await check("just before IST midnight still belongs to the day that is ending", 
   assert.equal(istDayStartIso(now), "2026-09-26T18:30:00.000Z");
 });
 
+console.log("\nthe lookback floor\n");
+
+await check("the lookback floor is yesterday's IST midnight, one day before today's", () => {
+  const now = new Date("2026-09-28T10:00:00.000Z");
+  assert.equal(istDayStartIso(now), "2026-09-27T18:30:00.000Z");
+  assert.equal(istLookbackStartIso(now), "2026-09-26T18:30:00.000Z");
+});
+
 console.log("\ncandidate selection\n");
 
 // A hand-rolled, order-preserving chainable stub is simpler here than
@@ -82,7 +91,7 @@ function leadsQuery(rows) {
   const q = {
     _rows: rows,
     eq() { return q; },
-    gte() { return q; },
+    gte(col, value) { q._rows = q._rows.filter((r) => r[col] >= value); return q; },
     order(col, { ascending }) {
       q._rows = [...q._rows].sort((a, b) =>
         ascending ? a[col].localeCompare(b[col]) : b[col].localeCompare(a[col])
@@ -145,6 +154,29 @@ await check("a suppressed contact is never a candidate for a call", async () => 
   });
   const out = await catchupCandidates(sb, {});
   assert.deepEqual(out.map((r) => r.mobile10), ["9123456780"]);
+});
+
+await check("yesterday's still-undialled press is a candidate today", async () => {
+  const sb = sbFor({ leads: [lead("9876543210", "2026-09-27T10:00:00.000Z")] });
+  const out = await catchupCandidates(sb, { now: new Date("2026-09-28T12:00:00.000Z") });
+  assert.deepEqual(out.map((r) => r.mobile10), ["9876543210"]);
+});
+
+await check("a press from two days ago has aged out of the sweep", async () => {
+  const sb = sbFor({ leads: [lead("9876543210", "2026-09-26T10:00:00.000Z")] });
+  const out = await catchupCandidates(sb, { now: new Date("2026-09-28T12:00:00.000Z") });
+  assert.deepEqual(out, []);
+});
+
+await check("yesterday's and today's presses interleave oldest first", async () => {
+  const sb = sbFor({
+    leads: [
+      lead("9876543210", "2026-09-28T06:00:00.000Z"),
+      lead("9123456780", "2026-09-27T20:00:00.000Z"),
+    ],
+  });
+  const out = await catchupCandidates(sb, { now: new Date("2026-09-28T12:00:00.000Z") });
+  assert.deepEqual(out.map((r) => r.mobile10), ["9123456780", "9876543210"]);
 });
 
 console.log("\nthe run\n");
