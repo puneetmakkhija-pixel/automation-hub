@@ -58,6 +58,17 @@ const MAX_AGE_DAYS = 7;
 const DEFAULT_BATCH = 50;
 
 /**
+ * Stop asking about a row after this many failed fetches on its
+ * voice_provider_call_id. Not a guess at flakiness tolerance -- three is past
+ * the point where a network blip explains it, and a wrong id (see
+ * migration 20260928190000: 2,086 rows carrying an Asterisk uniqueid instead
+ * of an ElevenLabs conversation id) does not become right on a fourth try.
+ * Without this, that batch -- being oldest -- sits at the head of every tick
+ * forever and nothing behind it is ever reached.
+ */
+const MAX_POLL_ATTEMPTS = 3;
+
+/**
  * ElevenLabs `error.error_type` -> our disposition.
  *
  * The five dispositions are the same ones crm.voice_call_events already uses
@@ -192,11 +203,19 @@ async function fetchConversation(conversationId, { apiKey, baseUrl, fetchImpl })
  * service, and none of what it writes is worth that.
  *
  * @returns {Promise<{polled:number, updated:number, pending:number, skipped:number,
- *                    errors:string[], reason?:string}>}
+ *                    quarantined:number, errors:string[], reason?:string}>}
  */
 export async function pollVoiceOutcomes(options = {}, deps = {}) {
   const limit = Math.max(1, Math.min(Number(options.limit) || DEFAULT_BATCH, 200));
-  const result = { polled: 0, updated: 0, claimed: 0, pending: 0, skipped: 0, errors: [] };
+  const result = {
+    polled: 0,
+    updated: 0,
+    claimed: 0,
+    pending: 0,
+    skipped: 0,
+    quarantined: 0,
+    errors: [],
+  };
 
   try {
     const apiKey = deps.apiKey ?? process.env.ELEVEN_LABS_API_KEY;
@@ -215,7 +234,7 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
 
     const { data: rows, error } = await sb
       .from("journey_run_log")
-      .select("id, mobile, voice_provider_call_id, created_at")
+      .select("id, mobile, voice_provider_call_id, created_at, voice_poll_attempts")
       .eq("voice_provider", "elevenlabs")
       .eq("voice_status", "sent")
       // PENDING_FILTER: only rows nobody has answered yet. If the workspace
@@ -225,6 +244,11 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
       .not("voice_provider_call_id", "is", null)
       .lt("created_at", settledBefore)
       .gt("created_at", notOlderThan)
+      // A row that has failed MAX_POLL_ATTEMPTS times stays out of every future
+      // batch. Without this, a permanently-wrong call id -- being oldest --
+      // occupies the front of the oldest-first queue forever and nothing behind
+      // it is ever reached (see migration 20260928190000).
+      .lt("voice_poll_attempts", MAX_POLL_ATTEMPTS)
       // OLDEST first. Newest-first plus a batch ceiling means a backlog larger
       // than one batch never reaches its oldest rows: each run re-polls the
       // newest `limit` and the stragglers age out under MAX_AGE_DAYS still
@@ -243,6 +267,16 @@ export async function pollVoiceOutcomes(options = {}, deps = {}) {
         result.polled++;
       } catch (e) {
         result.errors.push(`${callId}: ${e?.message ?? e}`);
+
+        const attempts = (row.voice_poll_attempts ?? 0) + 1;
+        if (attempts >= MAX_POLL_ATTEMPTS) result.quarantined++;
+        const { error: attemptsError } = await sb
+          .from("journey_run_log")
+          .update({ voice_poll_attempts: attempts })
+          .eq("id", row.id);
+        if (attemptsError) {
+          result.errors.push(`${callId}: attempts ${attemptsError.message}`);
+        }
         continue;
       }
 
