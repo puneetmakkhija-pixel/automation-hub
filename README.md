@@ -12,18 +12,27 @@ before changing one.
 
 ## Services
 
-Six Railway services: four built from this repo, plus two Railway-provisioned
+Seven Railway services: five built from this repo, plus two Railway-provisioned
 databases. The Root Directory column is what each service is actually set to
 today; times are UTC, because that is what Railway's cron field takes.
 
 | Folder | What it's for | Railway project | Railway service | Root Directory | How it starts |
 | --- | --- | --- | --- | --- | --- |
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | Automation Hub | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
+| `ivr-router` | Our bot's call-outcome poll (`lib/voiceOutcomePoll.js`) | Automation Hub | `voice-outcome-poll` | `ivr-router` | Railpack (`ivr-router/railway.toml`), `npm run voice-poll:cron`, cron `*/5 * * * *` |
 | `data-jobs` | Press-1 lead enrichment | Automation Hub | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
 | `data-jobs` | Lender serviceable-pincode sync | Automation Hub | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
 | `data-jobs` | Hero disbursal report ingest | **Business loans CRM** | `hero-disbursal` | `data-jobs` | Railpack, `npm run ingest:hero-disbursal:cron`, cron `0 22 * * *` |
 | — | Cache | Automation Hub | `redis` | — | `redis:7` image |
 | — | Database | Automation Hub | `postgresql` | — | `postgres:16` image |
+
+`voice-outcome-poll`'s env vars (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
+`ELEVEN_LABS_API_KEY`) are `${{ivr-voice-bot-system.VAR}}` references, same
+project, same reasoning as `hero-disbursal` below: one copy of each secret.
+Its cron is every 5 minutes (Railway's floor) rather than daily like the
+`data-jobs` crons above -- it corrects a live call-outcome status
+(`crm.journey_run_log.voice_status`) that other systems read to decide
+whether to redial, not a batch report.
 
 ### Why one service sits in the other Railway project
 
