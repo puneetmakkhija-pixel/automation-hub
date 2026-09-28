@@ -17,6 +17,7 @@ import { queueStats as pressQueueStats } from "./lib/pressQueue.js";
 import { pacerStats as dialPacerStats } from "./lib/dialPacer.js";
 import plTrackerRoutes from "./lib/routes/plTrackerRoutes.js";
 import flexiloansCampaignRoutes from "./lib/routes/flexiloansCampaignRoutes.js";
+import press1CatchupRoutes from "./lib/routes/press1CatchupRoutes.js";
 import resendFailedRoutes from "./lib/routes/resendFailedRoutes.js";
 import voicePollRoutes from "./lib/routes/voicePollRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
@@ -647,6 +648,17 @@ app.use('/api/pl-tracker', consoleAuth('CONSOLE_PL_API', null), plTrackerRoutes)
 // FLEXI_CAMPAIGN_ENABLED. Reaching this route is permission to run the
 // pipeline; it is not permission to dial.
 app.use('/api/flexiloans-campaign', consoleAuth('CONSOLE_FLEXI', null), flexiloansCampaignRoutes);
+
+// ==================== Press-1 catch-up sweep ====================
+//
+// Behind CONSOLE_SECRET and failClosed, same posture as the campaign above:
+// /run places real calls to today's press-1s our bot has not yet attempted,
+// oldest press first — see lib/press1Catchup.js for why this exists (the
+// safety net under real-time dispatch, now that Oriserve is no longer the
+// fallback). Gated a second time inside the sweep itself on
+// PRESS1_CATCHUP_ENABLED: reaching this route is permission to run it, not
+// permission to dial.
+app.use('/api/press1-catchup', consoleAuth('CONSOLE_PRESS1_CATCHUP', null), press1CatchupRoutes);
 
 // Behind CONSOLE_SECRET and failClosed, for the same reason the campaign above
 // is: POST /failed messages real customers and spends money. /failed/status
