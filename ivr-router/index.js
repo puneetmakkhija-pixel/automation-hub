@@ -55,20 +55,19 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
-// ONE-OFF: re-enable webhook 550 ("whatsapp-businessloans"). Read back on
-// boot 28 Sep 2026 with status=0 -- someone/something switched it off at
-// 06:49:38 UTC, which is exactly when voice2.ivrsms.com stopped posting to
-// /webhooks/ivr/whatsapp/businessloans (zero requests since, confirmed
-// against Railway's own HTTP access logs). url and event were unchanged, so
-// this is the one field to flip back. editWebhook reads the webhook first
-// and merges, so headerJson/bodyJson (the shared secret and field mapping)
-// are preserved untouched -- see its own comment in lib/obdApiClient.js.
-// Remove once the log confirms status=1.
+// TEMPORARY: #134's editWebhook(550, {status:1}) call reported success, but
+// no press-1 traffic has reached /webhooks/ivr/whatsapp/businessloans in the
+// ~10 minutes since -- confirming the panel actually kept the change rather
+// than assuming the edit call's own success response was the last word.
 if (obdClient) {
   obdClient
-    .editWebhook(550, { status: 1 })
-    .then(() => console.log('[ONEOFF][WEBHOOK550] re-enable requested, status now:', 1))
-    .catch((err) => console.error('[ONEOFF][WEBHOOK550] re-enable FAILED:', err.message));
+    .findWebhook(550)
+    .then((hook) => {
+      console.log(
+        `[DEBUG][WEBHOOK550] status=${hook?.status} url=${hook?.url} event=${hook?.event}`
+      );
+    })
+    .catch((err) => console.error('[DEBUG][WEBHOOK550] lookup failed:', err.message));
 }
 
 // Initialize Supabase client (used to persist voice call outcomes)
