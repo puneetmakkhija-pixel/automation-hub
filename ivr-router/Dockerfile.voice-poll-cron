@@ -13,7 +13,16 @@
 # builder = "railpack" was silently never honored -- two deploys from it
 # produced the byte-identical Docker image. Do not re-add one; use
 # dockerfilePath on the service instead, which is what actually took effect.
-FROM node:18-alpine
+#
+# node:22, not node:18 like the web server's Dockerfile: @supabase/supabase-js
+# 2.112.4 needs Node 22+ for its realtime transport's native WebSocket. On 18
+# the build succeeds (npm only warns EBADENGINE) but pollVoiceOutcomes()
+# swallows the resulting "native WebSocket not found" as a per-run error and
+# reports {polled:0, updated:0, ...} every tick -- deployed and running, doing
+# nothing, discovered by reading the deploy log rather than trusting a
+# successful build. The web server's own Node 18 image is untouched; this
+# service is standalone and can move independently.
+FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --prefer-offline --no-audit
