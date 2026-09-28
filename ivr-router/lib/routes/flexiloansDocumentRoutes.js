@@ -153,7 +153,14 @@ router.get('/submission-status/:phone', async (req, res) => {
   }
 });
 
-// ==================== GET: Get all FlexiLoans submissions ====================
+// ==================== GET: Get all FlexiLoans submissions (paginated) ====================
+// The dashboard used to call this with no limit/offset at all, which pulled the
+// whole table on every page load and again on every "Docs" tab switch. It now
+// takes limit/offset like GET /api/leads already documents, clamped to a sane
+// range so a stray ?limit=100000 can't turn this back into a full-table scan.
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+
 router.get('/submissions', async (req, res) => {
   try {
     if (!supabase) {
@@ -163,11 +170,17 @@ router.get('/submissions', async (req, res) => {
       });
     }
 
+    const limit = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(1, parseInt(req.query.limit, 10) || DEFAULT_PAGE_SIZE)
+    );
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
     const { data, error } = await supabase
       .from('flexiloans_document_submissions')
       .select('*')
       .order('submitted_at', { ascending: false })
-      .limit(100);
+      .range(offset, offset + limit - 1);
 
     if (error) {
       throw new Error(`Failed to get submissions: ${error.message}`);
@@ -175,6 +188,8 @@ router.get('/submissions', async (req, res) => {
 
     logger.log('info', 'FLEXILOANS_SUBMISSIONS_LIST', `Retrieved ${data?.length || 0} submissions`, {
       count: data?.length || 0,
+      limit,
+      offset,
       type: 'flexiloans_management',
     });
 
@@ -182,6 +197,13 @@ router.get('/submissions', async (req, res) => {
       success: true,
       data: data || [],
       count: data?.length || 0,
+      pagination: {
+        limit,
+        offset,
+        // We deliberately avoid a separate COUNT(*) query here (it would double
+        // the cost of every page load); a full page implies there may be more.
+        hasMore: (data?.length || 0) === limit,
+      },
     });
   } catch (error) {
     logger.log('error', 'FLEXILOANS_SUBMISSIONS_ERROR', `Failed to list submissions: ${error.message}`, {
