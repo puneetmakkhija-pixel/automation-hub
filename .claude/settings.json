@@ -18,5 +18,18 @@
       "Read(./.env)",
       "Read(~/.ssh/**)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__Supabase__execute_sql",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/supabase-sql-guard.sh\" 2>/dev/null || echo '{}'"
+          }
+        ]
+      }
+    ]
   }
 }
