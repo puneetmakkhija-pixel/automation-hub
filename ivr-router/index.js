@@ -55,6 +55,23 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
+// TEMPORARY: presses are still reaching /webhooks/ivr/whatsapp/businessloans
+// and creating leads despite webhook 550 reading status=0 -- list every
+// webhook on the account to find which one is actually delivering there.
+// Remove once checked.
+if (obdClient) {
+  obdClient
+    .getWebhooks()
+    .then((hooks) => {
+      const list = Array.isArray(hooks) ? hooks : hooks?.data ?? [];
+      const relevant = list.filter(
+        (h) => String(h.url || "").includes("whatsapp") || String(h.event || "").toUpperCase() === "DTMF"
+      );
+      console.log(`[DEBUG][WEBHOOKS] total=${list.length} relevant=${JSON.stringify(relevant)}`);
+    })
+    .catch((err) => console.error('[DEBUG][WEBHOOKS] lookup failed:', err.message));
+}
+
 // Initialize Supabase client (used to persist voice call outcomes)
 let db = null;
 try {
