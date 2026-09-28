@@ -65,18 +65,6 @@ export function templateMap() {
   }
 }
 
-// TEMPORARY: chasing a live outage where businessloans press-1 WhatsApp sends
-// stopped at 06:49:38 UTC 28 Sep 2026 with no error logged anywhere -- the
-// symptom of templateMap()["1"] resolving to nothing, but Railway hides every
-// variable's value from any agent (confirmed against both this MCP connection
-// and Railway's own agent), so this is the only way left to see what
-// IVR_DTMF_TEMPLATES actually holds right now. Remove once read from the logs.
-console.log(
-  `[IVR_WA][DEBUG] IVR_DTMF_TEMPLATES on boot -- set=${process.env.IVR_DTMF_TEMPLATES != null} ` +
-    `raw_length=${(process.env.IVR_DTMF_TEMPLATES || "").length} raw=${JSON.stringify(process.env.IVR_DTMF_TEMPLATES ?? null)} ` +
-    `parsed=${JSON.stringify(templateMap())}`
-);
-
 function parseJsonEnv(name) {
   const raw = process.env[name];
   if (!raw) return null;
