@@ -402,6 +402,59 @@ await check("an error_type that names an Object member is not trusted", () => {
   }
 });
 
+console.log("\na dead-end call id stops hogging the front of the queue\n");
+
+await check("the select excludes rows that have already failed enough", async () => {
+  const sb = stubSb([]);
+  await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: okFetch(SPOKE) });
+  assert.ok(
+    sb.sink.filters.includes("lt:voice_poll_attempts"),
+    "without this a permanently-wrong call id sits at the head of the oldest-first " +
+      "queue forever and nothing behind it is ever reached"
+  );
+});
+
+await check("a failed fetch records one more attempt, not a disposition", async () => {
+  const row = { ...ROW, voice_poll_attempts: 0 };
+  const sb = stubSb([row]);
+  const failing = async () => {
+    throw new Error("socket hang up");
+  };
+  const out = await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: failing });
+  assert.equal(out.quarantined, 0, "one failure is not three");
+  assert.equal(sb.sink.updates.length, 1);
+  assert.equal(sb.sink.updates[0].patch.voice_poll_attempts, 1);
+  assert.equal(
+    sb.sink.updates[0].patch.voice_disposition,
+    undefined,
+    "an unreachable conversation is not a known outcome"
+  );
+});
+
+await check("the third failure on the same call id is quarantined", async () => {
+  const row = { ...ROW, voice_poll_attempts: 2 };
+  const sb = stubSb([row]);
+  const failing = async () => {
+    throw new Error("http_404");
+  };
+  const out = await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: failing });
+  assert.equal(out.quarantined, 1);
+  assert.equal(sb.sink.updates[0].patch.voice_poll_attempts, 3);
+});
+
+await check("a row with no prior attempts recorded starts from zero", async () => {
+  // Existing rows predate this column and read back undefined, not 0 -- (row.x
+  // ?? 0) + 1 must still land on 1, not NaN or 1-past-undefined.
+  const row = { ...ROW };
+  delete row.voice_poll_attempts;
+  const sb = stubSb([row]);
+  const failing = async () => {
+    throw new Error("http_404");
+  };
+  await pollVoiceOutcomes({}, { sb, apiKey: "k", fetch: failing });
+  assert.equal(sb.sink.updates[0].patch.voice_poll_attempts, 1);
+});
+
 console.log("\nthe not-configured reply keeps its explanation\n");
 
 const routeSrc = readFileSync(new URL("./lib/routes/voicePollRoutes.js", import.meta.url), "utf8");
