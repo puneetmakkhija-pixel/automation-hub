@@ -55,28 +55,20 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
-// TEMPORARY: chasing why voice2.ivrsms.com stopped posting to
-// /webhooks/ivr/whatsapp/businessloans at 06:49:38 UTC 28 Sep 2026 -- zero
-// requests since, confirmed against Railway's own HTTP access logs. This
-// reads the same webhook config back from the IVR panel's own API (webhook
-// id 550, "whatsapp-businessloans", per the panel's Manage Web Hook screen)
-// to see whether it still points here and is still enabled on their side.
-// headerJson is skipped: it carries the shared secret they sign requests
-// with, not something to put in a log. Remove once read from the logs.
+// ONE-OFF: re-enable webhook 550 ("whatsapp-businessloans"). Read back on
+// boot 28 Sep 2026 with status=0 -- someone/something switched it off at
+// 06:49:38 UTC, which is exactly when voice2.ivrsms.com stopped posting to
+// /webhooks/ivr/whatsapp/businessloans (zero requests since, confirmed
+// against Railway's own HTTP access logs). url and event were unchanged, so
+// this is the one field to flip back. editWebhook reads the webhook first
+// and merges, so headerJson/bodyJson (the shared secret and field mapping)
+// are preserved untouched -- see its own comment in lib/obdApiClient.js.
+// Remove once the log confirms status=1.
 if (obdClient) {
   obdClient
-    .findWebhook(550)
-    .then((hook) => {
-      if (!hook) {
-        console.log('[DEBUG][WEBHOOK550] not found in getWebhooks() for this account');
-        return;
-      }
-      const { headerJson, bodyJson, ...safe } = hook;
-      console.log(
-        `[DEBUG][WEBHOOK550] ${JSON.stringify(safe)} bodyJson=${JSON.stringify(bodyJson ?? null)}`
-      );
-    })
-    .catch((err) => console.error('[DEBUG][WEBHOOK550] lookup failed:', err.message));
+    .editWebhook(550, { status: 1 })
+    .then(() => console.log('[ONEOFF][WEBHOOK550] re-enable requested, status now:', 1))
+    .catch((err) => console.error('[ONEOFF][WEBHOOK550] re-enable FAILED:', err.message));
 }
 
 // Initialize Supabase client (used to persist voice call outcomes)
