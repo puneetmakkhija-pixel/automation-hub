@@ -55,19 +55,27 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
-// TEMPORARY: #134's editWebhook(550, {status:1}) call reported success, but
-// no press-1 traffic has reached /webhooks/ivr/whatsapp/businessloans in the
-// ~10 minutes since -- confirming the panel actually kept the change rather
-// than assuming the edit call's own success response was the last word.
+// TEMPORARY, second attempt: #134's editWebhook(550, {status:1}) reported
+// success, but reading it back ~10 min later (#135) showed status=0 again --
+// either the panel silently didn't persist that field, or something re-disabled
+// it. This time: edit, then read back immediately (a few seconds later, same
+// boot) and again after a short delay, so a synchronous revert is visible
+// here rather than discovered 10 minutes from now.
 if (obdClient) {
+  const logStatus = (label) =>
+    obdClient
+      .findWebhook(550)
+      .then((hook) => console.log(`[DEBUG][WEBHOOK550][${label}] status=${hook?.status}`))
+      .catch((err) => console.error(`[DEBUG][WEBHOOK550][${label}] lookup failed:`, err.message));
+
   obdClient
-    .findWebhook(550)
-    .then((hook) => {
-      console.log(
-        `[DEBUG][WEBHOOK550] status=${hook?.status} url=${hook?.url} event=${hook?.event}`
-      );
-    })
-    .catch((err) => console.error('[DEBUG][WEBHOOK550] lookup failed:', err.message));
+    .editWebhook(550, { status: 1 })
+    .then(() => logStatus("t+0s after edit"))
+    .then(() => new Promise((r) => setTimeout(r, 5000)))
+    .then(() => logStatus("t+5s"))
+    .then(() => new Promise((r) => setTimeout(r, 15000)))
+    .then(() => logStatus("t+20s"))
+    .catch((err) => console.error('[DEBUG][WEBHOOK550] edit FAILED:', err.message));
 }
 
 // Initialize Supabase client (used to persist voice call outcomes)
