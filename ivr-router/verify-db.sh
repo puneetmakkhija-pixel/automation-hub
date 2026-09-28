@@ -1,10 +1,16 @@
 #!/bin/bash
 # Database verification script for Railway PostgreSQL
+set -euo pipefail
+
+if [ -z "${PGPASSWORD:-}" ]; then
+  echo "PGPASSWORD is not set. Export it (e.g. from Railway variables) before running this script." >&2
+  exit 1
+fi
 
 echo "========== DATABASE VERIFICATION =========="
 echo
 
-PGPASSWORD='***REMOVED-LEAKED-RAILWAY-PG-PASSWORD***' psql \
+psql \
   -h postgresql.railway.internal \
   -U automation_hub \
   -d automation_hub \
