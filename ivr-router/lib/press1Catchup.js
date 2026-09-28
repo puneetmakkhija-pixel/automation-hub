@@ -2,9 +2,9 @@ import SupabaseClient from "./supabaseClient.js";
 import { dispatchPressToOurBot } from "./ourVoiceBotDispatch.js";
 
 /**
- * The end-of-gap sweep: every Business Loans press-1 from TODAY that no
- * dispatcher has yet attempted a bot call for, dialled in the order the
- * customer pressed — oldest first.
+ * The end-of-gap sweep: every Business Loans press-1 from TODAY OR YESTERDAY
+ * that no dispatcher has yet attempted a bot call for, dialled in the order
+ * the customer pressed — oldest first.
  *
  * ── Why this exists on top of the real-time dispatch ────────────────────────
  *
@@ -14,10 +14,24 @@ import { dispatchPressToOurBot } from "./ourVoiceBotDispatch.js";
  * it. A press can reach neither bot for reasons that have nothing to do with
  * the caller — the daily cap was already spent, the dial queue was full, the
  * process restarted mid-pace, ORI_PRESS_DISPATCH=0 with our bot also refusing
- * — and today, with no Oriserve fallback to catch what our bot cannot take,
- * a press that misses its real-time window has nowhere else to go. This
- * sweep is that "else": it re-reads the day's press-1s against what was
- * actually dispatched and rings whoever is still missing.
+ * — and with no Oriserve fallback to catch what our bot cannot take, a press
+ * that misses its real-time window has nowhere else to go. This sweep is
+ * that "else": it re-reads recent press-1s against what was actually
+ * dispatched and rings whoever is still missing.
+ *
+ * ── Yesterday too, not just today ────────────────────────────────────────
+ *
+ * The dial pacer caps sustained throughput below what a single busy hour can
+ * hand it (28 Sep 2026: ~90/hr sustainable against bursts over 400/hr-
+ * equivalent). Without Oriserve to absorb the overflow, a big-enough burst
+ * near the end of a calling day can still have un-dialled presses sitting in
+ * the queue when the day's calling window closes. A same-day-only lookback
+ * would drop those permanently — the next run, tomorrow, only reads
+ * tomorrow's presses. Looking back one calendar day catches that backlog on
+ * the first run of the next day instead of losing it silently. Two days is
+ * the deliberate ceiling: a press old enough to miss a second day's calling
+ * window is a stale lead by then, and this sweep dials from the customer's
+ * own press, not a cold callback — it should not keep reaching back forever.
  *
  * ── The source of truth ──────────────────────────────────────────────────
  *
@@ -55,6 +69,19 @@ export function istDayStartIso(now = new Date()) {
   return new Date(istMidnight - IST_OFFSET_MS).toISOString();
 }
 
+/** How many extra IST calendar days before today the sweep still looks back. */
+const LOOKBACK_DAYS = 1;
+
+/**
+ * Start of the sweep's lookback floor in IST (today minus LOOKBACK_DAYS), as
+ * a UTC ISO string — yesterday's midnight, not today's, so a burst's backlog
+ * still un-dialled when yesterday's calling window closed gets one more day
+ * to be caught before it ages out for good.
+ */
+export function istLookbackStartIso(now = new Date()) {
+  return istDayStartIso(new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000));
+}
+
 /** Presses considered per run. Unparseable or non-positive means the default. */
 const DEFAULT_LIMIT = 200;
 
@@ -81,8 +108,8 @@ function validMobile(m) {
 }
 
 /**
- * Today's businessloans press-1s with no bot dispatch attempt yet, oldest
- * press first. `sb` must be pinned to the crm schema.
+ * Today's and yesterday's businessloans press-1s with no bot dispatch
+ * attempt yet, oldest press first. `sb` must be pinned to the crm schema.
  */
 export async function catchupCandidates(sb, { limit = DEFAULT_LIMIT, now = new Date() } = {}) {
   const { data, error } = await sb
@@ -90,7 +117,7 @@ export async function catchupCandidates(sb, { limit = DEFAULT_LIMIT, now = new D
     .select("mobile10, customer_name, first_pressed_at, press_variant")
     .eq("pressed_1", true)
     .eq("bot_dispatched", false)
-    .gte("first_pressed_at", istDayStartIso(now))
+    .gte("first_pressed_at", istLookbackStartIso(now))
     .order("first_pressed_at", { ascending: true })
     .limit(limit);
   if (error) throw new Error(`candidate read failed: ${error.message}`);
