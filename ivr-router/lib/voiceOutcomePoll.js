@@ -186,8 +186,9 @@ async function fetchConversation(conversationId, { apiKey, baseUrl, fetchImpl })
 /**
  * Fill in the outcomes we are missing.
  *
- * Never throws. This runs behind an operator endpoint and, later, a schedule;
- * a poller that rejected would take the process down for every lender on this
+ * Never throws. This runs behind an operator endpoint and a schedule
+ * (scripts/pollVoiceOutcomesCron.js, its own Railway cron service); a poller
+ * that rejected would take the process down for every lender on this
  * service, and none of what it writes is worth that.
  *
  * @returns {Promise<{polled:number, updated:number, pending:number, skipped:number,
