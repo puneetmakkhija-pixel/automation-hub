@@ -19,7 +19,7 @@ today; times are UTC, because that is what Railway's cron field takes.
 | Folder | What it's for | Railway project | Railway service | Root Directory | How it starts |
 | --- | --- | --- | --- | --- | --- |
 | `ivr-router` | Call routing, OBD campaigns, voice bot, WhatsApp flows, lender routing | Automation Hub | `ivr-voice-bot-system` | *(repo root)* | root `Dockerfile`, via `railway.toml` |
-| `ivr-router` | Our bot's call-outcome poll (`lib/voiceOutcomePoll.js`) | Automation Hub | `voice-outcome-poll` | `ivr-router` | Railpack (`ivr-router/railway.toml`), `npm run voice-poll:cron`, cron `*/5 * * * *` |
+| `ivr-router` | Our bot's call-outcome poll (`lib/voiceOutcomePoll.js`) | Automation Hub | `voice-outcome-poll` | `ivr-router` | `ivr-router/Dockerfile.voice-poll-cron` (set via `dockerfilePath`), `npm run voice-poll:cron`, cron `*/5 * * * *` |
 | `data-jobs` | Press-1 lead enrichment | Automation Hub | `jobs` | `data-jobs` | Railpack, `npm run enrich:press1:cron`, cron `30 22 * * *` |
 | `data-jobs` | Lender serviceable-pincode sync | Automation Hub | `pincode-sync` | `data-jobs` | Railpack, `npm run sync:pincodes:cron`, cron `30 21 * * *` |
 | `data-jobs` | Hero disbursal report ingest | **Business loans CRM** | `hero-disbursal` | `data-jobs` | Railpack, `npm run ingest:hero-disbursal:cron`, cron `0 22 * * *` |
@@ -33,6 +33,20 @@ Its cron is every 5 minutes (Railway's floor) rather than daily like the
 `data-jobs` crons above -- it corrects a live call-outcome status
 (`crm.journey_run_log.voice_status`) that other systems read to decide
 whether to redial, not a batch report.
+
+It does NOT use a `railway.toml` builder override the way `data-jobs`'s three
+crons do. A committed `ivr-router/railway.toml` setting `builder = "railpack"`
+was silently never honored on this service's first two deploys -- both built
+the byte-identical Docker image from `ivr-router/Dockerfile` (the always-on
+web server's image, which doesn't `COPY scripts/`), and the first one crashed
+at runtime on the missing module. Calling the Railway API to set
+`railwayConfigFile` explicitly is flatly refused: "Config as Code
+(railway.json / railway.toml) is deprecated." The `data-jobs` crons still
+work because their builder was resolved once, before that deprecation, and
+stays persisted on the service; a service created fresh today cannot get
+Railpack from a toml file the same way. `voice-outcome-poll` instead sets
+`dockerfilePath` on the service directly, pointing at its own
+`Dockerfile.voice-poll-cron`.
 
 ### Why one service sits in the other Railway project
 
