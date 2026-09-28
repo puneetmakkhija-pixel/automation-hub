@@ -55,6 +55,21 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
+// TEMPORARY: #134's editWebhook(550, {status:1}) call reported success, but
+// no press-1 traffic has reached /webhooks/ivr/whatsapp/businessloans in the
+// ~10 minutes since -- confirming the panel actually kept the change rather
+// than assuming the edit call's own success response was the last word.
+if (obdClient) {
+  obdClient
+    .findWebhook(550)
+    .then((hook) => {
+      console.log(
+        `[DEBUG][WEBHOOK550] status=${hook?.status} url=${hook?.url} event=${hook?.event}`
+      );
+    })
+    .catch((err) => console.error('[DEBUG][WEBHOOK550] lookup failed:', err.message));
+}
+
 // Initialize Supabase client (used to persist voice call outcomes)
 let db = null;
 try {
