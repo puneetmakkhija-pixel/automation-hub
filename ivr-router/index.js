@@ -55,6 +55,30 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
+// TEMPORARY: chasing why voice2.ivrsms.com stopped posting to
+// /webhooks/ivr/whatsapp/businessloans at 06:49:38 UTC 28 Sep 2026 -- zero
+// requests since, confirmed against Railway's own HTTP access logs. This
+// reads the same webhook config back from the IVR panel's own API (webhook
+// id 550, "whatsapp-businessloans", per the panel's Manage Web Hook screen)
+// to see whether it still points here and is still enabled on their side.
+// headerJson is skipped: it carries the shared secret they sign requests
+// with, not something to put in a log. Remove once read from the logs.
+if (obdClient) {
+  obdClient
+    .findWebhook(550)
+    .then((hook) => {
+      if (!hook) {
+        console.log('[DEBUG][WEBHOOK550] not found in getWebhooks() for this account');
+        return;
+      }
+      const { headerJson, bodyJson, ...safe } = hook;
+      console.log(
+        `[DEBUG][WEBHOOK550] ${JSON.stringify(safe)} bodyJson=${JSON.stringify(bodyJson ?? null)}`
+      );
+    })
+    .catch((err) => console.error('[DEBUG][WEBHOOK550] lookup failed:', err.message));
+}
+
 // Initialize Supabase client (used to persist voice call outcomes)
 let db = null;
 try {
