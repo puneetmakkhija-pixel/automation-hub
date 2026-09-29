@@ -23,7 +23,8 @@
     "test:dial-pacer": "node test-dial-pacer.mjs",
     "test:neither-bot": "node test-neither-bot.mjs",
     "test:bot-split": "node test-bot-split.mjs",
-    "test:apply-link-dedupe": "node test-apply-link-dedupe.mjs"
+    "test:apply-link-dedupe": "node test-apply-link-dedupe.mjs",
+    "test:press1-funnel": "node test-press1-funnel.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
