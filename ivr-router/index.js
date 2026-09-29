@@ -20,6 +20,7 @@ import flexiloansCampaignRoutes from "./lib/routes/flexiloansCampaignRoutes.js";
 import press1CatchupRoutes from "./lib/routes/press1CatchupRoutes.js";
 import resendFailedRoutes from "./lib/routes/resendFailedRoutes.js";
 import voicePollRoutes from "./lib/routes/voicePollRoutes.js";
+import press1FunnelRoutes from "./lib/routes/press1FunnelRoutes.js";
 import intentGenerationRoutes from "./lib/routes/intentGenerationRoutes.js";
 import applicationPushRoutes from "./lib/routes/applicationPushRoutes.js";
 import rejectionTrackingRoutes from "./lib/routes/rejectionTrackingRoutes.js";
@@ -683,6 +684,19 @@ app.use('/api/resend', consoleAuth('CONSOLE_RESEND', null), resendFailedRoutes);
 // lib/voiceOutcomePoll.js has the rest, including why a poll rather than a
 // webhook and why a call still ringing is never written.
 app.use('/api/voice-poll', consoleAuth('CONSOLE_VOICE_POLL', null), voicePollRoutes);
+
+// ==================== Press-1 funnel ====================
+//
+// Behind CONSOLE_SECRET and failClosed, same posture as /api/voice-poll:
+// GET /status reports real call volume and outcomes, even though it writes
+// nothing and dials nothing.
+//
+// Rolls up crm.voice_dispatch for one IST day into received -> routed
+// (ours/Oriserve) -> dialled, with the not-dialled reasons and the live
+// pacer/queue depth and routing config alongside — see
+// lib/press1Funnel.js for the rollup and lib/routes/press1FunnelRoutes.js
+// for the endpoint.
+app.use('/api/press1-funnel', consoleAuth('CONSOLE_PRESS1_FUNNEL', null), press1FunnelRoutes);
 
 const server = app.listen(PORT, () => {
   logger.log('info', 'SERVICE_START', 'IVR Router service started', {
