@@ -694,6 +694,25 @@ const server = app.listen(PORT, () => {
   });
   console.log(`✓ IVR Router listening on ${PORT}`);
   console.log(`✓ OBD API configured at ${process.env.OBD_BASE_URL}`);
+
+  // TEMPORARY, 29 Sep 2026: press-1 traffic (all channels) has been silent
+  // since 06:49 UTC on 28 Sep -- webhook 550's status reads 0 and neither the
+  // panel's "Update Webhook" nor the editWebhook() API persists a change
+  // (see #133-#141). webhook and webhookId are set PER CAMPAIGN at compose
+  // time, so a webhook's own status may not be what's gating delivery at all
+  // -- this reads real dtmf/answered counts straight from the dialler for
+  // the last 3 days to see whether calls are even being placed. Remove this
+  // block once read.
+  if (obdClient) {
+    (async () => {
+      try {
+        const result = await obdClient.analyzeCampaign('2026-09-27', '2026-09-29', 'All', 'All', '');
+        console.log(`[DEBUG][CAMPAIGN_ANALYSIS] ${JSON.stringify(result)}`);
+      } catch (error) {
+        console.log(`[DEBUG][CAMPAIGN_ANALYSIS] failed: ${error?.message ?? error}`);
+      }
+    })();
+  }
 });
 
 // Graceful shutdown
