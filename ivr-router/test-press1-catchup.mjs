@@ -92,6 +92,7 @@ function leadsQuery(rows) {
     _rows: rows,
     eq() { return q; },
     gte(col, value) { q._rows = q._rows.filter((r) => r[col] >= value); return q; },
+    lt(col, value) { q._rows = q._rows.filter((r) => r[col] < value); return q; },
     order(col, { ascending }) {
       q._rows = [...q._rows].sort((a, b) =>
         ascending ? a[col].localeCompare(b[col]) : b[col].localeCompare(a[col])
@@ -168,15 +169,50 @@ await check("a press from two days ago has aged out of the sweep", async () => {
   assert.deepEqual(out, []);
 });
 
-await check("yesterday's and today's presses interleave oldest first", async () => {
+await check("today's presses come first, backlog after, not merged oldest-first", async () => {
   const sb = sbFor({
     leads: [
       lead("9876543210", "2026-09-28T06:00:00.000Z"),
-      lead("9123456780", "2026-09-27T20:00:00.000Z"),
+      lead("9123456780", "2026-09-27T10:00:00.000Z"),
     ],
   });
   const out = await catchupCandidates(sb, { now: new Date("2026-09-28T12:00:00.000Z") });
-  assert.deepEqual(out.map((r) => r.mobile10), ["9123456780", "9876543210"]);
+  assert.deepEqual(out.map((r) => r.mobile10), ["9876543210", "9123456780"]);
+});
+
+await check("today's unused quota rolls over to the backlog", async () => {
+  // limit 4 -> today's quota is ceil(4*0.5) = 2, but today only has 1
+  // candidate, so the backlog should get the other 3 slots, not just 2.
+  const sb = sbFor({
+    leads: [
+      lead("9111111111", "2026-09-28T06:00:00.000Z"),
+      lead("9222222222", "2026-09-27T01:00:00.000Z"),
+      lead("9333333333", "2026-09-27T02:00:00.000Z"),
+      lead("9444444444", "2026-09-27T03:00:00.000Z"),
+      lead("9555555555", "2026-09-27T04:00:00.000Z"),
+    ],
+  });
+  const out = await catchupCandidates(sb, { limit: 4, now: new Date("2026-09-28T12:00:00.000Z") });
+  assert.deepEqual(out.map((r) => r.mobile10), [
+    "9111111111", "9222222222", "9333333333", "9444444444",
+  ]);
+});
+
+await check("today is capped at its quota even when the backlog is thin", async () => {
+  // limit 4 -> today's quota is ceil(4*0.5) = 2, today has 3 candidates but
+  // only the oldest 2 should be taken even though the backlog has just 1.
+  const sb = sbFor({
+    leads: [
+      lead("9111111111", "2026-09-28T06:00:00.000Z"),
+      lead("9222222222", "2026-09-28T07:00:00.000Z"),
+      lead("9333333333", "2026-09-28T08:00:00.000Z"),
+      lead("9444444444", "2026-09-27T10:00:00.000Z"),
+    ],
+  });
+  const out = await catchupCandidates(sb, { limit: 4, now: new Date("2026-09-28T12:00:00.000Z") });
+  assert.deepEqual(out.map((r) => r.mobile10), [
+    "9111111111", "9222222222", "9444444444",
+  ]);
 });
 
 console.log("\nthe run\n");

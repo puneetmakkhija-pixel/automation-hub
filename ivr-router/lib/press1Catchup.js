@@ -41,14 +41,23 @@ import { dispatchPressToOurBot } from "./ourVoiceBotDispatch.js";
  * from voice_dispatch directly would be a second opinion the view's own
  * comments already warn against duplicating.
  *
- * ── Oldest first, deliberately opposite the allocator ────────────────────
+ * ── Oldest first within each day, but today gets a guaranteed half ───────
  *
  * crm.allocate_bl_press1 deals freshest-press-first, because it is working
  * the day's live traffic while the customer still remembers pressing 1. This
  * sweep is the opposite case on purpose: it is catching up on presses that
- * were ALREADY missed, so the ones waiting longest go first — nobody who
- * pressed at 9am should sit behind somebody who pressed at 5pm because this
- * only looked at the freshest end of the queue.
+ * were ALREADY missed, so within a single day the ones waiting longest go
+ * first.
+ *
+ * Across days, pure oldest-first starves today: 29 Sep 2026, four runs in a
+ * row (05:14 through 06:44) spent their entire candidate limit clearing
+ * yesterday's backlog before ever reading a single press from today, because
+ * yesterday's presses are unconditionally older. A customer who pressed 1
+ * twenty minutes ago waited behind hundreds of people who pressed the day
+ * before. NEW_LEAD_SHARE reserves half of each run's limit for today before
+ * the rest goes to the backlog — and if today doesn't have enough candidates
+ * to fill its half, the unused share rolls over to yesterday's rather than
+ * being left on the table.
  *
  * ── Every call still goes through the one dispatcher ────────────────────
  *
@@ -107,22 +116,42 @@ function validMobile(m) {
   return /^[6-9][0-9]{9}$/.test(String(m ?? ""));
 }
 
-/**
- * Today's and yesterday's businessloans press-1s with no bot dispatch
- * attempt yet, oldest press first. `sb` must be pinned to the crm schema.
- */
-export async function catchupCandidates(sb, { limit = DEFAULT_LIMIT, now = new Date() } = {}) {
-  const { data, error } = await sb
+/** Share of each run's limit reserved for today's presses, before the rest goes to the backlog. */
+const NEW_LEAD_SHARE = 0.5;
+
+/** One bucket of candidates, oldest first, in [gte, lt) of first_pressed_at. */
+async function fetchCandidates(sb, { gte, lt, limit }) {
+  if (limit <= 0) return [];
+  let q = sb
     .from("v_ivr_lead")
     .select("mobile10, customer_name, first_pressed_at, press_variant")
     .eq("pressed_1", true)
     .eq("bot_dispatched", false)
-    .gte("first_pressed_at", istLookbackStartIso(now))
-    .order("first_pressed_at", { ascending: true })
-    .limit(limit);
+    .gte("first_pressed_at", gte);
+  if (lt) q = q.lt("first_pressed_at", lt);
+  const { data, error } = await q.order("first_pressed_at", { ascending: true }).limit(limit);
   if (error) throw new Error(`candidate read failed: ${error.message}`);
+  return (data ?? []).filter((r) => validMobile(r.mobile10));
+}
 
-  const rows = (data ?? []).filter((r) => validMobile(r.mobile10));
+/**
+ * Today's and yesterday's businessloans press-1s with no bot dispatch
+ * attempt yet. Today gets NEW_LEAD_SHARE of the limit (oldest-today first);
+ * the backlog (yesterday, within the lookback floor) gets the rest, plus
+ * whatever today didn't use. `sb` must be pinned to the crm schema.
+ */
+export async function catchupCandidates(sb, { limit = DEFAULT_LIMIT, now = new Date() } = {}) {
+  const todayStart = istDayStartIso(now);
+  const newQuota = Math.ceil(limit * NEW_LEAD_SHARE);
+
+  const fresh = await fetchCandidates(sb, { gte: todayStart, limit: newQuota });
+  const backlog = await fetchCandidates(sb, {
+    gte: istLookbackStartIso(now),
+    lt: todayStart,
+    limit: limit - fresh.length,
+  });
+
+  const rows = [...fresh, ...backlog];
   if (!rows.length) return rows;
 
   // Do-not-contact, same check the allocator makes before ringing anyone —
