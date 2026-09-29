@@ -56,6 +56,23 @@ try {
   console.warn('   OBD voice calling features will be unavailable until configuration is complete');
 }
 
+// TEMPORARY: re-check webhook 550's live status. #133-#141 found every webhook
+// on the account reading status=0 with no API/panel fix; user asked to check
+// again after the morning's press-1 silence. Boot-time only, logs to Railway,
+// to be removed once read.
+if (obdClient) {
+  obdClient
+    .getWebhooks()
+    .then((webhooks) => {
+      const list = Array.isArray(webhooks) ? webhooks : webhooks?.data ?? webhooks?.result ?? [];
+      const w550 = list.find((w) => String(w?.webhookId ?? w?.id) === "550");
+      console.log(`[DEBUG][WEBHOOK_550] ${JSON.stringify(w550 ?? { found: false, count: list.length })}`);
+    })
+    .catch((error) => {
+      console.log(`[DEBUG][WEBHOOK_550] fetch failed: ${error?.message ?? error}`);
+    });
+}
+
 // Initialize Supabase client (used to persist voice call outcomes)
 let db = null;
 try {
