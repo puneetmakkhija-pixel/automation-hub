@@ -13,7 +13,7 @@ class SuppressionAnalysisClient {
     try {
       const startTime = new Date(Date.now() - timeWindowHours * 60 * 60 * 1000).toISOString();
 
-      let query = supabase
+      let query = supabase.supabase
         .from('rejection_logs')
         .select('*')
         .gte('rejected_at', startTime);
@@ -44,7 +44,7 @@ class SuppressionAnalysisClient {
       console.log(`[SuppressionAnalysis] Analyzed ${rejections.length} rejections in ${timeWindowHours}h window`);
 
       // Get current rules for context
-      const { data: currentRules, error: rulesError } = await supabase
+      const { data: currentRules, error: rulesError } = await supabase.supabase
         .from('eligibility_rules')
         .select('*')
         .eq('active', true)
@@ -74,7 +74,7 @@ class SuppressionAnalysisClient {
       recommendation.impact = impact;
 
       // Store recommendation in history
-      const { error: storeError } = await supabase
+      const { error: storeError } = await supabase.supabase
         .from('rule_recommendations')
         .insert({
           analysis_window_hours: timeWindowHours,
@@ -296,7 +296,7 @@ RESPOND WITH ONLY valid JSON (no markdown, no code blocks):
     try {
       if (!approve) {
         // Mark recommendation as rejected
-        const { error } = await supabase
+        const { error } = await supabase.supabase
           .from('rule_recommendations')
           .update({ status: 'rejected' })
           .eq('id', recommendationId);
@@ -310,7 +310,7 @@ RESPOND WITH ONLY valid JSON (no markdown, no code blocks):
       }
 
       // Fetch recommendation
-      const { data: recommendation, error: fetchError } = await supabase
+      const { data: recommendation, error: fetchError } = await supabase.supabase
         .from('rule_recommendations')
         .select('*')
         .eq('id', recommendationId)
@@ -321,7 +321,7 @@ RESPOND WITH ONLY valid JSON (no markdown, no code blocks):
       }
 
       // Deactivate old rules
-      await supabase
+      await supabase.supabase
         .from('eligibility_rules')
         .update({ active: false })
         .eq('active', true);
@@ -335,7 +335,7 @@ RESPOND WITH ONLY valid JSON (no markdown, no code blocks):
         created_at: new Date().toISOString()
       };
 
-      const { error: insertError } = await supabase
+      const { error: insertError } = await supabase.supabase
         .from('eligibility_rules')
         .insert(newRules);
 
@@ -344,7 +344,7 @@ RESPOND WITH ONLY valid JSON (no markdown, no code blocks):
       }
 
       // Mark recommendation as applied
-      await supabase
+      await supabase.supabase
         .from('rule_recommendations')
         .update({ status: 'applied' })
         .eq('id', recommendationId);
