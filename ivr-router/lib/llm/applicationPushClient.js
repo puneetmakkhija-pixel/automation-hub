@@ -11,6 +11,16 @@ class ApplicationPushClient {
 
   async sendPersonalizedApplicationPush(phoneNumber, userIntent, userProfile) {
     try {
+      const suppressed = await this.isSuppressed(phoneNumber);
+      if (suppressed) {
+        console.warn(`[AppPush] Refusing to push ${phoneNumber}: on the suppression list or unreadable`);
+        return {
+          success: false,
+          error: 'suppressed',
+          push_event: { phone_number: phoneNumber, channels_attempted: [], channels_succeeded: [] }
+        };
+      }
+
       const pushResult = {
         phone_number: phoneNumber,
         channels_attempted: [],
@@ -302,9 +312,41 @@ Any questions? Just reply here! 💬`;
     }
   }
 
+  /**
+   * Is this number on crm.contact_suppression (released_at is null)?
+   *
+   * Nothing in this push path checked this at all before now, unlike the
+   * WhatsApp rebroadcast and press1-catchup sweeps, which both read the same
+   * table. Fails CLOSED, same convention as those two: an unreadable
+   * suppression list must never become an empty one, and a push is easy to
+   * retry once the read works but impossible to unsend.
+   */
+  async isSuppressed(phoneNumber) {
+    const ten = String(phoneNumber ?? '').replace(/\D/g, '').slice(-10);
+    if (ten.length !== 10) return true; // not a real mobile -- refuse rather than guess
+
+    try {
+      const { data, error } = await supabase.supabase
+        .from('contact_suppression')
+        .select('phone')
+        .eq('phone', ten)
+        .is('released_at', null)
+        .limit(1);
+
+      if (error) {
+        console.error('[AppPush] Suppression check unreadable:', error.message);
+        return true;
+      }
+      return (data ?? []).length > 0;
+    } catch (error) {
+      console.error('[AppPush] Suppression check error:', error.message);
+      return true;
+    }
+  }
+
   async storePushEvent(pushEvent) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('push_events')
         .insert({
           phone_number: pushEvent.phone_number,
@@ -331,7 +373,7 @@ Any questions? Just reply here! 💬`;
 
   async trackPushEngagement(phoneNumber, eventType, metadata = {}) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('push_engagement_events')
         .insert({
           phone_number: phoneNumber,

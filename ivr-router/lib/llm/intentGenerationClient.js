@@ -89,7 +89,7 @@ RESPOND WITH JSON ONLY (no markdown, no explanation):
 
   async storeIntent(phoneNumber, intent) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('user_intents')
         .insert({
           phone_number: phoneNumber,
@@ -119,7 +119,7 @@ RESPOND WITH JSON ONLY (no markdown, no explanation):
 
   async getUserIntent(phoneNumber) {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('user_intents')
         .select('*')
         .eq('phone_number', phoneNumber)

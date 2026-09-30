@@ -66,7 +66,7 @@ class RejectionTrackingClient {
       };
 
       // Store rejection in Supabase
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('rejection_logs')
         .insert({
           phone_number,
@@ -103,7 +103,7 @@ async getRejectionsByLender(lenderId, hours = 24) {
     try {
       const startTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('rejection_logs')
         .select('*')
         .eq('lender_id', lenderId)
@@ -134,7 +134,7 @@ async getRejectionsByLender(lenderId, hours = 24) {
     try {
       const startTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('rejection_logs')
         .select('*')
         .eq('rejection_category', category)
@@ -161,7 +161,7 @@ async getRejectionsByLender(lenderId, hours = 24) {
     try {
       const startTime = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('rejection_logs')
         .select('*')
         .eq('rejection_reason', rejectionReason)
@@ -247,7 +247,7 @@ async getRejectionsByLender(lenderId, hours = 24) {
 
   async markUserEngagedAgain(phoneNumber, reengagementChannel = 'whatsapp') {
     try {
-      const { data, error } = await supabase
+      const { data, error } = await supabase.supabase
         .from('rejection_logs')
         .update({
           user_engaged_again: true,
@@ -273,19 +273,37 @@ async getRejectionsByLender(lenderId, hours = 24) {
 
   async recordReengagementResponse(phoneNumber, responseOutcome = 'started_application') {
     try {
-      const { data, error } = await supabase
+      // .eq('reengagement_sent_at', { notNull: true }) passes an object where
+      // .eq() takes a scalar -- it matches nothing, ever. Find the row first,
+      // by id, the same way reengagementClient.trackReengagementResponse does
+      // for the identical rejection_logs update (an UPDATE cannot reliably
+      // combine .order()/.limit() with a WHERE match on PostgREST).
+      const { data: rows, error: findError } = await supabase.supabase
         .from('rejection_logs')
-        .update({
-          reengagement_response_at: new Date().toISOString()
-        })
+        .select('id')
         .eq('phone_number', phoneNumber)
-        .eq('reengagement_sent_at', { notNull: true })
+        .not('reengagement_sent_at', 'is', null)
         .order('reengagement_sent_at', { ascending: false })
         .limit(1);
 
-      if (error) {
-        console.error('[RejectionTracking] Response tracking error:', error.message);
-        return { success: false, error: error.message };
+      if (findError) {
+        console.error('[RejectionTracking] Response tracking error:', findError.message);
+        return { success: false, error: findError.message };
+      }
+
+      const row = rows?.[0];
+      if (row) {
+        const { error } = await supabase.supabase
+          .from('rejection_logs')
+          .update({
+            reengagement_response_at: new Date().toISOString()
+          })
+          .eq('id', row.id);
+
+        if (error) {
+          console.error('[RejectionTracking] Response tracking error:', error.message);
+          return { success: false, error: error.message };
+        }
       }
 
       return {
