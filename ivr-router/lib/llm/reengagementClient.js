@@ -12,7 +12,7 @@ class ReengagementClient {
   async findNewlyEligibleUsers(timeWindowHours = 24) {
     try {
       // Get previous and current eligibility rules
-      const { data: rulesHistory, error: rulesError } = await supabase
+      const { data: rulesHistory, error: rulesError } = await supabase.supabase
         .from('eligibility_rules')
         .select('*')
         .order('created_at', { ascending: false })
@@ -33,7 +33,7 @@ class ReengagementClient {
       // Find users who were rejected in the time window
       const startTime = new Date(Date.now() - timeWindowHours * 60 * 60 * 1000).toISOString();
 
-      const { data: rejections, error: rejectError } = await supabase
+      const { data: rejections, error: rejectError } = await supabase.supabase
         .from('rejection_logs')
         .select('phone_number, rejected_bureau_vars, rejected_demographic_vars, rejected_at')
         .gte('rejected_at', startTime)
@@ -105,6 +105,42 @@ class ReengagementClient {
     return false;  // Eligible
   }
 
+  /** The rule version any NEW send must be checked against — never a cached one. */
+  async getCurrentEligibilityRules() {
+    const { data, error } = await supabase.supabase
+      .from('eligibility_rules')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data;
+  }
+
+  /**
+   * The DB's own record of this phone's rejection, never the caller's say-so.
+   *
+   * /api/reengagement/campaign is a separate call from /find-eligible and its
+   * documented input is a bare {phone_number, ...} list -- there is nothing
+   * stopping a stale or hand-built list from naming someone who was already
+   * sent a campaign, already came back, or was never rejected at all. Only a
+   * rejection_logs row with no reengagement_sent_at and no
+   * user_engaged_again is still owed anything.
+   */
+  async findMostRecentPendingRejection(phoneNumber) {
+    const { data, error } = await supabase.supabase
+      .from('rejection_logs')
+      .select('id, rejected_bureau_vars, rejected_demographic_vars')
+      .eq('phone_number', phoneNumber)
+      .eq('user_engaged_again', false)
+      .is('reengagement_sent_at', null)
+      .order('rejected_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) return null;
+    return data;
+  }
+
   async generateReengagementMessage(phoneNumber, userProfile) {
     try {
       const prompt = `You are a loan origination specialist crafting a re-engagement message for a user who was previously rejected but is NOW NEWLY ELIGIBLE under updated lending rules.
@@ -146,10 +182,19 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
         return { success: true, message: 'No users to re-engage', sent: 0 };
       }
 
+      // Read once for the whole batch, the same "apply it twice" pattern as
+      // find-eligible's own comparison: a rule can change between runs, and a
+      // /campaign call re-uses whatever list it was handed, however old.
+      const currentRules = await this.getCurrentEligibilityRules();
+      if (!currentRules) {
+        return { success: false, error: 'No active eligibility rules to verify against' };
+      }
+
       const results = {
         total: newlyEligibleUsers.length,
         sent: 0,
         failed: 0,
+        skipped: 0,
         channels: {
           whatsapp: 0
         },
@@ -158,8 +203,25 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
 
       for (const user of newlyEligibleUsers) {
         try {
+          // The guarantee, checked again right before a message actually goes
+          // out: a phone with no pending rejection was already sent a
+          // campaign, has already come back, or was never rejected -- and a
+          // phone that no longer fails the CURRENT rules is not "newly
+          // eligible" any more, whatever the caller's list says.
+          const pending = await this.findMostRecentPendingRejection(user.phone_number);
+          if (!pending) {
+            results.skipped++;
+            results.details.push({ phone_number: user.phone_number, skipped: 'already_sent_or_engaged_or_not_rejected' });
+            continue;
+          }
+          if (this.checkEligibility(pending, currentRules)) {
+            results.skipped++;
+            results.details.push({ phone_number: user.phone_number, skipped: 'not_eligible_under_current_rules' });
+            continue;
+          }
+
           // Fetch full user profile
-          const { data: userProfile, error: profileError } = await supabase
+          const { data: userProfile, error: profileError } = await supabase.supabase
             .from('users')
             .select('*')
             .eq('phone_number', user.phone_number)
@@ -185,6 +247,13 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
 
           if (whatsappResult.success) {
             results.channels.whatsapp++;
+            // The idempotency guard every future call reads: without this
+            // stamp, findMostRecentPendingRejection finds the same row again
+            // and this person gets a second copy of the message.
+            await supabase.supabase
+              .from('rejection_logs')
+              .update({ reengagement_sent_at: new Date().toISOString(), reengagement_channel: 'whatsapp' })
+              .eq('id', pending.id);
           }
 
           // Log campaign event
@@ -243,7 +312,7 @@ CRAFT A MESSAGE (return ONLY the message text, no JSON):`;
 
 async trackReengagementCampaign(phoneNumber, eventType, metadata) {
     try {
-      const { error } = await supabase
+      const { error } = await supabase.supabase
         .from('reengagement_events')
         .insert({
           phone_number: phoneNumber,
@@ -262,17 +331,35 @@ async trackReengagementCampaign(phoneNumber, eventType, metadata) {
 
   async trackReengagementResponse(phoneNumber, responseOutcome) {
     try {
-      // Call Phase 3.5c method to mark user as engaged
-      await supabase
+      // The previous version passed an object where .eq() takes a scalar --
+      // `.eq('reengagement_sent_at', { not: { is: null } })` matches nothing,
+      // ever, and it also tried to write reengagement_response_outcome, a
+      // column rejection_logs does not have (the outcome lives in the
+      // reengagement_events row below instead). Find the row first, by id.
+      const { data: rows, error: findError } = await supabase.supabase
         .from('rejection_logs')
-        .update({
-          reengagement_response_at: new Date().toISOString(),
-          reengagement_response_outcome: responseOutcome
-        })
+        .select('id')
         .eq('phone_number', phoneNumber)
-        .eq('reengagement_sent_at', { not: { is: null } })
+        .not('reengagement_sent_at', 'is', null)
         .order('reengagement_sent_at', { ascending: false })
         .limit(1);
+      if (findError) {
+        return { success: false, error: findError.message };
+      }
+
+      const row = rows?.[0];
+      if (row) {
+        // user_engaged_again is the exact flag findNewlyEligibleUsers filters
+        // on. Without setting it here, someone who just responded is still
+        // "not yet engaged" and keeps being resurfaced as newly-eligible.
+        await supabase.supabase
+          .from('rejection_logs')
+          .update({
+            reengagement_response_at: new Date().toISOString(),
+            user_engaged_again: true,
+          })
+          .eq('id', row.id);
+      }
 
       await this.trackReengagementCampaign(phoneNumber, 'response_recorded', {
         outcome: responseOutcome
@@ -305,14 +392,14 @@ formatLoanAmount(amount) {
       const startTime = new Date(Date.now() - timeWindowHours * 60 * 60 * 1000).toISOString();
 
       // Campaign sent events
-      const { data: campaigns, error: campaignError } = await supabase
+      const { data: campaigns, error: campaignError } = await supabase.supabase
         .from('reengagement_events')
         .select('*')
         .eq('event_type', 'campaign_sent')
         .gte('created_at', startTime);
 
       // Response events
-      const { data: responses, error: responseError } = await supabase
+      const { data: responses, error: responseError } = await supabase.supabase
         .from('reengagement_events')
         .select('*')
         .eq('event_type', 'response_recorded')
