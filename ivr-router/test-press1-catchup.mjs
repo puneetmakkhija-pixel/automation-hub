@@ -153,7 +153,12 @@ await check("a suppressed contact is never a candidate for a call", async () => 
     leads: [lead("9876543210", "2026-09-28T06:00:00.000Z"), lead("9123456780", "2026-09-28T07:00:00.000Z")],
     suppressedPhones: ["9876543210"],
   });
-  const out = await catchupCandidates(sb, {});
+  // now pinned, like every sibling test in this file: catchupCandidates
+  // filters on a lookback floor relative to `now`, so leaving `now` at its
+  // real-wall-clock default makes these hardcoded 2026-09-28 leads age out
+  // of the window the day after this test was written, and the test starts
+  // failing for a reason that has nothing to do with suppression at all.
+  const out = await catchupCandidates(sb, { now: new Date("2026-09-28T12:00:00.000Z") });
   assert.deepEqual(out.map((r) => r.mobile10), ["9123456780"]);
 });
 
@@ -251,6 +256,7 @@ await check("a per-candidate throw is counted, not fatal to the run", async () =
   const out = await runPress1Catchup({
     env: ON,
     sb,
+    now: new Date("2026-09-28T12:00:00.000Z"), // pinned -- see the suppression test's comment above
     dispatch: async () => {
       calls++;
       if (calls === 1) throw new Error("journey-run unreachable");
@@ -274,6 +280,7 @@ await check("Oriserve hand-offs and skips are counted separately from dials", as
   const out = await runPress1Catchup({
     env: ON,
     sb,
+    now: new Date("2026-09-28T12:00:00.000Z"), // pinned -- see the suppression test's comment above
     dispatch: async () => {
       n++;
       if (n === 1) return { dialled: true };
