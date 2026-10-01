@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IVR Campaign Planner</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{--bg:#f4f5f2;--card:#fff;--ink:#16201f;--mute:#55605e;--line:#d9ddd8;--acc:#0e6b66;--accd:#094b47;--warn:#9a4a0b;--bad:#b42318;--ok:#15803d;--chip:#e3f0ee}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  header{background:var(--ink);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  header h1{font-size:18px;margin:0}
+  header .sub{font-size:12px;color:#c5ccc9}
+  main{max-width:1200px;margin:0 auto;padding:18px 16px 60px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+  h2{font-size:16px;margin:0 0 10px}
+  button{font:inherit;border-radius:7px;border:1px solid var(--acc);background:var(--acc);color:#fff;padding:8px 14px;font-weight:600;cursor:pointer;min-height:38px}
+  button:hover{background:var(--accd)}
+  button.ghost{background:#fff;color:var(--acc)}
+  button.danger{background:#fff;color:var(--bad);border-color:var(--bad)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  input,select,textarea{font:inherit;border:1px solid #c4cac3;border-radius:7px;padding:8px 10px;background:#fff;color:var(--ink);width:100%}
+  label{display:block;font-size:12px;color:var(--mute);margin-bottom:4px;font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .between{justify-content:space-between}
+  .chip{display:inline-block;padding:2px 9px;border-radius:12px;font-size:12px;font-weight:600;background:var(--chip);color:var(--accd)}
+  .chip.pending_approval{background:#fef3c7;color:#92400e}.chip.running,.chip.approved{background:#dcfce7;color:#166534}
+  .chip.paused{background:#fee2e2;color:#991b1b}.chip.completed{background:#e0e7ff;color:#3730a3}.chip.cancelled,.chip.draft{background:#eef0ee;color:#475569}
+  .bar{height:10px;background:#eceeeb;border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+  .muted{color:var(--mute);font-size:12.5px}
+  table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}th{color:var(--mute);font-size:12px}
+  .tw{overflow:auto}
+  .steps{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .steps span{padding:6px 12px;border-radius:16px;background:#eceeeb;color:var(--mute);font-size:12.5px;font-weight:600}
+  .steps span.on{background:var(--acc);color:#fff}.steps span.done{background:var(--chip);color:var(--accd)}
+  .hide{display:none!important}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;color:var(--mute);cursor:pointer}
+  .drop:hover{border-color:var(--acc);color:var(--acc)}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:10px 0}
+  .kpi{border:1px solid var(--line);border-radius:8px;padding:10px}.kpi b{display:block;font-size:20px}.kpi span{font-size:12px;color:var(--mute)}
+  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}.tabs button{background:#fff;color:var(--ink);border-color:var(--line)}.tabs button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .msg{padding:10px 12px;border-radius:8px;margin:10px 0;font-size:13px}.msg.err{background:#fee2e2;color:#7f1d1d}.msg.ok{background:#dcfce7;color:#14532d}.msg.info{background:#e0f2fe;color:#0c4a6e}
+  .days label{display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-weight:500;color:var(--ink)}
+  .days input{width:auto}
+  dialog{border:none;border-radius:12px;padding:18px;max-width:420px;width:92%}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>IVR Campaign Planner</h1><div class="sub">Upload a base and a recording, set hourly batches, get approval, and it dials itself.</div></div>
+  <div class="row"><button class="ghost" id="btnRefresh">Refresh</button><button id="btnNew">+ New campaign</button></div>
+</header>
+<main>
+  <div id="globalMsg"></div>
+
+  <!-- PLANS -->
+  <section id="viewPlans">
+    <div class="card">
+      <div class="row between"><h2>Campaigns</h2><span class="muted" id="plansNote"></span></div>
+      <div id="plansList" class="muted">Loading…</div>
+    </div>
+  </section>
+
+  <!-- DETAIL -->
+  <section id="viewDetail" class="hide">
+    <div class="card">
+      <div class="row between"><button class="ghost" id="btnBack">← All campaigns</button><span id="detailStatus"></span></div>
+      <h2 id="detailName" style="margin-top:12px"></h2>
+      <div class="muted" id="detailMeta"></div>
+      <div class="kpis" id="detailKpis"></div>
+      <div class="bar"><i id="detailBar" style="width:0"></i></div>
+      <div class="msg info hide" id="detailPause"></div>
+      <div class="row" style="margin-top:12px" id="detailActions"></div>
+    </div>
+    <div class="card"><h2>Hourly batches</h2><div class="tw"><table id="batchTable"></table></div></div>
+  </section>
+
+  <!-- WIZARD -->
+  <section id="viewWizard" class="hide">
+    <div class="card">
+      <div class="row between"><h2 id="wizTitle">New campaign</h2><button class="ghost" id="btnWizClose">Close</button></div>
+      <div class="steps" id="wizSteps"><span>1 · Details</span><span>2 · Upload data</span><span>3 · IVR recording</span><span>4 · Hourly schedule</span><span>5 · Review & submit</span></div>
+      <div id="wizMsg"></div>
+
+      <div class="wstep" data-step="1">
+        <div class="grid">
+          <div><label for="fName">Campaign name</label><input id="fName" placeholder="e.g. Flexi BL Oct wk1"></div>
+          <div><label for="fLender">Lender (for suppression + 90-day no-repeat)</label>
+            <select id="fLender"><option value="">None</option><option>Flexiloans (Epimoney)</option><option>Indifi</option></select></div>
+          <div><label for="fVariant">Product (press-1 routing is the webhook you pick in step 4)</label>
+            <select id="fVariant"><option value="businessloans">Business loans</option><option value="flexiloans">Flexiloans</option></select></div>
+          <div><label for="fDtmf">Key to press</label><input id="fDtmf" value="1" maxlength="1"></div>
+        </div>
+        <div class="row" style="margin-top:14px"><button id="btnStep1">Save & continue</button></div>
+      </div>
+
+      <div class="wstep hide" data-step="2">
+        <div class="drop" id="dropData">Drop a CSV or Excel file here, or click to choose<br><span class="muted">Needs a mobile number column. A name column is optional.</span>
+          <input type="file" id="fileData" accept=".csv,.xlsx,.xls,.txt" class="hide"></div>
+        <div id="dataPreview" class="hide" style="margin-top:12px">
+          <div class="grid">
+            <div><label for="selMobile">Mobile column</label><select id="selMobile"></select></div>
+            <div><label for="selName">Name column (optional)</label><select id="selName"></select></div>
+          </div>
+          <div class="kpis" id="dataKpis"></div>
+          <div class="bar"><i id="uploadBar" style="width:0"></i></div>
+          <div class="row" style="margin-top:12px"><button id="btnUpload">Upload contacts</button><span class="muted" id="uploadNote"></span></div>
+        </div>
+        <div class="row" style="margin-top:14px"><button class="ghost" data-go="1">Back</button><button id="btnStep2" disabled>Continue</button></div>
+      </div>
+
+      <div class="wstep hide" data-step="3">
+        <div class="tabs" id="recTabs"><button class="on" data-rec="upload">Upload recording</button><button data-rec="existing">Use an existing IVR prompt</button><button data-rec="tts">Generate from script</button></div>
+        <div data-recpane="upload">
+          <div class="drop" id="dropRec">Drop a .wav or .mp3 here, or click to choose<br><span class="muted">8 kHz mono WAV plays best on phone lines. Max 10 MB.</span>
+            <input type="file" id="fileRec" accept=".wav,.mp3,audio/wav,audio/mpeg" class="hide"></div>
+          <audio id="recPreview" controls class="hide" style="width:100%;margin-top:10px"></audio>
+        </div>
+        <div data-recpane="existing" class="hide">
+          <label for="selPrompt">Prompts already on the IVR panel</label><select id="selPrompt"><option value="">Loading…</option></select>
+        </div>
+        <div data-recpane="tts" class="hide">
+          <label for="fScript">Script (Hindi or English) — it will be voiced and uploaded to the IVR panel</label>
+          <textarea id="fScript" rows="5">नमस्ते। मैं Buddy Loan से बोल रही हूँ। आपके बिज़नेस के लिए बिना गारंटी का बिज़नेस लोन अप्रूव हो सकता है। जानने के लिए अभी एक दबाइए।</textarea>
+        </div>
+        <div class="row" style="margin-top:12px"><button id="btnRec">Save recording</button><span class="muted" id="recNote"></span></div>
+        <div class="row" style="margin-top:14px"><button class="ghost" data-go="2">Back</button><button id="btnStep3" disabled>Continue</button></div>
+      </div>
+
+      <div class="wstep hide" data-step="4">
+        <div class="grid">
+          <div><label for="fBatch">Calls per hourly batch</label><input id="fBatch" type="number" min="1" max="20000" value="500"></div>
+          <div><label for="fStart">Window starts (IST)</label><input id="fStart" type="time" value="10:00"></div>
+          <div><label for="fEnd">Window ends (IST)</label><input id="fEnd" type="time" value="19:00"></div>
+          <div><label for="fFrom">Start date</label><input id="fFrom" type="date"></div>
+          <div><label for="fTo">End date (optional)</label><input id="fTo" type="date"></div>
+          <div><label for="selWebhook">Press-1 webhook on the IVR panel</label><select id="selWebhook"><option value="">Loading…</option></select></div>
+        </div>
+        <div style="margin-top:12px"><label>Calling days</label><div class="days" id="days"></div></div>
+        <div class="msg info" id="projection"></div>
+        <p class="muted">Calls only ever go out between 09:00 and 21:00 IST, whatever window you set. A new batch starts only if at least 30 minutes of the window remain.</p>
+        <div class="row" style="margin-top:14px"><button class="ghost" data-go="3">Back</button><button id="btnStep4">Save & continue</button></div>
+      </div>
+
+      <div class="wstep hide" data-step="5">
+        <div id="review"></div>
+        <div class="card" style="background:#fafbf9">
+          <h2>Test call first</h2>
+          <p class="muted">Hear the recording and press the key on your own phone before it goes to customers. Up to 5 numbers you own.</p>
+          <div class="row"><input id="fTest" placeholder="9310300800" style="max-width:260px"><button class="ghost" id="btnTest">Place test call</button></div>
+        </div>
+        <div class="row" style="margin-top:14px"><button class="ghost" data-go="4">Back</button><button id="btnSubmit">Submit for approval</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="approverDlg">
+  <form method="dialog">
+    <h2 id="approverTitle">Owner approval</h2>
+    <p class="muted">Approving lets this campaign dial customers in hourly batches. Enter the approver key.</p>
+    <label for="approverKey">Approver key</label><input id="approverKey" type="password" autocomplete="off">
+    <div class="row" style="margin-top:14px;justify-content:flex-end"><button value="cancel" class="ghost">Cancel</button><button value="ok" id="approverOk">Approve</button></div>
+  </form>
+</dialog>
+
+<script>
+const API = '/api/campaign-planner';
+const TOKEN_KEY = 'bl_console_token';
+(function keepToken(){
+  const url = new URL(location.href); const t = url.searchParams.get('token'); if(!t) return;
+  try{ sessionStorage.setItem(TOKEN_KEY, t); }catch{ window.__tok = t; }
+  url.searchParams.delete('token'); history.replaceState(null,'',url.toString());
+})();
+const token = () => { try{ return sessionStorage.getItem(TOKEN_KEY) || window.__tok || ''; }catch{ return window.__tok || ''; } };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt = (n) => n == null ? '–' : Number(n).toLocaleString('en-IN');
+const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+async function call(path, method='GET', body=null, extra={}){
+  const headers = {'X-Webhook-Secret': token(), ...extra};
+  if (body) headers['Content-Type'] = 'application/json';
+  const r = await fetch(path, {method, headers, body: body ? JSON.stringify(body) : undefined});
+  let data; try{ data = await r.json(); }catch{ data = {}; }
+  if (r.status === 401) throw new Error('Not signed in — open this page as /campaigns?token=<CONSOLE_SECRET>');
+  if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+function show(el, kind, text){ el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ''; }
+function view(name){ for (const v of ['viewPlans','viewDetail','viewWizard']) $(v).classList.toggle('hide', v !== name); window.scrollTo(0,0); }
+
+/* ---------- plans list ---------- */
+async function loadPlans(){
+  try{
+    const { plans } = await call(`${API}/plans`);
+    $('plansNote').textContent = `${plans.length} campaign${plans.length===1?'':'s'}`;
+    if (!plans.length){ $('plansList').innerHTML = '<p class="muted">No campaigns yet. Click “New campaign” to upload a base and a recording.</p>'; return; }
+    $('plansList').innerHTML = `<div class="tw"><table><thead><tr><th>Campaign</th><th>Status</th><th>Base</th><th>Dialled</th><th>Remaining</th><th>Per hour</th><th>Window</th><th>Est. days</th><th></th></tr></thead><tbody>${
+      plans.map(p => { const pct = p.total_contacts ? Math.round(100*p.dialled/p.total_contacts) : 0;
+        return `<tr><td><b>${esc(p.name)}</b><div class="muted">${esc(p.lender || 'No lender')} · ${esc(p.prompt_name || 'no recording')}</div></td>
+        <td><span class="chip ${p.status}">${p.status.replace('_',' ')}</span></td><td>${fmt(p.total_contacts)}</td>
+        <td>${fmt(p.dialled)}<div class="bar" style="width:90px;margin-top:4px"><i style="width:${pct}%"></i></div></td>
+        <td>${fmt(p.remaining)}</td><td>${fmt(p.batch_size)}</td><td>${p.window ? p.window.start+'–'+p.window.end : '–'}</td>
+        <td>${p.projection?.days ?? '–'}</td><td><button class="ghost" data-open="${p.id}">Open</button></td></tr>`; }).join('')
+    }</tbody></table></div>`;
+    $('plansList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => openPlan(b.dataset.open));
+  }catch(e){ $('plansList').innerHTML = ''; show($('globalMsg'),'err',e.message); }
+}
+
+/* ---------- detail ---------- */
+let current = null;
+async function openPlan(id){
+  try{
+    const { plan, batches } = await call(`${API}/plans/${id}`);
+    current = plan; view('viewDetail');
+    $('detailName').textContent = plan.name;
+    $('detailStatus').innerHTML = `<span class="chip ${plan.status}">${plan.status.replace('_',' ')}</span>`;
+    $('detailMeta').textContent = `${plan.lender || 'No lender'} · press ${plan.dtmf} → ${plan.variant} · recording: ${plan.prompt_name || plan.prompt_id || 'none'} · ${plan.batch_size} calls/hour, ${plan.window ? plan.window.start+'–'+plan.window.end : '—'} IST · ${(plan.days_of_week||[]).map(d=>DAYS[d-1]).join(', ')}`;
+    const pct = plan.total_contacts ? Math.round(100*plan.dialled/plan.total_contacts) : 0;
+    $('detailBar').style.width = pct + '%';
+    $('detailKpis').innerHTML = [['Base', plan.total_contacts],['Dialled', plan.dialled],['Remaining', plan.remaining],['Batches OK', plan.batches_ok],['Batches failed', plan.batches_failed],['Suppressed at upload', plan.suppressed],['Est. days left', plan.projection?.days]]
+      .map(([k,v]) => `<div class="kpi"><span>${k}</span><b>${fmt(v)}</b></div>`).join('');
+    $('detailPause').classList.toggle('hide', !plan.pause_reason);
+    $('detailPause').textContent = plan.pause_reason || '';
+    const a = [];
+    if (plan.status === 'draft') a.push(['Continue setup','ghost',() => openWizard(plan)]);
+    if (plan.status === 'pending_approval') a.push(['Approve','',() => approve(plan.id,'approve')]);
+    if (['approved','running'].includes(plan.status)) { a.push(['Run this hour now','ghost',() => act(plan.id,'tick')]); a.push(['Pause','danger',() => act(plan.id,'pause')]); }
+    if (plan.status === 'paused') { a.push(['Edit schedule','ghost',() => openWizard(plan, 4)]); a.push(['Resume','',() => approve(plan.id,'resume')]); }
+    if (!['completed','cancelled'].includes(plan.status)) a.push(['Cancel campaign','danger',() => { if (confirm('Cancel this campaign? Nobody left in it will be called.')) act(plan.id,'cancel'); }]);
+    $('detailActions').innerHTML = ''; a.forEach(([t,c,f]) => { const b = document.createElement('button'); b.textContent = t; if (c) b.className = c; b.onclick = f; $('detailActions').appendChild(b); });
+    $('batchTable').innerHTML = batches.length ? `<thead><tr><th>#</th><th>Hour (IST)</th><th>Status</th><th>People</th><th>IVR campaign</th><th>Note</th></tr></thead><tbody>${
+      batches.map(b => `<tr><td>${b.batch_no}</td><td>${esc(b.hour_key.replace('T',' '))}:00</td><td><span class="chip ${b.status==='composed'?'running':b.status==='failed'?'paused':'draft'}">${b.status}</span></td><td>${fmt(b.size)}</td><td>${esc(b.obd_campaign_id||'–')}</td><td class="muted">${esc(b.error||'')}</td></tr>`).join('')}</tbody>`
+      : '<tbody><tr><td class="muted">No batches yet. Once approved, the first one goes out at the next hour inside the window.</td></tr></tbody>';
+  }catch(e){ show($('globalMsg'),'err',e.message); }
+}
+async function act(id, what){
+  try{
+    if (what === 'tick') { const r = await call(`${API}/tick`,'POST',{planId:id}); const p = r.tick.plans?.[0]; show($('globalMsg'), p?.failed ? 'err':'info', p ? (p.failed || p.skipped || (p.dialled ? `Batch sent: ${p.dialled} calls` : p.reason || 'Done')) : (r.tick.skipped || 'Nothing due')); }
+    else await call(`${API}/plans/${id}/${what}`,'POST',{});
+    openPlan(id); loadPlans();
+  }catch(e){ show($('globalMsg'),'err',e.message); }
+}
+function approve(id, what){
+  const dlg = $('approverDlg'); $('approverTitle').textContent = what === 'resume' ? 'Resume campaign' : 'Owner approval'; $('approverOk').textContent = what === 'resume' ? 'Resume' : 'Approve'; $('approverKey').value = '';
+  dlg.onclose = async () => { if (dlg.returnValue !== 'ok') return;
+    try{ await call(`${API}/plans/${id}/${what}`,'POST',{approved_by:'owner'},{'X-Approver-Secret': $('approverKey').value}); show($('globalMsg'),'ok', what==='resume' ? 'Resumed.' : 'Approved. Batches start at the next hour inside the window.'); openPlan(id); loadPlans(); }
+    catch(e){ show($('globalMsg'),'err',e.message); } };
+  dlg.showModal();
+}
+
+/* ---------- wizard ---------- */
+let plan = null, step = 1, parsed = null;
+function gotoStep(n){
+  step = n;
+  document.querySelectorAll('.wstep').forEach(s => s.classList.toggle('hide', Number(s.dataset.step) !== n));
+  [...$('wizSteps').children].forEach((s,i) => { s.className = i+1 === n ? 'on' : i+1 < n ? 'done' : ''; });
+  show($('wizMsg'),'','');
+  if (n === 3) loadPrompts();
+  if (n === 4) { loadWebhooks(); fillSchedule(); }
+  if (n === 5) renderReview();
+}
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => gotoStep(Number(b.dataset.go)));
+function openWizard(p = null, at = null){
+  plan = p; parsed = null;
+  $('wizTitle').textContent = p ? `Set up: ${p.name}` : 'New campaign';
+  $('fName').value = p?.name || ''; $('fLender').value = p?.lender || ''; $('fVariant').value = p?.variant || 'businessloans'; $('fDtmf').value = p?.dtmf || '1';
+  $('dataPreview').classList.add('hide'); $('btnStep2').disabled = !(p?.total_contacts); $('btnStep3').disabled = !(p?.prompt_id);
+  $('recNote').textContent = p?.prompt_id ? `Current: ${p.prompt_name || p.prompt_id}` : '';
+  view('viewWizard');
+  gotoStep(at || (!p ? 1 : !p.total_contacts ? 2 : !p.prompt_id ? 3 : 4));
+}
+$('btnStep1').onclick = async () => {
+  const body = { name: $('fName').value.trim(), lender: $('fLender').value, variant: $('fVariant').value, dtmf: $('fDtmf').value.trim() || '1' };
+  if (!body.name) return show($('wizMsg'),'err','Give the campaign a name.');
+  try{ plan = (plan ? await call(`${API}/plans/${plan.id}`,'PATCH',body) : await call(`${API}/plans`,'POST',body)).plan; gotoStep(2); }
+  catch(e){ show($('wizMsg'),'err',e.message); }
+};
+
+// data upload
+const norm = (v) => { let s = String(v ?? '').trim().replace(/\.0+$/,'').replace(/\D/g,''); if (s.length > 10) s = s.slice(-10); return /^[6-9]\d{9}$/.test(s) ? s : null; };
+$('dropData').onclick = () => $('fileData').click();
+['dragover','drop'].forEach(ev => $('dropData').addEventListener(ev, e => { e.preventDefault(); if (ev==='drop' && e.dataTransfer.files[0]) readData(e.dataTransfer.files[0]); }));
+$('fileData').onchange = (e) => e.target.files[0] && readData(e.target.files[0]);
+async function readData(file){
+  try{
+    const wb = XLSX.read(await file.arrayBuffer(), {type:'array', raw:false});
+    let rows = []; wb.SheetNames.forEach(n => rows = rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[n], {defval:'', raw:false})));
+    if (!rows.length) throw new Error('The file has no rows.');
+    const cols = Object.keys(rows[0]);
+    const score = (c) => rows.slice(0,300).filter(r => norm(r[c])).length + (/mob|phone|contact|number|msisdn/i.test(c) ? 50 : 0);
+    const mob = cols.slice().sort((a,b) => score(b)-score(a))[0];
+    const nm = cols.find(c => /name/i.test(c) && c !== mob) || '';
+    $('selMobile').innerHTML = cols.map(c => `<option ${c===mob?'selected':''}>${esc(c)}</option>`).join('');
+    $('selName').innerHTML = '<option value="">None</option>' + cols.map(c => `<option ${c===nm?'selected':''}>${esc(c)}</option>`).join('');
+    parsed = { rows, file: file.name };
+    $('dataPreview').classList.remove('hide'); summarise();
+  }catch(e){ show($('wizMsg'),'err',`Could not read ${file.name}: ${e.message}`); }
+}
+$('selMobile').onchange = summarise; $('selName').onchange = summarise;
+function summarise(){
+  const mc = $('selMobile').value; const seen = new Set(); let bad = 0, dup = 0;
+  for (const r of parsed.rows){ const m = norm(r[mc]); if (!m) bad++; else if (seen.has(m)) dup++; else seen.add(m); }
+  parsed.valid = seen.size;
+  $('dataKpis').innerHTML = [['Rows in file', parsed.rows.length],['Valid mobiles', seen.size],['Invalid', bad],['Duplicates', dup]].map(([k,v]) => `<div class="kpi"><span>${k}</span><b>${fmt(v)}</b></div>`).join('');
+  $('uploadNote').textContent = `Suppression (lender MIS, DSA docs, STOP replies) is applied on upload.`;
+}
+$('btnUpload').onclick = async () => {
+  const mc = $('selMobile').value, nc = $('selName').value; const seen = new Set(); const out = [];
+  for (const r of parsed.rows){ const m = norm(r[mc]); if (m && !seen.has(m)){ seen.add(m); out.push({mobile:m, name: nc ? String(r[nc]).slice(0,120) : ''}); } }
+  $('btnUpload').disabled = true; const tot = {added:0, suppressed:0, duplicates:0, invalid:0};
+  try{
+    for (let i = 0; i < out.length; i += 5000){
+      const { result } = await call(`${API}/plans/${plan.id}/contacts`,'POST',{rows: out.slice(i, i+5000)});
+      for (const k in tot) tot[k] += result[k] || 0;
+      $('uploadBar').style.width = Math.round(100*Math.min(i+5000,out.length)/out.length) + '%';
+      $('uploadNote').textContent = `Uploaded ${fmt(Math.min(i+5000,out.length))} of ${fmt(out.length)}…`;
+    }
+    show($('wizMsg'),'ok',`Added ${fmt(tot.added)} people. Suppressed ${fmt(tot.suppressed)}, already in this campaign ${fmt(tot.duplicates)}, invalid ${fmt(tot.invalid)}.`);
+    plan.total_contacts = (plan.total_contacts||0) + tot.added; $('btnStep2').disabled = !plan.total_contacts;
+  }catch(e){ show($('wizMsg'),'err',e.message); }
+  $('btnUpload').disabled = false;
+};
+$('btnStep2').onclick = () => gotoStep(3);
+
+// recording
+let recMode = 'upload', recFile = null;
+$('recTabs').querySelectorAll('button').forEach(b => b.onclick = () => { recMode = b.dataset.rec;
+  $('recTabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('[data-recpane]').forEach(p => p.classList.toggle('hide', p.dataset.recpane !== recMode)); });
+$('dropRec').onclick = () => $('fileRec').click();
+['dragover','drop'].forEach(ev => $('dropRec').addEventListener(ev, e => { e.preventDefault(); if (ev==='drop' && e.dataTransfer.files[0]) pickRec(e.dataTransfer.files[0]); }));
+$('fileRec').onchange = (e) => e.target.files[0] && pickRec(e.target.files[0]);
+function pickRec(f){ if (!/\.(wav|mp3)$/i.test(f.name)) return show($('wizMsg'),'err','Choose a .wav or .mp3 file.'); recFile = f; $('recPreview').src = URL.createObjectURL(f); $('recPreview').classList.remove('hide'); $('recNote').textContent = `${f.name} · ${(f.size/1024).toFixed(0)} KB`; }
+async function loadPrompts(){
+  try{ const d = await call('/api/obd/voices'); const list = Array.isArray(d) ? d : d.prompts || d.data || d.voices || d.result || [];
+    $('selPrompt').innerHTML = '<option value="">Choose…</option>' + list.map(p => { const id = p.promptId ?? p.id ?? p.prompt_id; const n = p.fileName ?? p.promptName ?? p.name ?? id;
+      return `<option value="${esc(id)}" data-name="${esc(n)}">${esc(n)}${p.category ? ' · '+esc(p.category) : ''}</option>`; }).join(''); }
+  catch(e){ $('selPrompt').innerHTML = `<option value="">Could not load prompts (${esc(e.message)})</option>`; }
+}
+$('btnRec').onclick = async () => {
+  $('btnRec').disabled = true; $('recNote').textContent = 'Uploading to the IVR panel…';
+  try{
+    let body;
+    if (recMode === 'upload'){ if (!recFile) throw new Error('Choose a recording first.');
+      const b64 = await new Promise((ok,no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(recFile); });
+      body = { audioBase64: b64, ext: recFile.name.split('.').pop().toLowerCase() }; }
+    else if (recMode === 'existing'){ const o = $('selPrompt').selectedOptions[0]; if (!o?.value) throw new Error('Pick a prompt.'); body = { promptId: o.value, promptName: o.dataset.name }; }
+    else { body = { script: $('fScript').value.trim() }; if (!body.script) throw new Error('Write the script.'); }
+    const r = await call(`${API}/plans/${plan.id}/recording`,'POST',body);
+    plan.prompt_id = r.prompt_id; plan.prompt_name = r.prompt_name; $('recNote').textContent = `Saved: ${r.prompt_name || r.prompt_id}`; $('btnStep3').disabled = false;
+  }catch(e){ $('recNote').textContent = ''; show($('wizMsg'),'err',e.message); }
+  $('btnRec').disabled = false;
+};
+$('btnStep3').onclick = () => gotoStep(4);
+
+// schedule
+$('days').innerHTML = DAYS.map((d,i) => `<label><input type="checkbox" value="${i+1}" ${i<6?'checked':''}> ${d}</label>`).join('');
+async function loadWebhooks(){
+  try{ const d = await call('/api/obd/webhooks'); const list = Array.isArray(d) ? d : d.webhooks || d.data || d.result || [];
+    $('selWebhook').innerHTML = '<option value="">None</option>' + list.map(w => { const id = w.webhookId ?? w.id; return `<option value="${esc(id)}" ${String(id)===String(plan?.webhook_id)?'selected':''}>${esc(w.webhookName ?? w.name ?? id)}${w.url ? ' · '+esc(String(w.url).slice(0,50)) : ''}</option>`; }).join(''); }
+  catch(e){ $('selWebhook').innerHTML = `<option value="">Could not load (${esc(e.message)})</option>`; }
+}
+function fillSchedule(){
+  if (plan.batch_size) $('fBatch').value = plan.batch_size;
+  if (plan.window_start) $('fStart').value = String(plan.window_start).slice(0,5);
+  if (plan.window_end) $('fEnd').value = String(plan.window_end).slice(0,5);
+  $('fFrom').value = String(plan.start_date || new Date().toISOString()).slice(0,10); $('fTo').value = plan.end_date ? String(plan.end_date).slice(0,10) : '';
+  if (plan.days_of_week) $('days').querySelectorAll('input').forEach(c => c.checked = plan.days_of_week.includes(Number(c.value)));
+  project();
+}
+['fBatch','fStart','fEnd'].forEach(id => $(id).oninput = project);
+function project(){
+  const s = $('fStart').value < '09:00' ? '09:00' : $('fStart').value, e = $('fEnd').value > '21:00' ? '21:00' : $('fEnd').value;
+  const [sh,sm] = s.split(':').map(Number), [eh,em] = e.split(':').map(Number);
+  const hours = Math.max(0, Math.floor((eh*60+em-30-(sh*60+sm))/60)+1); const per = Number($('fBatch').value)||0;
+  const base = plan?.total_contacts || 0; const batches = per ? Math.ceil(base/per) : 0;
+  $('projection').textContent = hours && per ? `${hours} batches a day × ${fmt(per)} calls = up to ${fmt(hours*per)} calls a day. This base of ${fmt(base)} needs ${fmt(batches)} batches, about ${Math.ceil(batches/hours)} calling day(s).` : 'Set a window of at least 30 minutes inside 09:00–21:00 and a batch size.';
+}
+$('btnStep4').onclick = async () => {
+  const days = [...$('days').querySelectorAll('input:checked')].map(c => Number(c.value));
+  if (!days.length) return show($('wizMsg'),'err','Pick at least one calling day.');
+  try{ plan = (await call(`${API}/plans/${plan.id}`,'PATCH',{ batch_size: Number($('fBatch').value), window_start: $('fStart').value, window_end: $('fEnd').value,
+      start_date: $('fFrom').value, end_date: $('fTo').value || null, days_of_week: days, webhook_id: $('selWebhook').value || null })).plan; gotoStep(5); }
+  catch(e){ show($('wizMsg'),'err',e.message); }
+};
+
+// review
+async function renderReview(){
+  const { plan: p } = await call(`${API}/plans/${plan.id}`); plan = p;
+  $('review').innerHTML = `<div class="kpis">${[['People to call', p.total_contacts],['Suppressed at upload', p.suppressed],['Calls per hour', p.batch_size],['Batches needed', p.projection?.batches],['Calling days', p.projection?.days]].map(([k,v]) => `<div class="kpi"><span>${k}</span><b>${fmt(v)}</b></div>`).join('')}</div>
+    <p><b>${esc(p.name)}</b> · ${esc(p.lender || 'No lender')} · recording <b>${esc(p.prompt_name || p.prompt_id)}</b> · press ${esc(p.dtmf)} → ${esc(p.variant)} · ${p.window ? p.window.start+'–'+p.window.end : '—'} IST · ${(p.days_of_week||[]).map(d=>DAYS[d-1]).join(', ')}</p>
+    <p class="muted">After you submit, the owner approves with the approver key. Nothing is dialled before that.</p>`;
+}
+$('btnTest').onclick = async () => {
+  const mobiles = $('fTest').value.split(/[\s,]+/).filter(Boolean);
+  try{ const r = await call(`${API}/plans/${plan.id}/test-call`,'POST',{mobiles}); show($('wizMsg'), r.campaignId ? 'ok':'err', r.campaignId ? `Test call queued (IVR campaign ${r.campaignId}). Your phone should ring in about 2 minutes.` : `The IVR panel did not confirm: ${r.said || 'no message'}`); }
+  catch(e){ show($('wizMsg'),'err',e.message); }
+};
+$('btnSubmit').onclick = async () => {
+  try{ await call(`${API}/plans/${plan.id}/submit`,'POST',{}); show($('globalMsg'),'ok','Submitted for approval.'); view('viewPlans'); loadPlans(); }
+  catch(e){ show($('wizMsg'),'err',e.message); }
+};
+
+$('btnNew').onclick = () => openWizard(null);
+$('btnWizClose').onclick = () => { view('viewPlans'); loadPlans(); };
+$('btnBack').onclick = () => { view('viewPlans'); loadPlans(); };
+$('btnRefresh').onclick = () => current && !$('viewDetail').classList.contains('hide') ? openPlan(current.id) : loadPlans();
+loadPlans();
+</script>
+</body>
+</html>
