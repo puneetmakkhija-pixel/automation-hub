@@ -45,6 +45,22 @@
   .days label{display:inline-flex;align-items:center;gap:4px;margin-right:10px;font-weight:500;color:var(--ink)}
   .days input{width:auto}
   dialog{border:none;border-radius:12px;padding:18px;max-width:420px;width:92%}
+  header{background:linear-gradient(120deg,#0b2f2d 0%,#0e6b66 60%,#1b8f87 100%)}
+  .card{box-shadow:0 1px 2px rgba(16,32,31,.05),0 6px 18px rgba(16,32,31,.04)}
+  .kpi{border-left:4px solid var(--acc);background:linear-gradient(180deg,#fff,#f7faf9)}
+  .kpi.bad{border-left-color:var(--bad)}.kpi.warn{border-left-color:var(--warn)}.kpi.ok{border-left-color:var(--ok)}
+  .bar{height:12px;border-radius:8px}.bar i{background:linear-gradient(90deg,#0e6b66,#2fb5a9);transition:width .6s ease}
+  .hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin:6px 0 4px}
+  .hero .kpis{flex:1;min-width:260px;margin:0}
+  .donut{flex:0 0 auto}.donut text{font:700 22px -apple-system,Segoe UI,sans-serif;fill:var(--ink)}.donut .sub{font:500 11px -apple-system,Segoe UI,sans-serif;fill:var(--mute)}
+  .donut circle{transition:stroke-dasharray .8s ease}
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+  .strip .card{margin:0;display:flex;align-items:center;gap:12px;padding:14px}
+  .strip b{display:block;font-size:22px;line-height:1.1}.strip span{font-size:12px;color:var(--mute)}
+  .chart{width:100%;height:auto;max-height:190px;display:block}.chart text{font:11px -apple-system,Segoe UI,sans-serif;fill:var(--mute)}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mute);margin-top:6px}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
+  .drop{background:linear-gradient(180deg,#fff,#f4faf9)}
+  @media (prefers-reduced-motion:reduce){.bar i,.donut circle{transition:none}}
 </style>
 </head>
 <body>
@@ -57,6 +73,7 @@
 
   <!-- PLANS -->
   <section id="viewPlans">
+    <div class="strip" id="statStrip"></div>
     <div class="card">
       <div class="row between"><h2>Campaigns</h2><span class="muted" id="plansNote"></span></div>
       <div id="plansList" class="muted">Loading…</div>
@@ -69,12 +86,12 @@
       <div class="row between"><button class="ghost" id="btnBack">← All campaigns</button><span id="detailStatus"></span></div>
       <h2 id="detailName" style="margin-top:12px"></h2>
       <div class="muted" id="detailMeta"></div>
-      <div class="kpis" id="detailKpis"></div>
+      <div class="hero"><div id="detailDonut"></div><div class="kpis" id="detailKpis"></div></div>
       <div class="bar"><i id="detailBar" style="width:0"></i></div>
       <div class="msg info hide" id="detailPause"></div>
       <div class="row" style="margin-top:12px" id="detailActions"></div>
     </div>
-    <div class="card"><h2>Hourly batches</h2><div class="tw"><table id="batchTable"></table></div></div>
+    <div class="card"><h2>Hourly batches</h2><div id="batchChart"></div><div class="tw"><table id="batchTable"></table></div></div>
   </section>
 
   <!-- WIZARD -->
@@ -139,6 +156,7 @@
           <div><label for="selWebhook">Press-1 webhook on the IVR panel</label><select id="selWebhook"><option value="">Loading…</option></select></div>
         </div>
         <div style="margin-top:12px"><label>Calling days</label><div class="days" id="days"></div></div>
+        <div id="winStrip" style="margin-top:12px"></div>
         <div class="msg info" id="projection"></div>
         <p class="muted">Calls only ever go out between 09:00 and 21:00 IST, whatever window you set. A new batch starts only if at least 30 minutes of the window remain.</p>
         <div class="row" style="margin-top:14px"><button class="ghost" data-go="3">Back</button><button id="btnStep4">Save & continue</button></div>
@@ -189,6 +207,31 @@ async function call(path, method='GET', body=null, extra={}){
   if (!r.ok || data.ok === false) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
 }
+const COL = {ok:'#15803d',bad:'#b42318',mid:'#2fb5a9',mute:'#cfd6d3',acc:'#0e6b66'};
+function donut(pct, label, size=120){
+  const r = 46, c = 2*Math.PI*r, d = Math.max(0,Math.min(100,pct))/100*c;
+  return `<svg class="donut" width="${size}" height="${size}" viewBox="0 0 120 120" role="img" aria-label="${esc(label)} ${pct}%">
+    <circle cx="60" cy="60" r="${r}" fill="none" stroke="#eceeeb" stroke-width="12"/>
+    <circle cx="60" cy="60" r="${r}" fill="none" stroke="${COL.acc}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${d} ${c}" transform="rotate(-90 60 60)"/>
+    <text x="60" y="62" text-anchor="middle">${pct}%</text><text class="sub" x="60" y="80" text-anchor="middle">${esc(label)}</text></svg>`;
+}
+function batchChart(batches){
+  if (!batches.length) return '';
+  const b = batches.slice().sort((x,y)=>x.batch_no-y.batch_no).slice(-24), W = 640, H = 150, pad = 22, bw = (W-pad)/b.length;
+  const max = Math.max(1,...b.map(x=>x.size||0));
+  const bars = b.map((x,i)=>{ const h = Math.max(2,(x.size||0)/max*(H-pad-14)), col = x.status==='composed'?COL.ok:x.status==='failed'?COL.bad:COL.mute;
+    return `<rect x="${pad+i*bw+2}" y="${H-pad-h}" width="${Math.max(2,bw-4)}" height="${h}" rx="3" fill="${col}"><title>#${x.batch_no} · ${esc(x.hour_key.replace('T',' '))}:00 · ${fmt(x.size)} · ${esc(x.status)}</title></rect>`; }).join('');
+  const lab = b.map((x,i)=> b.length<=12 || i%Math.ceil(b.length/12)===0 ? `<text x="${pad+i*bw+bw/2}" y="${H-6}" text-anchor="middle">${esc(x.hour_key.slice(8,10))}/${esc(x.hour_key.slice(11))}h</text>` : '').join('');
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="People per hourly batch"><line x1="${pad}" y1="${H-pad}" x2="${W}" y2="${H-pad}" stroke="#d9ddd8"/><text x="0" y="12">${fmt(max)}</text>${bars}${lab}</svg>
+    <div class="legend"><span><i style="background:${COL.ok}"></i>composed</span><span><i style="background:${COL.bad}"></i>failed</span><span><i style="background:${COL.mute}"></i>other</span></div>`;
+}
+function windowStrip(start, end){
+  const m = t => { const [h,mi] = String(t).slice(0,5).split(':').map(Number); return (h*60+mi)/1440*100; };
+  const s = m(start), e = m(end), ls = m('09:00'), le = m('21:00');
+  return `<svg class="chart" viewBox="0 0 640 44" preserveAspectRatio="none" role="img" aria-label="Calling window ${esc(start)} to ${esc(end)}"><svg x="0" y="0" width="640" height="44" viewBox="0 0 100 44" preserveAspectRatio="none">
+    <rect x="0" y="6" width="100" height="16" rx="2" fill="#eceeeb"/><rect x="${ls}" y="6" width="${le-ls}" height="16" fill="#cfe7e4"/><rect x="${s}" y="6" width="${Math.max(0,e-s)}" height="16" fill="${COL.acc}"/></svg></svg>
+    <div class="legend"><span><i style="background:${COL.acc}"></i>your window</span><span><i style="background:#cfe7e4"></i>09:00–21:00 allowed</span></div>`;
+}
 function show(el, kind, text){ el.innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : ''; }
 function view(name){ for (const v of ['viewPlans','viewDetail','viewWizard']) $(v).classList.toggle('hide', v !== name); window.scrollTo(0,0); }
 
@@ -197,6 +240,11 @@ async function loadPlans(){
   try{
     const { plans } = await call(`${API}/plans`);
     $('plansNote').textContent = `${plans.length} campaign${plans.length===1?'':'s'}`;
+    const sum = (k) => plans.reduce((a,p) => a + (Number(p[k])||0), 0), base = sum('total_contacts'), done = sum('dialled');
+    $('statStrip').innerHTML = `<div class="card">${donut(base ? Math.round(100*done/base) : 0,'dialled',84)}<div><b>${fmt(done)}</b><span>of ${fmt(base)} dialled</span></div></div>
+      <div class="card"><div><b>${plans.filter(p=>['approved','running'].includes(p.status)).length}</b><span>active campaigns</span></div></div>
+      <div class="card"><div><b>${plans.filter(p=>p.status==='pending_approval').length}</b><span>waiting for approval</span></div></div>
+      <div class="card"><div><b>${plans.filter(p=>p.status==='paused').length}</b><span>paused</span></div></div>`;
     if (!plans.length){ $('plansList').innerHTML = '<p class="muted">No campaigns yet. Click “New campaign” to upload a base and a recording.</p>'; return; }
     $('plansList').innerHTML = `<div class="tw"><table><thead><tr><th>Campaign</th><th>Status</th><th>Base</th><th>Dialled</th><th>Remaining</th><th>Per hour</th><th>Window</th><th>Est. days</th><th></th></tr></thead><tbody>${
       plans.map(p => { const pct = p.total_contacts ? Math.round(100*p.dialled/p.total_contacts) : 0;
@@ -220,9 +268,9 @@ async function openPlan(id){
     $('detailStatus').innerHTML = `<span class="chip ${plan.status}">${plan.status.replace('_',' ')}</span>`;
     $('detailMeta').textContent = `${plan.lender || 'No lender'} · press ${plan.dtmf} → ${plan.variant} · recording: ${plan.prompt_name || plan.prompt_id || 'none'} · ${plan.batch_size} calls/hour, ${plan.window ? plan.window.start+'–'+plan.window.end : '—'} IST · ${(plan.days_of_week||[]).map(d=>DAYS[d-1]).join(', ')}`;
     const pct = plan.total_contacts ? Math.round(100*plan.dialled/plan.total_contacts) : 0;
-    $('detailBar').style.width = pct + '%';
+    $('detailBar').style.width = pct + '%'; $('detailDonut').innerHTML = donut(pct,'dialled');
     $('detailKpis').innerHTML = [['Base', plan.total_contacts],['Dialled', plan.dialled],['Remaining', plan.remaining],['Batches OK', plan.batches_ok],['Batches failed', plan.batches_failed],['Suppressed at upload', plan.suppressed],['Est. days left', plan.projection?.days]]
-      .map(([k,v]) => `<div class="kpi"><span>${k}</span><b>${fmt(v)}</b></div>`).join('');
+      .map(([k,v]) => `<div class="kpi ${k==='Batches failed'&&v>0?'bad':k==='Dialled'?'ok':''}"><span>${k}</span><b>${fmt(v)}</b></div>`).join('');
     $('detailPause').classList.toggle('hide', !plan.pause_reason);
     $('detailPause').textContent = plan.pause_reason || '';
     const a = [];
@@ -232,6 +280,7 @@ async function openPlan(id){
     if (plan.status === 'paused') { a.push(['Edit schedule','ghost',() => openWizard(plan, 4)]); a.push(['Resume','',() => approve(plan.id,'resume')]); }
     if (!['completed','cancelled'].includes(plan.status)) a.push(['Cancel campaign','danger',() => { if (confirm('Cancel this campaign? Nobody left in it will be called.')) act(plan.id,'cancel'); }]);
     $('detailActions').innerHTML = ''; a.forEach(([t,c,f]) => { const b = document.createElement('button'); b.textContent = t; if (c) b.className = c; b.onclick = f; $('detailActions').appendChild(b); });
+    $('batchChart').innerHTML = batchChart(batches);
     $('batchTable').innerHTML = batches.length ? `<thead><tr><th>#</th><th>Hour (IST)</th><th>Status</th><th>People</th><th>IVR campaign</th><th>Note</th></tr></thead><tbody>${
       batches.map(b => `<tr><td>${b.batch_no}</td><td>${esc(b.hour_key.replace('T',' '))}:00</td><td><span class="chip ${b.status==='composed'?'running':b.status==='failed'?'paused':'draft'}">${b.status}</span></td><td>${fmt(b.size)}</td><td>${esc(b.obd_campaign_id||'–')}</td><td class="muted">${esc(b.error||'')}</td></tr>`).join('')}</tbody>`
       : '<tbody><tr><td class="muted">No batches yet. Once approved, the first one goes out at the next hour inside the window.</td></tr></tbody>';
@@ -377,6 +426,7 @@ function project(){
   const s = $('fStart').value < '09:00' ? '09:00' : $('fStart').value, e = $('fEnd').value > '21:00' ? '21:00' : $('fEnd').value;
   const [sh,sm] = s.split(':').map(Number), [eh,em] = e.split(':').map(Number);
   const hours = Math.max(0, Math.floor((eh*60+em-30-(sh*60+sm))/60)+1); const per = Number($('fBatch').value)||0;
+  $('winStrip').innerHTML = windowStrip(s, e);
   const base = plan?.total_contacts || 0; const batches = per ? Math.ceil(base/per) : 0;
   $('projection').textContent = hours && per ? `${hours} batches a day × ${fmt(per)} calls = up to ${fmt(hours*per)} calls a day. This base of ${fmt(base)} needs ${fmt(batches)} batches, about ${Math.ceil(batches/hours)} calling day(s).` : 'Set a window of at least 30 minutes inside 09:00–21:00 and a batch size.';
 }
