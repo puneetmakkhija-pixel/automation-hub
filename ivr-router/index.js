@@ -32,6 +32,7 @@ import misFeedbackCollectorRoutes from "./lib/routes/misFeedbackCollectorRoutes.
 import anantaConfigRoutes from "./lib/routes/anantaConfigRoutes.js";
 import whatsappFlowRoutes from "./lib/routes/whatsappFlowRoutes.js";
 import flexiloansDocumentRoutes from "./lib/routes/flexiloansDocumentRoutes.js";
+import campaignPlannerRoutes from "./lib/routes/campaignPlannerRoutes.js";
 import SupabaseClient from "./lib/supabaseClient.js";
 import logger from "./lib/logging.js";
 
@@ -39,6 +40,19 @@ dotenv.config();
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
+
+// ==================== IVR Campaign Planner (panel: /campaigns) ====================
+// Mounted BEFORE the global express.json(): uploads carry a base in 10,000-row
+// chunks and a recording as base64, both far past the 100kb default. Its own
+// parser takes 25mb, and only on this prefix. Whole router behind CONSOLE_SECRET;
+// approve/resume additionally need CAMPAIGN_APPROVER_SECRET (see the router).
+app.use(
+  "/api/campaign-planner",
+  consoleAuth("CONSOLE_CAMPAIGN_PLANNER", null),
+  express.json({ limit: "25mb" }),
+  campaignPlannerRoutes
+);
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
@@ -651,6 +665,10 @@ app.get('/console', consoleAuth('CONSOLE_PAGE', null), (req, res) => {
 // Behind CONSOLE_SECRET, and failClosed, because every row is a customer's
 // mobile number. Load it as /personal-loans?token=<CONSOLE_SECRET>; the page
 // keeps the token and sends it as a header, the same way the console does.
+app.get('/campaigns', consoleAuth('CONSOLE_CAMPAIGNS_PAGE', null), (req, res) => {
+  res.sendFile('public/campaigns.html', { root: __dirname });
+});
+
 app.get('/personal-loans', consoleAuth('CONSOLE_PL_PAGE', null), (req, res) => {
   res.sendFile('public/personal-loans.html', { root: __dirname });
 });

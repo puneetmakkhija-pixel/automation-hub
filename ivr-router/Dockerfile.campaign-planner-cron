@@ -1,0 +1,10 @@
+# Railway cron service "campaign-planner" — root directory ivr-router,
+# dockerfilePath = this file, cron schedule "5 * * * *". Same shape as
+# Dockerfile.voice-poll-cron (node 22 for supabase-js, scripts/ copied).
+FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --prefer-offline --no-audit
+COPY lib ./lib
+COPY scripts ./scripts
+CMD ["npm", "run", "campaign-planner:cron"]

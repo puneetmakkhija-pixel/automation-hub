@@ -29,7 +29,9 @@
     "test:application-push": "node --test test-application-push.mjs",
     "test:intent-generation": "node --test test-intent-generation.mjs",
     "test:rejection-tracking": "node --test test-rejection-tracking.mjs",
-    "test:suppression-analysis": "node --test test-suppression-analysis.mjs"
+    "test:suppression-analysis": "node --test test-suppression-analysis.mjs",
+    "campaign-planner:cron": "node scripts/campaignPlannerTickCron.js",
+    "test:campaign-planner": "node --test test-campaign-planner.mjs"
   },
   "dependencies": {
     "express": "^4.19.2",
