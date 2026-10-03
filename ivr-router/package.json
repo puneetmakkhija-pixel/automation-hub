@@ -12,6 +12,7 @@
     "test:pl-tracker": "node test-pl-tracker.mjs",
     "test:ananta-receipt": "node test-ananta-receipt.mjs",
     "test:obd-guard": "node test-obd-guard.mjs",
+    "test:secret-overlap": "node test-webhook-secret-overlap.mjs",
     "test:alias": "node test-alias.mjs",
     "test:edit-webhook": "node test-edit-webhook.mjs",
     "test:oriserve-guard": "node test-oriserve-guard.mjs",
