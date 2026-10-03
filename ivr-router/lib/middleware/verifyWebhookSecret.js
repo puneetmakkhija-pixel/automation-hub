@@ -26,6 +26,11 @@ import crypto from "crypto";
  *   https://<host>/webhooks/ananta?token=<secret>
  * Options 1 and 2 remain for the other providers (Oriserve, OBD).
  *
+ * ROTATION — set <ENV_VAR>_NEXT (for example ANANTA_WEBHOOK_SECRET_NEXT) to the
+ * new value. Both the current and the NEXT secret are accepted, so providers can
+ * be moved to the new secret one at a time with no rejected requests. When every
+ * provider has moved, promote NEXT to the main variable and delete NEXT.
+ *
  * ROLLOUT — this fails OPEN when unconfigured, deliberately.
  * If the env var is unset the request is allowed and a warning is logged, so
  * deploying this cannot break live traffic before the provider is configured.
@@ -88,9 +93,11 @@ export function verifyWebhookSecret(envVar, label, options = {}) {
       return next();
     }
 
-    const expected = process.env[envVar];
+    // The current secret plus, during a rotation, the NEXT one. Compared exactly
+    // as set, as before; an unset or empty value does not count as configured.
+    const expectedAll = [process.env[envVar], process.env[`${envVar}_NEXT`]].filter(Boolean);
 
-    if (!expected) {
+    if (expectedAll.length === 0) {
       if (!warned) {
         // Once per process, not per request — this would otherwise be the
         // noisiest line in the log.
@@ -111,7 +118,11 @@ export function verifyWebhookSecret(envVar, label, options = {}) {
 
     const presented = presentedSecret(req);
 
-    if (!presented || !timingSafeEqual(presented, expected)) {
+    // Check every candidate (no early exit) so timing does not reveal which one matched.
+    let matched = false;
+    if (presented) for (const expected of expectedAll) matched = timingSafeEqual(presented, expected) || matched;
+
+    if (!matched) {
       console.warn(
         `[${label}] Rejected request: ${presented ? "bad" : "missing"} secret ` +
           `(ip=${req.ip}, path=${req.path})`
