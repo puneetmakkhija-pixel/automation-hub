@@ -126,12 +126,29 @@ export async function runPlannerTick(deps, opts = {}) {
 
     for (const plan of plans ?? []) {
       if (opts.planId && plan.id !== opts.planId) continue;
+      await logVendorReport(plan, { sb, obd, now });
       out.plans.push(await runPlanBatch(plan, { sb, obd, enabled, now }));
     }
   } catch (e) {
     out.error = e?.message ?? String(e);
   }
   return out;
+}
+
+// Read-only: before each hour's batch, write the dialler's own numbers for today (answered, pressed, DND-skipped...) to the service log
+// as [PLANNER_REPORT], so how the previous batch went is readable without opening the vendor panel. Never blocks or fails a tick.
+async function logVendorReport(plan, { sb, obd, now }) {
+  try {
+    if (typeof obd?.analyzeCampaign !== "function") return;
+    const { data: last } = await sb.from("ivr_plan_batch").select("obd_campaign_id, batch_no").eq("plan_id", plan.id)
+      .not("obd_campaign_id", "is", null).order("created_at", { ascending: false }).limit(1);
+    if (!last?.length) return;
+    const day = istClock(now).date;
+    const report = await obd.analyzeCampaign(day, day);
+    console.log("[PLANNER_REPORT]", JSON.stringify({ plan: plan.name, campaignId: last[0].obd_campaign_id, batchNo: last[0].batch_no, day, report }).slice(0, 6000));
+  } catch (e) {
+    console.log("[PLANNER_REPORT]", JSON.stringify({ plan: plan.name, error: String(e?.message ?? e).slice(0, 300) }));
+  }
 }
 
 async function runPlanBatch(plan, { sb, obd, enabled, now }) {
