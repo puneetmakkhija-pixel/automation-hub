@@ -114,6 +114,16 @@
       </div>
 
       <div class="wstep hide" data-step="2">
+        <div class="tabs" id="dataTabs"><button class="on" data-src="file">Upload a file</button><button data-src="base">From Supabase</button></div>
+        <div data-srcpane="base" class="hide">
+          <div class="grid">
+            <div><label for="selAudience">Audience</label><select id="selAudience"><option value="">Loading…</option></select></div>
+            <div><label for="fLimit">How many people (random sample)</label><input id="fLimit" type="number" min="1" max="100000" value="5000"></div>
+            <div><label for="fMinScore">Minimum score (optional)</label><input id="fMinScore" type="number" step="any" placeholder="none"></div>
+          </div>
+          <div class="row" style="margin-top:12px"><button id="btnLoadBase">Load these people</button><span class="muted" id="baseNote">Suppression and the lender's send-block are applied. Already-added people are skipped.</span></div>
+        </div>
+        <div data-srcpane="file">
         <div class="drop" id="dropData">Drop a CSV or Excel file here, or click to choose<br><span class="muted">Needs a mobile number column. A name column is optional.</span>
           <input type="file" id="fileData" accept=".csv,.xlsx,.xls,.txt" class="hide"></div>
         <div id="dataPreview" class="hide" style="margin-top:12px">
@@ -124,6 +134,7 @@
           <div class="kpis" id="dataKpis"></div>
           <div class="bar"><i id="uploadBar" style="width:0"></i></div>
           <div class="row" style="margin-top:12px"><button id="btnUpload">Upload contacts</button><span class="muted" id="uploadNote"></span></div>
+        </div>
         </div>
         <div class="row" style="margin-top:14px"><button class="ghost" data-go="1">Back</button><button id="btnStep2" disabled>Continue</button></div>
       </div>
@@ -381,6 +392,27 @@ $('btnUpload').onclick = async () => {
     plan.total_contacts = (plan.total_contacts||0) + tot.added; $('btnStep2').disabled = !plan.total_contacts;
   }catch(e){ show($('wizMsg'),'err',e.message); }
   $('btnUpload').disabled = false;
+};
+// From Supabase
+let audiencesLoaded = false;
+$('dataTabs').querySelectorAll('button').forEach(b => b.onclick = async () => {
+  $('dataTabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('[data-srcpane]').forEach(p => p.classList.toggle('hide', p.dataset.srcpane !== b.dataset.src));
+  if (b.dataset.src === 'base' && !audiencesLoaded){
+    try{ const { audiences } = await call(`${API}/audiences`);
+      $('selAudience').innerHTML = audiences.length ? audiences.map(a => `<option value="${esc(a.key)}">${esc(a.label)} — ${fmt(a.count)} people</option>`).join('') : '<option value="">No audiences found</option>';
+      audiencesLoaded = true;
+    }catch(e){ show($('wizMsg'),'err',e.message); }
+  }
+});
+$('btnLoadBase').onclick = async () => {
+  $('btnLoadBase').disabled = true;
+  try{
+    const { result } = await call(`${API}/plans/${plan.id}/contacts-from-base`,'POST',{audience: $('selAudience').value, limit: Number($('fLimit').value), minScore: $('fMinScore').value});
+    show($('wizMsg'),'ok',`Added ${fmt(result.added)} people. Suppressed or blocked ${fmt(result.suppressed)}.`);
+    plan.total_contacts = (plan.total_contacts||0) + result.added; $('btnStep2').disabled = !plan.total_contacts;
+  }catch(e){ show($('wizMsg'),'err',e.message); }
+  $('btnLoadBase').disabled = false;
 };
 $('btnStep2').onclick = () => gotoStep(3);
 
