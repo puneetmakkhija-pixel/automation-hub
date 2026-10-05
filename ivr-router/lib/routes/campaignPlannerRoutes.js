@@ -18,6 +18,8 @@ import { runPlannerTick, projectSchedule, effectiveWindow } from "../campaignPla
  *   POST /plans                    create a draft (settings)
  *   PATCH /plans/:id               edit a draft's settings
  *   POST /plans/:id/contacts       add a chunk of rows [{mobile,name}] (≤ 10,000 per call)
+ *   GET  /audiences                bases already in Supabase, with counts
+ *   POST /plans/:id/contacts-from-base  {audience, limit, minScore?} random sample from one of them
  *   POST /plans/:id/recording      { audioBase64, ext } | { promptId } | { script }
  *   POST /plans/:id/test-call      { mobiles: [...] } ≤ 5 own numbers, dials now
  *   POST /plans/:id/submit         draft -> pending_approval
@@ -136,6 +138,29 @@ router.post("/plans/:id/contacts", (req, res) =>
     if (rows.length === 0) throw fail(400, "rows is empty");
     if (rows.length > 10000) throw fail(413, "send at most 10,000 rows per call");
     const { data, error } = await sb().rpc("ivr_plan_add_contacts", { p_plan: req.params.id, p_rows: rows });
+    if (error) throw fail(400, error.message);
+    return { result: data };
+  }));
+
+// Audiences already in Supabase (crm.lender_campaign_base), so a plan can be built without a file.
+router.get("/audiences", (_req, res) =>
+  send(res, async () => {
+    const { data, error } = await sb().rpc("ivr_audiences");
+    if (error) throw new Error(error.message);
+    return { audiences: data ?? [] };
+  }));
+
+router.post("/plans/:id/contacts-from-base", (req, res) =>
+  send(res, async () => {
+    const audience = String(req.body?.audience ?? "").trim();
+    const limit = Math.floor(Number(req.body?.limit));
+    if (!audience) throw fail(400, "pick an audience");
+    if (!Number.isFinite(limit) || limit < 1 || limit > 100000) throw fail(400, "limit must be 1 to 100,000");
+    const minScore = req.body?.minScore === "" || req.body?.minScore == null ? null : Number(req.body.minScore);
+    if (minScore !== null && !Number.isFinite(minScore)) throw fail(400, "minScore must be a number");
+    const { data, error } = await sb().rpc("ivr_plan_add_from_base", {
+      p_plan: req.params.id, p_audience: audience, p_limit: limit, p_min_score: minScore,
+    });
     if (error) throw fail(400, error.message);
     return { result: data };
   }));
