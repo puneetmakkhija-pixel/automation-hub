@@ -483,7 +483,7 @@ async function renderReview(){
 }
 $('btnTest').onclick = async () => {
   const mobiles = $('fTest').value.split(/[\s,]+/).filter(Boolean);
-  try{ const r = await call(`${API}/plans/${plan.id}/test-call`,'POST',{mobiles, matrix:true}); const w = r.winner; show($('wizMsg'), w ? 'ok':'err', w ? `Test call queued (variant "${w.variant}"). Your phone should ring in about 2 minutes.` : `The IVR panel refused every compose variant (${(r.matrix||[]).length} tried). Details are in the service log under PLANNER_PROBE.`); }
+  try{ const r = await call(`${API}/plans/${plan.id}/test-call`,'POST',{mobiles}); show($('wizMsg'), r.campaignId ? 'ok':'err', r.campaignId ? `Test call queued (IVR campaign ${r.campaignId}). Your phone should ring in about 2 minutes.` : `The IVR panel did not confirm: ${r.said || 'no message'}`); }
   catch(e){ show($('wizMsg'),'err',e.message); }
 };
 $('btnSubmit').onclick = async () => {

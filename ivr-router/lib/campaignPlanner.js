@@ -1,4 +1,4 @@
-import { createDtmfCampaign } from "./campaignTemplates.js";
+import { createDtmfCampaign, plannerDialConfig } from "./campaignTemplates.js";
 import { buildBaseCsv, recordDispatch } from "./flexiloansCampaignOrchestrator.js";
 
 /**
@@ -189,6 +189,7 @@ async function runPlanBatch(plan, { sb, obd, enabled, now }) {
         ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
         dtmf: plan.dtmf || "1",
         ...(plan.webhook_id ? { webhook: true, webhookId: plan.webhook_id } : {}),
+        ...plannerDialConfig(),
       })
     );
     const campaignId = campaign?.campaignId ?? campaign?.id ?? null;
