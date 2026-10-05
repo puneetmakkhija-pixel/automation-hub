@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import express from "express";
 import SupabaseClient from "../supabaseClient.js";
-import { createDtmfCampaign } from "../campaignTemplates.js";
+import { createDtmfCampaign, obdScheduleTime } from "../campaignTemplates.js";
 import { findPromptId } from "../obdApiClient.js";
 import { buildBaseCsv, obdClient, resolveTestMobiles } from "../flexiloansCampaignOrchestrator.js";
 import { runPlannerTick, projectSchedule, effectiveWindow } from "../campaignPlanner.js";
@@ -26,6 +26,16 @@ import { runPlannerTick, projectSchedule, effectiveWindow } from "../campaignPla
  *   POST /tick                     the hourly run (also what the cron calls)
  */
 const router = express.Router();
+
+// The guesses the server-side probe tries, in order, on each host. Each is a change to one field of the default DTMF campaign payload.
+const PROBE_VARIANTS = [
+  { name: "baseline", config: () => ({}) },
+  { name: "agentRows {}", config: () => ({ agentRows: "{}" }) },
+  { name: "agentRows []", config: () => ({ agentRows: "[]" }) },
+  { name: "clis []", config: () => ({ clis: "[]" }) },
+  { name: "location []", config: () => ({ location: "[]" }) },
+  { name: "scheduleTime +5min, no seconds", config: () => ({ scheduleTime: obdScheduleTime(new Date(), 5).slice(0, 16) }) },
+];
 const sb = () => new SupabaseClient().client.schema("crm");
 
 // The planner's OBD client. PLANNER_OBD_BASE_URL points the planner (and only the planner) at another allowlisted dialler host, because
@@ -188,6 +198,40 @@ router.post("/plans/:id/test-call", (req, res) =>
       ...(plan.webhook_id ? { webhook: true, webhookId: plan.webhook_id } : {}),
       ...(req.body?.campaignConfig ?? {}),
     });
+    // matrix: true runs the whole set of guesses on the server, on the configured host and then on the vendor panel's host, stops at the
+    // first compose that returns a campaign id, and writes every answer to the service log as [PLANNER_PROBE] so the result survives a
+    // browser tool that loses it. Only the 1-5 numbers above are ever dialled, and only if a compose succeeds.
+    if (req.body?.matrix) {
+      const results = [];
+      const note = (row) => { results.push(row); console.log("[PLANNER_PROBE]", JSON.stringify(row)); };
+      const promptId = req.body?.menuPromptId ?? plan.prompt_id;
+      for (const host of [undefined, "https://obd3api.expressivr.com"]) {
+        const o = plannerObd(host);
+        let id;
+        try {
+          const b = await o.uploadBaseFile(buildBaseCsv(mobiles.map((m) => ({ mobile10: m }))), `TEST_${Date.now()}`, "", "csv");
+          id = b?.baseId ?? b?.id;
+          if (!id) { note({ host: o.baseUrl, step: "base upload", error: `no id (${b?.message ?? "no message"})` }); continue; }
+        } catch (e) { note({ host: o.baseUrl, step: "base upload", error: String(e?.message ?? e).slice(0, 300) }); continue; }
+        for (const v of PROBE_VARIANTS) {
+          const cfg = createDtmfCampaign({
+            campaignName: `TEST_${Date.now()}`, baseId: id, menuPromptId: promptId, dtmf: plan.dtmf || "1",
+            ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
+            ...v.config(),
+          });
+          let row;
+          try {
+            const r = await o.composeCampaignRaw(cfg);
+            let body = null; try { body = r.text ? JSON.parse(r.text) : null; } catch { /* not JSON */ }
+            const composed = r.ok && Boolean(body?.campaignId ?? body?.id);
+            row = { host: o.baseUrl, variant: v.name, status: r.status, composed, body: (r.text ?? "").slice(0, 300) };
+          } catch (e) { row = { host: o.baseUrl, variant: v.name, error: String(e?.message ?? e).slice(0, 300) }; }
+          note(row);
+          if (row.composed) return { matrix: results, winner: { host: row.host, variant: row.variant }, mobiles };
+        }
+      }
+      return { matrix: results, winner: null, mobiles };
+    }
     if (req.body?.raw) {
       const r = await obd.composeCampaignRaw(config);
       return { composed: r.ok, status: r.status, body_raw: r.text, host: obd.baseUrl, baseId, sent: r.payload, mobiles };
