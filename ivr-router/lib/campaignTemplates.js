@@ -113,6 +113,26 @@ export function createSimpleIvrCampaign(config) {
  * DTMF Campaign Template
  * Interactive campaign with DTMF (phone keypad) input
  */
+/**
+ * What the dialler accepts for a planner campaign, found with the compose probe
+ * on 2026-10-05 (variant "Mumbai + retries 0/0" was the first to compose):
+ *  - `location` must carry a NON-EMPTY locationList of real location ids
+ *    (id 1 = Mumbai, the vendor's own example). An empty list is a bare HTTP 400;
+ *    ids 0 ("All") and "All India" answer "Invalid Location Id".
+ *  - the top-level `locationList` field must be left out;
+ *  - retries and retryInterval must both be 0 ("Please change values of
+ *    retries / retryInterval") -- which also means nobody is re-dialled.
+ * Override the location with OBD_LOCATION_LIST (a JSON string for `location`).
+ */
+export function plannerDialConfig() {
+  return {
+    location: process.env.OBD_LOCATION_LIST || '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}',
+    omitLocationList: true,
+    retries: 0,
+    retryInterval: 0,
+  };
+}
+
 export function createDtmfCampaign(config) {
   return {
     campaignName: config.campaignName,
@@ -146,7 +166,7 @@ export function createDtmfCampaign(config) {
     // object-shaped ones (location, smsSuccessApi). A field called
     // locationList is a list. An empty one is "no location filter", which is
     // what a nationwide campaign wants.
-    locationList: config.locationList || '[]',
+    ...(config.omitLocationList ? {} : { locationList: config.locationList || '[]' }),
     clis: config.clis || '',
     webhook: config.webhook || false,
     webhookId: config.webhookId || '',

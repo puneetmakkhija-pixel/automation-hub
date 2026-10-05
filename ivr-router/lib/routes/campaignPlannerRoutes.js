@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import express from "express";
 import SupabaseClient from "../supabaseClient.js";
-import { createDtmfCampaign, obdScheduleTime } from "../campaignTemplates.js";
+import { createDtmfCampaign, obdScheduleTime, plannerDialConfig } from "../campaignTemplates.js";
 import { findPromptId } from "../obdApiClient.js";
 import { buildBaseCsv, obdClient, resolveTestMobiles } from "../flexiloansCampaignOrchestrator.js";
 import { runPlannerTick, projectSchedule, effectiveWindow } from "../campaignPlanner.js";
@@ -210,6 +210,7 @@ router.post("/plans/:id/test-call", (req, res) =>
       campaignName: name, baseId, menuPromptId: req.body?.menuPromptId ?? plan.prompt_id, dtmf: plan.dtmf || "1",
       ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
       ...(plan.webhook_id ? { webhook: true, webhookId: plan.webhook_id } : {}),
+      ...plannerDialConfig(),
       ...(req.body?.campaignConfig ?? {}),
     });
     // matrix: true runs the whole set of guesses on the server, on the configured host and then on the vendor panel's host, stops at the

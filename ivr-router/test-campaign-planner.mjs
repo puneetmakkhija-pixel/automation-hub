@@ -173,3 +173,14 @@ test("outside window: no batch row at all", async () => {
   assert.match(r.plans[0].skipped, /outside/);
   assert.equal(state.batches.length, 0);
 });
+
+import { plannerDialConfig, createDtmfCampaign as _mk } from "./lib/campaignTemplates.js";
+test("planner compose payload matches what the dialler accepted in the probe", () => {
+  const cfg = _mk({ campaignName: "C", baseId: "b", menuPromptId: "p", ...plannerDialConfig() });
+  assert.equal(cfg.retries, 0);
+  assert.equal(cfg.retryInterval, 0);
+  assert.ok(!("locationList" in cfg), "top-level locationList is left out");
+  const loc = JSON.parse(cfg.location);
+  assert.ok(loc.locationList.length > 0, "location carries a non-empty list");
+  assert.ok(loc.locationList.every((l) => l.locationId > 0), "id 0 is rejected by the dialler");
+});
