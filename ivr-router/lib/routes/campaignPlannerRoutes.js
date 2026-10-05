@@ -34,6 +34,9 @@ const PROBE_VARIANTS = [
   { name: "agentRows []", config: () => ({ agentRows: "[]" }) },
   { name: "clis []", config: () => ({ clis: "[]" }) },
   { name: "location []", config: () => ({ location: "[]" }) },
+  { name: "location Mumbai (vendor example)", config: () => ({ location: '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}' }), drop: ["locationList"] },
+  { name: "location id 0 All", config: () => ({ location: '{"locationList":[{"locationId":0,"locationName":"All"}]}' }), drop: ["locationList"] },
+  { name: "location id 0 All India", config: () => ({ location: '{"locationList":[{"locationId":0,"locationName":"All India"}]}' }), drop: ["locationList"] },
   { name: "location as documented", config: () => ({ location: '{"locationList":[]}' }) },
   { name: "location as documented, no locationList", config: () => ({ location: '{"locationList":[]}' }), drop: ["locationList"] },
   { name: "drop agentRows+clis+ttsRows", config: () => ({}), drop: ["agentRows", "clis", "ttsRows"] },
@@ -223,6 +226,18 @@ router.post("/plans/:id/test-call", (req, res) =>
         approvedId = ok ? idOf(ok) : null;
         note({ step: "approved menu prompt", id: approvedId, file: ok?.fileName ?? null });
       } catch (e) { note({ step: "prompt list", error: String(e?.message ?? e).slice(0, 300) }); }
+      // Read-only: the dialler said "locationList is empty", so look for the endpoint that lists valid locations.
+      try {
+        const o = plannerObd();
+        await o.ensureToken();
+        for (const path of ["locations", "location", "location/list", "locationList", "locations/list", "campaign/locations", "campaign/location", "circles", "states"]) {
+          for (const tail of ["", `/${o.userId}`]) {
+            const r = await fetch(`${o.baseUrl}/api/obd/${path}${tail}`, { headers: o.getAuthHeader() }).catch((e) => ({ status: 0, text: async () => String(e) }));
+            const t = r.status === 404 ? "" : (await r.text().catch(() => "")).slice(0, 400);
+            if (r.status !== 404) note({ step: "location endpoint", path: path + tail, status: r.status, body: t });
+          }
+        }
+      } catch (e) { note({ step: "location endpoint", error: String(e?.message ?? e).slice(0, 200) }); }
       const variants = approvedId
         ? [{ name: "approved menu prompt " + approvedId, config: () => ({ menuPromptId: approvedId }) }, ...PROBE_VARIANTS]
         : PROBE_VARIANTS;
