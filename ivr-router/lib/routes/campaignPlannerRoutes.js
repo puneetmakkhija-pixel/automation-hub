@@ -28,6 +28,11 @@ import { runPlannerTick, projectSchedule, effectiveWindow } from "../campaignPla
 const router = express.Router();
 const sb = () => new SupabaseClient().client.schema("crm");
 
+// The planner's OBD client. PLANNER_OBD_BASE_URL points the planner (and only the planner) at another allowlisted dialler host, because
+// the dialler's own panel talks to obd3api.expressivr.com while the default host answers compose with an empty HTTP 400. An explicit
+// override (the probe below) wins; both are checked against OBD_ALLOWED_HOSTS inside obdClient.
+export const plannerObd = (override) => obdClient(override ?? (process.env.PLANNER_OBD_BASE_URL || undefined));
+
 const PLAN_FIELDS = ["name", "lender", "variant", "dtmf", "webhook_id", "batch_size", "window_start",
   "window_end", "days_of_week", "start_date", "end_date"];
 
@@ -115,7 +120,7 @@ router.post("/plans/:id/recording", (req, res) =>
   send(res, async () => {
     const plan = await loadPlan(req.params.id);
     if (!["draft", "paused"].includes(plan.status)) throw fail(409, "recording can only change on a draft or paused plan");
-    const obd = obdClient();
+    const obd = plannerObd();
     // "thanks" is the optional message played after the key is pressed; the default slot is the menu prompt.
     const slot = req.body?.slot === "thanks" ? "thanks" : "menu";
     let promptId = null, promptName = null, source = null;
@@ -169,16 +174,25 @@ router.post("/plans/:id/test-call", (req, res) =>
     if (!plan.prompt_id) throw fail(409, "add a recording first");
     const mobiles = resolveTestMobiles(req.body?.mobiles);
     if (mobiles.length === 0 || mobiles.length > 5) throw fail(400, "give 1–5 valid ten-digit mobiles you own");
-    const obd = obdClient();
+    // Optional probe fields, for finding out why the dialler refuses a compose without a deploy per guess: baseUrl (an allowlisted host),
+    // menuPromptId, and campaignConfig (any createDtmfCampaign field). With `raw: true` the dialler's own status and body come back
+    // instead of a thrown error. It still only ever dials the 1-5 numbers above.
+    const obd = plannerObd(req.body?.baseUrl);
     const name = `TEST_${Date.now()}`;
     const base = await obd.uploadBaseFile(buildBaseCsv(mobiles.map((m) => ({ mobile10: m }))), name, "", "csv");
     const baseId = base?.baseId ?? base?.id;
     if (!baseId) throw new Error(`base upload returned no id (${base?.message ?? "no message"})`);
-    const campaign = await obd.composeCampaign(createDtmfCampaign({
-      campaignName: name, baseId, menuPromptId: plan.prompt_id, dtmf: plan.dtmf || "1",
+    const config = createDtmfCampaign({
+      campaignName: name, baseId, menuPromptId: req.body?.menuPromptId ?? plan.prompt_id, dtmf: plan.dtmf || "1",
       ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
       ...(plan.webhook_id ? { webhook: true, webhookId: plan.webhook_id } : {}),
-    }));
+      ...(req.body?.campaignConfig ?? {}),
+    });
+    if (req.body?.raw) {
+      const r = await obd.composeCampaignRaw(config);
+      return { composed: r.ok, status: r.status, body_raw: r.text, host: obd.baseUrl, baseId, sent: r.payload, mobiles };
+    }
+    const campaign = await obd.composeCampaign(config);
     return { campaignId: campaign?.campaignId ?? campaign?.id ?? null, said: campaign?.message ?? null, mobiles };
   }));
 
@@ -212,6 +226,6 @@ router.post("/plans/:id/cancel", (req, res) =>
   send(res, () => setStatus(req.params.id, ["draft", "pending_approval", "approved", "running", "paused"], "cancelled")));
 
 router.post("/tick", (req, res) =>
-  send(res, async () => ({ tick: await runPlannerTick({ sb: sb(), obd: obdClient() }, { planId: req.body?.planId }) })));
+  send(res, async () => ({ tick: await runPlannerTick({ sb: sb(), obd: plannerObd() }, { planId: req.body?.planId }) })));
 
 export default router;

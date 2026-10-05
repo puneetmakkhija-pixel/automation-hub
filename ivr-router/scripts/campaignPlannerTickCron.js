@@ -2,6 +2,9 @@ import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
 import SupabaseClient from "../lib/supabaseClient.js";
 import { obdClient } from "../lib/flexiloansCampaignOrchestrator.js";
+
+// Same host choice as the panel's backend (lib/routes/campaignPlannerRoutes.js plannerObd).
+const plannerObd = () => obdClient(process.env.PLANNER_OBD_BASE_URL || undefined);
 import { runPlannerTick } from "../lib/campaignPlanner.js";
 
 // Hourly batches for the IVR campaign planner (lib/campaignPlanner.js).
@@ -9,7 +12,7 @@ import { runPlannerTick } from "../lib/campaignPlanner.js";
 // in IST itself), built from Dockerfile.campaign-planner-cron. Safe to overlap:
 // one batch per plan per IST hour is enforced by a unique index.
 async function main() {
-  const result = await runPlannerTick({ sb: new SupabaseClient().client.schema("crm"), obd: obdClient() });
+  const result = await runPlannerTick({ sb: new SupabaseClient().client.schema("crm"), obd: plannerObd() });
   console.log(`[campaign-planner-cron] ${JSON.stringify(result)}`);
 }
 
