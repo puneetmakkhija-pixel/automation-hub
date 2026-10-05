@@ -205,7 +205,23 @@ router.post("/plans/:id/test-call", (req, res) =>
       const results = [];
       const note = (row) => { results.push(row); console.log("[PLANNER_PROBE]", JSON.stringify(row)); };
       const promptId = req.body?.menuPromptId ?? plan.prompt_id;
-      for (const host of [undefined, "https://obd3api.expressivr.com"]) {
+      // The vendor's API document says an uploaded prompt waits for "Admin Approval" (promptStatus), so first show where our prompt stands
+      // and find an already-approved menu prompt to compose with as the first variant.
+      let approvedId = null;
+      try {
+        const list = await plannerObd().getVoiceFiles();
+        const arr = Array.isArray(list) ? list : list?.prompts ?? list?.data ?? list?.result ?? [];
+        const idOf = (p) => String(p?.promptId ?? p?.id ?? "");
+        const ours = arr.find((p) => idOf(p) === String(promptId));
+        note({ step: "prompt list", total: arr.length, ours: ours ? { id: idOf(ours), category: ours.promptCategory ?? ours.category, file: ours.fileName, status: ours.promptStatus } : "not in list" });
+        const ok = arr.find((p) => (p.promptCategory ?? p.category) === "menu" && Number(p.promptStatus) === 1 && idOf(p) !== String(promptId));
+        approvedId = ok ? idOf(ok) : null;
+        note({ step: "approved menu prompt", id: approvedId, file: ok?.fileName ?? null });
+      } catch (e) { note({ step: "prompt list", error: String(e?.message ?? e).slice(0, 300) }); }
+      const variants = approvedId
+        ? [{ name: "approved menu prompt " + approvedId, config: () => ({ menuPromptId: approvedId }) }, ...PROBE_VARIANTS]
+        : PROBE_VARIANTS;
+      for (const host of [undefined]) {
         const o = plannerObd(host);
         let id;
         try {
@@ -213,7 +229,7 @@ router.post("/plans/:id/test-call", (req, res) =>
           id = b?.baseId ?? b?.id;
           if (!id) { note({ host: o.baseUrl, step: "base upload", error: `no id (${b?.message ?? "no message"})` }); continue; }
         } catch (e) { note({ host: o.baseUrl, step: "base upload", error: String(e?.message ?? e).slice(0, 300) }); continue; }
-        for (const v of PROBE_VARIANTS) {
+        for (const v of variants) {
           const cfg = createDtmfCampaign({
             campaignName: `TEST_${Date.now()}`, baseId: id, menuPromptId: promptId, dtmf: plan.dtmf || "1",
             ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
