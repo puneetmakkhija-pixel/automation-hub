@@ -13,8 +13,16 @@ first_word="$(printf '%s' "$query" \
   | sed -E 's/^[[:space:](]+//' \
   | awk '{print toupper($1)}')"
 
+# A read-only start is not enough: "WITH x AS (DELETE ...)" and "SELECT 1; DELETE ..."
+# both begin harmlessly. Anything that mentions a write keyword as a whole word
+# (so updated_at / created_at do not count) is asked about, whatever it starts with.
+writes='(insert|update|delete|merge|drop|alter|create|truncate|grant|revoke|copy|vacuum|call|do)'
+if printf '%s' "$query" | tr '[:upper:]' '[:lower:]' | grep -Eq "(^|[^a-z0-9_])${writes}([^a-z0-9_]|$)"; then
+  first_word="WRITE"
+fi
+
 case "$first_word" in
-  SELECT|SHOW|EXPLAIN|DESC|DESCRIBE|"")
+  SELECT|WITH|SHOW|EXPLAIN|DESC|DESCRIBE|"")
     decision="allow"
     reason="Read-only SQL"
     ;;
