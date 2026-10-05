@@ -34,6 +34,11 @@ const PROBE_VARIANTS = [
   { name: "agentRows []", config: () => ({ agentRows: "[]" }) },
   { name: "clis []", config: () => ({ clis: "[]" }) },
   { name: "location []", config: () => ({ location: "[]" }) },
+  { name: "location as documented", config: () => ({ location: '{"locationList":[]}' }) },
+  { name: "location as documented, no locationList", config: () => ({ location: '{"locationList":[]}' }), drop: ["locationList"] },
+  { name: "drop agentRows+clis+ttsRows", config: () => ({}), drop: ["agentRows", "clis", "ttsRows"] },
+  { name: "drop every empty field", config: () => ({}), drop: "empty" },
+  { name: "baseId as number", config: () => ({}), after: (c) => ({ ...c, baseId: Number(c.baseId) }) },
   { name: "scheduleTime +5min, no seconds", config: () => ({ scheduleTime: obdScheduleTime(new Date(), 5).slice(0, 16) }) },
 ];
 const sb = () => new SupabaseClient().client.schema("crm");
@@ -230,11 +235,14 @@ router.post("/plans/:id/test-call", (req, res) =>
           if (!id) { note({ host: o.baseUrl, step: "base upload", error: `no id (${b?.message ?? "no message"})` }); continue; }
         } catch (e) { note({ host: o.baseUrl, step: "base upload", error: String(e?.message ?? e).slice(0, 300) }); continue; }
         for (const v of variants) {
-          const cfg = createDtmfCampaign({
+          let cfg = createDtmfCampaign({
             campaignName: `TEST_${Date.now()}`, baseId: id, menuPromptId: promptId, dtmf: plan.dtmf || "1",
             ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
             ...v.config(),
           });
+          if (v.drop === "empty") cfg = Object.fromEntries(Object.entries(cfg).filter(([, x]) => x !== "" && x !== undefined));
+          else if (v.drop) for (const k of v.drop) delete cfg[k];
+          if (v.after) cfg = v.after(cfg);
           let row;
           try {
             const r = await o.composeCampaignRaw(cfg);
