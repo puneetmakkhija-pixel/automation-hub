@@ -143,6 +143,15 @@
           <textarea id="fScript" rows="5">नमस्ते। मैं Buddy Loan से बोल रही हूँ। आपके बिज़नेस के लिए बिना गारंटी का बिज़नेस लोन अप्रूव हो सकता है। जानने के लिए अभी एक दबाइए।</textarea>
         </div>
         <div class="row" style="margin-top:12px"><button id="btnRec">Save recording</button><span class="muted" id="recNote"></span></div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid #e3e8e6">
+          <b>Thank-you message after the key is pressed</b> <span class="muted">(optional — plays once the customer presses the key)</span>
+          <div class="tabs" id="thxTabs" style="margin-top:8px"><button class="on" data-thx="upload">Upload</button><button data-thx="existing">Use an existing IVR prompt</button><button data-thx="tts">Generate from script</button></div>
+          <div data-thxpane="upload"><input type="file" id="fileThx" accept=".wav,.mp3,audio/wav,audio/mpeg"><span class="muted"> 8 kHz mono WAV plays best. Max 10 MB.</span></div>
+          <div data-thxpane="existing" class="hide"><label for="selThx">Prompts already on the IVR panel</label><select id="selThx"><option value="">Loading…</option></select></div>
+          <div data-thxpane="tts" class="hide"><label for="fThxScript">Script — it will be voiced and uploaded to the IVR panel</label>
+            <textarea id="fThxScript" rows="3">धन्यवाद। हमारी टीम जल्द ही आपसे संपर्क करेगी।</textarea></div>
+          <div class="row" style="margin-top:10px"><button id="btnThx" class="ghost">Save thank-you message</button><span class="muted" id="thxNote"></span></div>
+        </div>
         <div class="row" style="margin-top:14px"><button class="ghost" data-go="2">Back</button><button id="btnStep3" disabled>Continue</button></div>
       </div>
 
@@ -403,6 +412,33 @@ $('btnRec').onclick = async () => {
     plan.prompt_id = r.prompt_id; plan.prompt_name = r.prompt_name; $('recNote').textContent = `Saved: ${r.prompt_name || r.prompt_id}`; $('btnStep3').disabled = false;
   }catch(e){ $('recNote').textContent = ''; show($('wizMsg'),'err',e.message); }
   $('btnRec').disabled = false;
+};
+// optional thank-you message (the second recording slot)
+let thxMode = 'upload';
+$('thxTabs').querySelectorAll('button').forEach(b => b.onclick = () => { thxMode = b.dataset.thx;
+  $('thxTabs').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('[data-thxpane]').forEach(p => p.classList.toggle('hide', p.dataset.thxpane !== thxMode));
+  if (thxMode === 'existing') loadThxPrompts(); });
+async function loadThxPrompts(){
+  try{ const d = await call('/api/obd/voices'); const list = Array.isArray(d) ? d : d.prompts || d.data || d.voices || d.result || [];
+    $('selThx').innerHTML = '<option value="">Choose…</option>' + list.map(p => { const id = p.promptId ?? p.id ?? p.prompt_id; const n = p.fileName ?? p.promptName ?? p.name ?? id;
+      return `<option value="${esc(id)}" data-name="${esc(n)}">${esc(n)}${p.category ? ' · '+esc(p.category) : ''}</option>`; }).join(''); }
+  catch(e){ $('selThx').innerHTML = `<option value="">Could not load prompts (${esc(e.message)})</option>`; }
+}
+$('btnThx').onclick = async () => {
+  $('btnThx').disabled = true; $('thxNote').textContent = 'Uploading to the IVR panel…';
+  try{
+    let body = { slot: 'thanks' };
+    if (thxMode === 'upload'){ const f = $('fileThx').files[0]; if (!f) throw new Error('Choose a thank-you recording first.');
+      if (!/\.(wav|mp3)$/i.test(f.name)) throw new Error('Choose a .wav or .mp3 file.');
+      const b64 = await new Promise((ok,no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1]); r.onerror = no; r.readAsDataURL(f); });
+      body = { ...body, audioBase64: b64, ext: f.name.split('.').pop().toLowerCase() }; }
+    else if (thxMode === 'existing'){ const o = $('selThx').selectedOptions[0]; if (!o?.value) throw new Error('Pick a prompt.'); body = { ...body, promptId: o.value, promptName: o.dataset.name }; }
+    else { body = { ...body, script: $('fThxScript').value.trim() }; if (!body.script) throw new Error('Write the thank-you script.'); }
+    const r = await call(`${API}/plans/${plan.id}/recording`,'POST',body);
+    plan.thanks_prompt_id = r.prompt_id; plan.thanks_prompt_name = r.prompt_name; $('thxNote').textContent = `Saved: ${r.prompt_name || r.prompt_id}`;
+  }catch(e){ $('thxNote').textContent = ''; show($('wizMsg'),'err',e.message); }
+  $('btnThx').disabled = false;
 };
 $('btnStep3').onclick = () => gotoStep(4);
 
