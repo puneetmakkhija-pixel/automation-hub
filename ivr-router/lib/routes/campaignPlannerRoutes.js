@@ -116,6 +116,8 @@ router.post("/plans/:id/recording", (req, res) =>
     const plan = await loadPlan(req.params.id);
     if (!["draft", "paused"].includes(plan.status)) throw fail(409, "recording can only change on a draft or paused plan");
     const obd = obdClient();
+    // "thanks" is the optional message played after the key is pressed; the default slot is the menu prompt.
+    const slot = req.body?.slot === "thanks" ? "thanks" : "menu";
     let promptId = null, promptName = null, source = null;
 
     if (req.body?.promptId) {
@@ -141,9 +143,9 @@ router.post("/plans/:id/recording", (req, res) =>
         ext = "mp3";
         source = "tts";
       }
-      promptName = `${String(plan.name).toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 24)}_${Date.now().toString().slice(-6)}`;
-      // "menu": the prompt asks for a keypress (see flexiloansCampaignOrchestrator).
-      const up = await obd.uploadVoiceFile(audio, `${promptName}.${ext}`, "menu", ext);
+      promptName = `${String(plan.name).toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 24)}${slot === "thanks" ? "_THANKS" : ""}_${Date.now().toString().slice(-6)}`;
+      // "menu": the prompt asks for a keypress (see flexiloansCampaignOrchestrator). "thanks": the message after it.
+      const up = await obd.uploadVoiceFile(audio, `${promptName}.${ext}`, slot, ext);
       promptId = up?.promptId ?? up?.id ?? findPromptId(await obd.getVoiceFiles(), promptName);
       if (!promptId) throw new Error(`OBD did not return a prompt id (${up?.message ?? "no message"})`);
       promptId = String(promptId);
@@ -151,11 +153,14 @@ router.post("/plans/:id/recording", (req, res) =>
       throw fail(400, "send audioBase64+ext, promptId, or script");
     }
 
+    const patch = slot === "thanks"
+      ? { thanks_prompt_id: promptId, thanks_prompt_name: promptName }
+      : { prompt_id: promptId, prompt_name: promptName, recording_source: source };
     const { error } = await sb().from("ivr_plan")
-      .update({ prompt_id: promptId, prompt_name: promptName, recording_source: source, updated_at: new Date().toISOString() })
+      .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", plan.id);
     if (error) throw new Error(error.message);
-    return { prompt_id: promptId, prompt_name: promptName, source };
+    return { slot, prompt_id: promptId, prompt_name: promptName, source };
   }));
 
 router.post("/plans/:id/test-call", (req, res) =>
@@ -171,6 +176,7 @@ router.post("/plans/:id/test-call", (req, res) =>
     if (!baseId) throw new Error(`base upload returned no id (${base?.message ?? "no message"})`);
     const campaign = await obd.composeCampaign(createDtmfCampaign({
       campaignName: name, baseId, menuPromptId: plan.prompt_id, dtmf: plan.dtmf || "1",
+      ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
       ...(plan.webhook_id ? { webhook: true, webhookId: plan.webhook_id } : {}),
     }));
     return { campaignId: campaign?.campaignId ?? campaign?.id ?? null, said: campaign?.message ?? null, mobiles };

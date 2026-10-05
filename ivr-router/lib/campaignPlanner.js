@@ -186,6 +186,7 @@ async function runPlanBatch(plan, { sb, obd, enabled, now }) {
         campaignName: name,
         baseId,
         menuPromptId: plan.prompt_id,
+        ...(plan.thanks_prompt_id ? { thanksPromptId: plan.thanks_prompt_id } : {}),
         dtmf: plan.dtmf || "1",
         ...(plan.webhook_id ? { webhook: true, webhookId: plan.webhook_id } : {}),
       })

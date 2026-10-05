@@ -112,6 +112,15 @@ test("tick dials one batch of batch_size, marks dispatched, sets running", async
   assert.equal(compose.dtmf, "1");
 });
 
+test("a plan with a thank-you recording passes it to the campaign; one without sends an empty slot", async () => {
+  for (const [plan, want] of [[basePlan({ thanks_prompt_id: "55" }), "55"], [basePlan(), ""]]) {
+    const { sb } = fakeWorld({ plans: [plan], contacts: ["9000000001", "9000000002"] });
+    const obd = goodObd();
+    await runPlannerTick({ sb, obd, env: ON, now: () => MON_NOON });
+    assert.equal(obd.calls.find((c) => c[0] === "compose")[1].thanksPId, want);
+  }
+});
+
 test("second tick in the same IST hour does nothing", async () => {
   const { sb } = fakeWorld({ plans: [basePlan()], contacts: ["9000000001", "9000000002", "9000000003", "9000000004"] });
   await runPlannerTick({ sb, obd: goodObd(), env: ON, now: () => MON_NOON });
