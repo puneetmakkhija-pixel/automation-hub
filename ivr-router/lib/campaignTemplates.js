@@ -68,8 +68,8 @@ export function createSimpleIvrCampaign(config) {
     smsFailApi: config.smsFailApi || '{}',
     smsDtmfApi: config.smsDtmfApi || '{}',
     callDurationSMS: config.callDurationSMS || 0,
-    retries: config.retries || 2,
-    retryInterval: config.retryInterval || 10,
+    retries: config.retries ?? 2,
+    retryInterval: config.retryInterval ?? 10,
     // '""' is a JSON-encoded EMPTY STRING, and it is a guess that has never
     // been tested. createCallPatchCampaign -- written by someone who knew the
     // shape -- sends JSON.stringify({patchList: [...]}), an object. These two
@@ -129,8 +129,8 @@ export function createDtmfCampaign(config) {
     smsFailApi: config.smsFailApi || '{}',
     smsDtmfApi: config.smsDtmfApi || '{}',
     callDurationSMS: config.callDurationSMS || 0,
-    retries: config.retries || 2,
-    retryInterval: config.retryInterval || 10,
+    retries: config.retries ?? 2,
+    retryInterval: config.retryInterval ?? 10,
     // See the note in createSimpleIvrCampaign: a guess, made overridable so it
     // can be probed rather than redeployed per shape.
     agentRows: config.agentRows ?? '""',
@@ -179,8 +179,8 @@ export function createCallPatchCampaign(config) {
     smsFailApi: config.smsFailApi || '{}',
     smsDtmfApi: config.smsDtmfApi || '{}',
     callDurationSMS: config.callDurationSMS || 0,
-    retries: config.retries || 2,
-    retryInterval: config.retryInterval || 10,
+    retries: config.retries ?? 2,
+    retryInterval: config.retryInterval ?? 10,
     agentRows:
       config.agentRows ??
       JSON.stringify({

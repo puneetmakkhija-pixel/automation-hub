@@ -30,6 +30,12 @@ const router = express.Router();
 // The guesses the server-side probe tries, in order, on each host. Each is a change to one field of the default DTMF campaign payload.
 const PROBE_VARIANTS = [
   { name: "baseline", config: () => ({}) },
+  // Mumbai (id 1) got past the location check; the dialler then said "change values of retries: 0, retryInterval: 0".
+  { name: "Mumbai + retries 0/0", config: () => ({ location: '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}', retries: 0, retryInterval: 0 }), drop: ["locationList"] },
+  { name: "Mumbai + retries '0'/'0'", config: () => ({ location: '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}', retries: "0", retryInterval: "0" }), drop: ["locationList"] },
+  { name: "Mumbai + retries 1/30", config: () => ({ location: '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}', retries: 1, retryInterval: 30 }), drop: ["locationList"] },
+  { name: "Mumbai + retries 3/60", config: () => ({ location: '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}', retries: 3, retryInterval: 60 }), drop: ["locationList"] },
+  { name: "Mumbai + no retry fields", config: () => ({ location: '{"locationList":[{"locationId":1,"locationName":"Mumbai"}]}' }), drop: ["locationList", "retries", "retryInterval"] },
   { name: "agentRows {}", config: () => ({ agentRows: "{}" }) },
   { name: "agentRows []", config: () => ({ agentRows: "[]" }) },
   { name: "clis []", config: () => ({ clis: "[]" }) },
