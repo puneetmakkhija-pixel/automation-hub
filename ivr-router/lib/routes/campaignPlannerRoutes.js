@@ -165,6 +165,17 @@ router.post("/plans/:id/contacts-from-base", (req, res) =>
     return { result: data };
   }));
 
+// Prompts and webhooks already on the dialler's panel, for the recording and
+// schedule steps' dropdowns. These proxy the same plannerObd() client
+// /plans/:id/recording already uses — not a copy of /api/obd's own
+// /voices and /webhooks, which hit the default (unoverridden) OBD host and
+// so can list prompts this plan's own host (PLANNER_OBD_BASE_URL) doesn't have.
+router.get("/voices", (_req, res) =>
+  send(res, async () => ({ voices: await plannerObd().getVoiceFiles() })));
+
+router.get("/webhooks", (_req, res) =>
+  send(res, async () => ({ webhooks: await plannerObd().getWebhooks() })));
+
 router.post("/plans/:id/recording", (req, res) =>
   send(res, async () => {
     const plan = await loadPlan(req.params.id);
