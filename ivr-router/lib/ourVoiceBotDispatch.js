@@ -94,6 +94,63 @@ export function handledByOurBot(variant, env = process.env) {
 }
 
 /**
+ * ── THE FLEXI CAMPAIGN ───────────────────────────────────────────────────────
+ *
+ * variant alone cannot tell one businessloans campaign from another -- every
+ * campaign launched through the planner dials the same `businessloans` press-1
+ * flow (confirmed against crm.whatsapp_messages.metadata: dozens of distinct
+ * campaign_name values, e.g. "1_LAKH_FLEXI_B1_2026100516", all under
+ * variant=businessloans). campaign_name IS reliably present on a real press,
+ * carried on `body` all the way from handleKeypress, so this is what tells the
+ * Flexiloans campaign apart from the rest of the book.
+ *
+ * A substring match, not exact: the planner's display name ("Flexiloans_
+ * Oct2026_FullBase") and the batch id actually stamped on a press
+ * (precedent: "1_LAKH_FLEXI_B1_...") are not provably the same string, and an
+ * exact match that misses silently sends the whole campaign to Priya's capped
+ * share instead -- the quiet failure mode. Configurable because a campaign
+ * gets relaunched under a new name/date; verify the real stamped value once
+ * the first batch actually dials (`metadata->>'campaign_name'` on a fresh
+ * crm.whatsapp_messages row for digit=1) and tighten OUR_BOT_FLEXI_CAMPAIGN_MATCH
+ * if "flexi" alone is ever too broad.
+ */
+export function flexiCampaignMatch(env = process.env) {
+  const raw = String(env.OUR_BOT_FLEXI_CAMPAIGN_MATCH ?? "").trim().toLowerCase();
+  return raw || "flexi";
+}
+
+/** Does this press's campaign belong to the dedicated Flexiloans voice bot? */
+export function isFlexiCampaignPress(campaignName, env = process.env) {
+  const got = String(campaignName ?? "").trim().toLowerCase();
+  return Boolean(got) && got.includes(flexiCampaignMatch(env));
+}
+
+const IST_OFFSET_MINUTES = 5.5 * 60;
+
+function istHourOfDay(now) {
+  const ist = new Date(now.getTime() + IST_OFFSET_MINUTES * 60000);
+  return ist.getUTCHours() + ist.getUTCMinutes() / 60;
+}
+
+/**
+ * The Flexi campaign's own calling window — 10:00 to 20:00 IST, start
+ * inclusive, end exclusive, the window given directly for this campaign.
+ *
+ * Deliberately NOT a change to lib/telephony/calling-hours.ts or
+ * supabase/functions/_shared/calling-hours.ts: both had enforcement removed
+ * 29 Sep 2026 on the owner's own earlier explicit instruction, for Priya and
+ * Oriserve's existing traffic, and this does not reverse that. It is a new,
+ * narrower rule for this one campaign, checked here because journey-run's own
+ * copy of the check is the global one that is currently off.
+ */
+export function withinFlexiCallingHours(now = new Date(), env = process.env) {
+  const start = Number(env.OUR_BOT_FLEXI_START_HOUR ?? 10);
+  const end = Number(env.OUR_BOT_FLEXI_END_HOUR ?? 20);
+  const h = istHourOfDay(now);
+  return h >= start && h < end;
+}
+
+/**
  * Which bot takes this press, and under which experiment label.
  *
  * Without BOT_SPLIT_MODE=split this IS handledByOurBot(): same answer for every
@@ -108,10 +165,15 @@ export function handledByOurBot(variant, env = process.env) {
  *
  * Still exactly one bot per press. The arm only picks which one.
  *
- * @returns {{ours: boolean, arm: 'ours'|'oriserve'|null, voiceVariant: 'A'|'B'|null}}
+ * @returns {{ours: boolean, arm: 'ours'|'oriserve'|null, voiceVariant: 'A'|'B'|null, voiceBot: 'flexi'|null}}
  */
-export function routePress({ variant, mobile, digit } = {}, env = process.env, oriDials = oriDialsVariant) {
-  const byFlag = { ours: handledByOurBot(variant, env), arm: null, voiceVariant: null };
+export function routePress({ variant, mobile, digit, campaignName } = {}, env = process.env, oriDials = oriDialsVariant) {
+  // Which AGENT, not which voice of the same agent -- answers a different
+  // question than the A/B arm below, and applies however that question is
+  // decided (flag or split), so it is computed once up front.
+  const voiceBot = isFlexiCampaignPress(campaignName, env) ? "flexi" : null;
+
+  const byFlag = { ours: handledByOurBot(variant, env), arm: null, voiceVariant: null, voiceBot };
   if (!splitModeOn(env)) return byFlag;
   if (String(digit ?? "").trim() !== "1") return byFlag;
 
@@ -127,6 +189,7 @@ export function routePress({ variant, mobile, digit } = {}, env = process.env, o
     ours: arm === "ours",
     arm,
     voiceVariant: arm === "ours" ? voiceVariantFor(mobile, env) : null,
+    voiceBot,
   };
 }
 
@@ -162,6 +225,34 @@ function overflowToOriserve(body, { digit, variant, arm = null } = {}, deps = {}
     console.error(`[OUR_BOT] handover to Oriserve failed: ${error?.message ?? error}`);
   }
   return { dialled: false, reason, handedToOriserve: true };
+}
+
+/**
+ * The Flexi campaign's own refusal: never Oriserve, because Oriserve does not
+ * dial this campaign at all (same reasoning as the module-level note on why
+ * `businessloans` alone would have been unsafe to split -- splitting
+ * Flexiloans traffic to Oriserve hands half its callers to a bot that drops
+ * them). Logged to the same ledger as a dialled press so the ledger stays
+ * the one place "who was called" is answered, with `dispatched: false` so
+ * crm.v_ivr_lead.bot_dispatched reads false and press1Catchup.js's existing
+ * retry sweep -- unchanged, already re-attempts exactly this -- picks it up
+ * on its next run, inside the next window if this one already closed.
+ */
+function refuseAndRetryLater(body, { digit, variant, arm = null, voiceVariant = null } = {}, reason) {
+  console.log(`[OUR_BOT] flexi: ${reason} — press for ${String(body?.mobile ?? "")} held for retry, not Oriserve`);
+  recordVoiceDispatch({
+    mobile: body?.mobile,
+    dispatched: false,
+    reason,
+    variant: variant ?? null,
+    digit: digit ?? null,
+    provider: "ours",
+    uniqueId: body?.unique_id || body?.call_id || null,
+    arm,
+    voiceVariant,
+    raw: { bot: "elevenlabs_convai", via: "journey-run", voice_bot: "flexi" },
+  }).catch(() => {});
+  return { dialled: false, reason, handedToOriserve: false };
 }
 
 /**
@@ -204,9 +295,20 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
   // Decided again here rather than trusted from the route. It is deterministic,
   // so it agrees with the route's answer, and a caller that skipped the route
   // still cannot put a press on our bot that the rules would not.
-  const route = (deps.route ?? routePress)({ variant, mobile: body?.mobile, digit });
-  const { arm, voiceVariant } = route;
-  const ctx = { digit, variant, arm };
+  const route = (deps.route ?? routePress)({
+    variant,
+    mobile: body?.mobile,
+    digit,
+    campaignName: body?.campaign_name,
+  });
+  const { arm, voiceVariant, voiceBot } = route;
+  const ctx = { digit, variant, arm, voiceVariant };
+  // Flexiloans never falls back to Oriserve — Oriserve does not dial this
+  // campaign at all, so "overflow" would be handing the caller to a bot that
+  // drops them. It retries instead; see refuseAndRetryLater.
+  const refuse = voiceBot === "flexi"
+    ? (reason) => refuseAndRetryLater(body, ctx, reason)
+    : (reason) => overflowToOriserve(body, ctx, deps, reason);
 
   try {
     if (!route.ours) {
@@ -218,13 +320,27 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
 
     const sb = deps.sb ?? new SupabaseClient().client.schema("crm");
 
+    // The Flexi campaign's own window (10:00-20:00 IST, given directly for
+    // this campaign) -- checked here because journey-run's copy of this check
+    // is the global one, off since 29 Sep for Priya/Oriserve's traffic, and
+    // this does not reverse that. Before the pacer and the cap, same as
+    // calling-hours was checked before the daily slot in the old flow: a
+    // press outside the window costs nothing and is still a press-again
+    // candidate for press1Catchup.js the moment the window reopens.
+    if (voiceBot === "flexi" && !(deps.withinFlexiHours ?? withinFlexiCallingHours)()) {
+      return refuse("outside_flexi_calling_hours");
+    }
+
     // ── THE PACE ────────────────────────────────────────────────────────────
     //
     // Asked BEFORE the slot is claimed, so a press this service cannot pace
     // keeps its slot and goes to Oriserve whole. See lib/dialPacer.js for the
     // measurement: past twenty dials a minute, half of them never connect.
+    // Shared with Priya's calls unchanged -- the Flexi agent is on the same
+    // ElevenLabs workspace and the same 30-concurrent ceiling, and this is
+    // the one rail that actually holds that ceiling, so it applies here too.
     if (!(deps.hasRoom ?? hasRoom)()) {
-      return overflowToOriserve(body, ctx, deps, "dial_queue_full");
+      return refuse("dial_queue_full");
     }
 
     // ── THE COHORT CAP ──────────────────────────────────────────────────────
@@ -233,31 +349,35 @@ export async function dispatchPressToOurBot(body, { digit, variant } = {}, deps 
     // and recording is another way to overshoot, and it is wide: the journey
     // round trip places a real call inside it.
     //
-    // A refusal hands the press to Oriserve rather than dropping it. That
-    // direction is the whole safety argument for putting `businessloans` on
-    // our allowlist: over the cap, and on any failure above, the caller reaches
-    // the bot that has been answering 700-1,500 presses a day for weeks. The
-    // worst case of this change is "today behaves like yesterday".
-    const cap = deps.cap ?? ourBotDailyCap();
-    if (!(await claimDailySlot(sb, cap))) {
-      return overflowToOriserve(body, ctx, deps, "daily_cap");
+    // Flexiloans is deliberately NOT capped here: "all press-1 from this
+    // campaign" was the ask, not a trial slice sharing Priya's existing
+    // ~100-200/day businessloans budget -- a shared counter would also make
+    // this campaign silently eat into Priya's budget for every OTHER
+    // campaign, which nothing about this change should touch. The pace above
+    // is what keeps it safe, not this cap.
+    if (voiceBot !== "flexi") {
+      const cap = deps.cap ?? ourBotDailyCap();
+      if (!(await claimDailySlot(sb, cap))) {
+        return overflowToOriserve(body, ctx, deps, "daily_cap");
+      }
     }
 
     const { url, secret } = await journeyEndpoint(sb);
     if (!url || !secret) {
       console.error("[OUR_BOT] journey_fn_url / sync_secret not configured — no call placed");
-      // A slot was claimed and will not be used. Deliberately not released:
-      // releasing it needs a second write that can itself fail, and the failure
-      // mode of leaking a slot is calling 99 instead of 100 today. The failure
-      // mode of a double release is calling someone twice.
-      return overflowToOriserve(body, ctx, deps, "not_configured");
+      // A slot was claimed and will not be used (non-Flexi only; Flexi claims
+      // none). Deliberately not released: releasing it needs a second write
+      // that can itself fail, and the failure mode of leaking a slot is
+      // calling 99 instead of 100 today. The failure mode of a double release
+      // is calling someone twice.
+      return refuse("not_configured");
     }
 
     // Everything above decided; only the dial itself waits its turn. A burst of
     // 200 presses still resolves 200 routing decisions in seconds — it just
     // does not put 200 calls on the trunk in three minutes.
     return await (deps.pace ?? paceDial)(() =>
-      placeAndRecord({ url, secret, mobile, body, digit, variant, arm, voiceVariant, deps })
+      placeAndRecord({ url, secret, mobile, body, digit, variant, arm, voiceVariant, voiceBot, deps })
     );
   } catch (error) {
     const reason = `error: ${error?.message ?? error}`;
@@ -318,7 +438,7 @@ function noCallWasPlaced(res, out) {
  * may hold it for minutes — while the routing decisions above have to be made
  * the moment the press arrives.
  */
-async function placeAndRecord({ url, secret, mobile, body, digit, variant, arm = null, voiceVariant = null, deps }) {
+async function placeAndRecord({ url, secret, mobile, body, digit, variant, arm = null, voiceVariant = null, voiceBot = null, deps }) {
   const outcome = { dialled: false, reason: null };
   // Declared out here so the handover decision below can see them even when the
   // fetch itself threw, where "no response at all" is exactly the ambiguous
@@ -345,6 +465,10 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, arm =
         // there is one: a journey-run that does not read it ignores an extra
         // key, and without the split the request is exactly what it was.
         ...(voiceVariant ? { voice_variant: voiceVariant } : {}),
+        // Which agent, not which voice -- see _shared/voicebot.ts's
+        // PlaceVoicebotCallInput.bot. "flexi" dials the dedicated Flexiloans
+        // agent instead of Priya.
+        ...(voiceBot ? { voice_bot: voiceBot } : {}),
       }),
     });
 
@@ -375,9 +499,18 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, arm =
   // above: releasing it is a second write that can fail on its own, and the
   // cost of leaking one is calling 199 leads today instead of 200. At two
   // presses in the 09:5x minute that is a rounding error against the cap.
+  // (Flexi claims no slot at all, so there is nothing to leak for it.)
+  //
+  // Flexi still never reaches Oriserve here either -- it stays un-dispatched,
+  // which press1Catchup.js's existing sweep (bot_dispatched=false) picks up
+  // on its next run.
   if (!outcome.dialled && noCallWasPlaced(res, out)) {
-    outcome.handedToOriserve = true;
-    overflowToOriserve(body, { digit, variant, arm }, deps, outcome.reason ?? "no_call_placed");
+    if (voiceBot === "flexi") {
+      outcome.handedToOriserve = false;
+    } else {
+      outcome.handedToOriserve = true;
+      overflowToOriserve(body, { digit, variant, arm }, deps, outcome.reason ?? "no_call_placed");
+    }
   }
 
   // Logged to the same table as the Oriserve dispatches, with provider naming
@@ -393,7 +526,7 @@ async function placeAndRecord({ url, secret, mobile, body, digit, variant, arm =
     arm,
     voiceVariant,
     fallbackReason: outcome.handedToOriserve ? outcome.reason ?? "no_call_placed" : null,
-    raw: { bot: "elevenlabs_convai", via: "journey-run" },
+    raw: { bot: "elevenlabs_convai", via: "journey-run", ...(voiceBot ? { voice_bot: voiceBot } : {}) },
   }).catch(() => {});
 
   return outcome;

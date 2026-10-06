@@ -124,7 +124,7 @@ async function fetchCandidates(sb, { gte, lt, limit }) {
   if (limit <= 0) return [];
   let q = sb
     .from("v_ivr_lead")
-    .select("mobile10, customer_name, first_pressed_at, press_variant")
+    .select("mobile10, customer_name, first_pressed_at, press_variant, press_campaign")
     .eq("pressed_1", true)
     .eq("bot_dispatched", false)
     .gte("first_pressed_at", gte);
@@ -200,7 +200,13 @@ export async function runPress1Catchup({ sb, limit, now, dispatch, env = process
       // stable per (mobile, day) so a re-run of the same sweep within the
       // dispatcher's in-memory dedupe window cannot double-dial.
       unique_id: `press1-catchup:${c.mobile10}:${istDayStartIso(now ?? new Date())}`,
-      campaign_name: c.press_variant || "businessloans",
+      // press_campaign (metadata->>'campaign_name'), NOT press_variant
+      // (metadata->>'variant', always "businessloans") -- the two are
+      // different columns on v_ivr_lead, and a retry that loses the real
+      // campaign name here would also lose which agent the live dispatch
+      // chose, silently falling a Flexi-campaign press back to Priya's
+      // regular cap/Oriserve path on its second attempt.
+      campaign_name: c.press_campaign || c.press_variant || "businessloans",
     };
     try {
       // eslint-disable-next-line no-await-in-loop -- sequential on purpose:
