@@ -145,7 +145,12 @@ await check("without the split, routePress is handledByOurBot and labels nothing
     for (const variant of ["businessloans", "flexiloans", "herofincorp", ""]) {
       for (const m of mobiles.slice(0, 20)) {
         const r = routePress({ variant, mobile: m, digit: "1" }, env, ori);
-        assert.deepEqual(r, { ours: handledByOurBot(variant, env), arm: null, voiceVariant: null });
+        assert.deepEqual(r, {
+          ours: handledByOurBot(variant, env),
+          arm: null,
+          voiceVariant: null,
+          voiceBot: null,
+        });
       }
     }
   }
@@ -161,7 +166,7 @@ await check("a businessloans press-1 follows its arm, whatever the old flag says
     assert.equal(a.arm, "ours");
     assert.match(a.voiceVariant, /^[AB]$/);
     const b = routePress({ variant: "businessloans", mobile: theirs, digit: "1" }, env, ori);
-    assert.deepEqual(b, { ours: false, arm: "oriserve", voiceVariant: null });
+    assert.deepEqual(b, { ours: false, arm: "oriserve", voiceVariant: null, voiceBot: null });
   }
 });
 
@@ -172,6 +177,7 @@ await check("flexiloans is not split: Oriserve would drop its half", () => {
     ours: true,
     arm: null,
     voiceVariant: null,
+    voiceBot: null,
   });
   assert.equal(routePress({ variant: "flexiloans", mobile: m, digit: "1" }, SPLIT, ori).ours, false);
 });

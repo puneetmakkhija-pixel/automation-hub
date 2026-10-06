@@ -20,6 +20,7 @@
     "test:ori-press-dispatch": "node test-ori-press-dispatch.mjs",
     "test:flexiloans-campaign": "node test-flexiloans-campaign.mjs",
     "test:our-voice-bot": "node test-our-voice-bot.mjs",
+    "test:flexi-campaign-routing": "node test-flexi-campaign-routing.mjs",
     "test:press-queue": "node test-press-queue.mjs",
     "test:dial-pacer": "node test-dial-pacer.mjs",
     "test:neither-bot": "node test-neither-bot.mjs",
