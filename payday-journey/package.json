@@ -1,0 +1,14 @@
+{
+  "name": "payday-journey",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Payday-loan journey: vendor adapter slots (KYC, bureau, bank statement, e-sign, payout), mocks, and the underwriting pipeline. No dependencies.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test-payday-journey.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
