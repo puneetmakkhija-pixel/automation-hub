@@ -119,6 +119,17 @@ export function flexiCampaignMatch(env = process.env) {
   return raw || "flexi";
 }
 
+/**
+ * OUR_BOT_FLEXI_ONLY=on: the Flexiloans bot is the only bot of ours that dials.
+ *
+ * Priya's presses (every businessloans press that is not the Flexiloans campaign) stop being ours and go where they went before our bot
+ * took them, to Oriserve, exactly as when OUR_BOT_PRESS_ENABLED is off. Flexiloans campaign presses are unaffected. Off unless explicitly
+ * "on", and removable without a deploy: unset it and Priya takes her presses again.
+ */
+export function ourBotFlexiOnly(env = process.env) {
+  return String(env.OUR_BOT_FLEXI_ONLY ?? "").trim().toLowerCase() === "on";
+}
+
 /** Does this press's campaign belong to the dedicated Flexiloans voice bot? */
 export function isFlexiCampaignPress(campaignName, env = process.env) {
   const got = String(campaignName ?? "").trim().toLowerCase();
@@ -172,6 +183,12 @@ export function routePress({ variant, mobile, digit, campaignName } = {}, env = 
   // question than the A/B arm below, and applies however that question is
   // decided (flag or split), so it is computed once up front.
   const voiceBot = isFlexiCampaignPress(campaignName, env) ? "flexi" : null;
+
+  // Flexi-only: a press that is not the Flexiloans campaign is not ours, whatever else says so. Checked before the flag and the split, so
+  // neither can hand Priya a press. It is the Flexi campaign press that still reaches the dedicated bot below.
+  if (ourBotFlexiOnly(env) && !voiceBot) {
+    return { ours: false, arm: null, voiceVariant: null, voiceBot: null };
+  }
 
   const byFlag = { ours: handledByOurBot(variant, env), arm: null, voiceVariant: null, voiceBot };
   if (!splitModeOn(env)) return byFlag;
