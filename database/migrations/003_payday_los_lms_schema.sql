@@ -39,7 +39,7 @@ do $$ begin
 
 -- ---------------------------------------------------------------- helpers
 create or replace function payday.set_updated_at() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin new.updated_at = now(); return new; end $$;
 
 -- ---------------------------------------------------------------- customer
@@ -258,8 +258,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['customer','loan_product','application','loan'] loop
-    execute format('drop trigger if exists trg_%1$s_updated_at on payday.%1$s', t);
-    execute format('create trigger trg_%1$s_updated_at before update on payday.%1$s
+    execute format('create or replace trigger trg_%1$s_updated_at before update on payday.%1$s
                     for each row execute function payday.set_updated_at()', t);
   end loop;
 end $$;

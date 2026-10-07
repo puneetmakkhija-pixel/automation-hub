@@ -49,10 +49,17 @@ Errors: `400` bad input, `401`/`503` auth, `404` not found, `409` not allowed ri
 - Request bodies are capped at 1 MB. Responses and logs never include request bodies. Logs carry method, path, status and timing only.
 - This API is meant to be called by your own backend, dashboard or bot, not directly by customers' browsers; there is no per-customer authentication.
 
+## Live database status (smecircle, project `ymdkcaedwnnhszhzirli`)
+Migrations 003 to 006 are applied to the live project, as separate Supabase migrations `payday_a` to `payday_f` (003 was split into three pieces to stay under the tool's time limit, and `drop trigger` was replaced by `create or replace trigger` so it is not a destructive statement). Checked live: 17 tables in the new `payday` schema, row-level security on all 17, `public` untouched (124 tables before and after), OWN_BOOK lender seeded, the unique guards in place, and only `service_role` has access (`anon` and `authenticated` have none). A rolled-back smoke test confirmed a second open loan and a duplicate payment reference are both refused. The Supabase security advisor flagged one real finding on the new schema (trigger function search path), fixed by migration 006.
+
+**One manual step remains: expose the schema to the API.** `payday` is NOT in the project's exposed schemas (currently `public, graphql_public, dsa, crm, assistant`), so `supabase-js .schema('payday')` fails with `PGRST106 Invalid schema` until it is added: Supabase dashboard, Project Settings, Data API, Exposed schemas, add `payday`. This is safe: with no grants to `anon` or `authenticated`, and RLS on, the public keys still cannot read or write anything. After adding it, check that a request with the public `anon` key to `payday` now answers `permission denied` (not `Invalid schema`).
+
+The schema is empty: add a `loan_product` row (and `lender` / `colending_arrangement` rows if co-lending) before the first application.
+
 ## Go-live checklist
-1. Review and apply migrations `003` and `004` on a staging Supabase project; add a `loan_product` row and, if co-lending, `lender` and `colending_arrangement` rows.
+1. Migrations are applied (see above). Expose the `payday` schema, then add a `loan_product` row and, if co-lending, `lender` and `colending_arrangement` rows.
 2. Fill the vendor specs and set real `VENDOR_*` variables; run each slot against the vendor's sandbox.
-3. Run the whole journey on staging with a test mobile number.
+3. Run the whole journey end to end with a test mobile number, with mock vendors first (set `ALLOW_MOCK_VENDORS=1` outside production), then each real vendor's sandbox.
 4. Have compliance review the agreement, key fact statement, penal charges, cooling-off and the adverse-action wording before a real customer sees it.
 5. Review the scorecard and limit thresholds against real repayment data.
 6. Only then point production env at the real project.
