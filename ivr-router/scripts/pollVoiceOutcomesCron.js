@@ -1,6 +1,7 @@
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
 import { pollVoiceOutcomes } from "../lib/voiceOutcomePoll.js";
+import { probeElevenCredits } from "../lib/elevenCreditsProbe.js";
 
 // The scheduled half of lib/voiceOutcomePoll.js. Its own header said "behind
 // an operator endpoint and, later, a schedule" -- this is that schedule.
@@ -19,6 +20,10 @@ import { pollVoiceOutcomes } from "../lib/voiceOutcomePoll.js";
 async function main() {
   const result = await pollVoiceOutcomes();
   console.log(`[voice-poll-cron] ${JSON.stringify(result)}`);
+
+  // Same key, same schedule: also record the ElevenLabs credit balance for the dashboard's credits check. Never throws.
+  const credits = await probeElevenCredits();
+  console.log(`[eleven-credits] ${JSON.stringify(credits)}`);
 }
 
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {

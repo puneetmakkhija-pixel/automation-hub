@@ -7,6 +7,7 @@
     "start": "node index.js",
     "dev": "node index.js",
     "voice-poll:cron": "node scripts/pollVoiceOutcomesCron.js",
+    "test:eleven-credits": "node test-eleven-credits-probe.mjs",
     "test:press-forward": "node test-press-forward.mjs",
     "test:voice-outcome": "node test-voice-outcome.mjs",
     "test:pl-tracker": "node test-pl-tracker.mjs",
