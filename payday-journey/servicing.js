@@ -161,7 +161,22 @@ export async function writeOff({ store, loan: loanRef, asOf = istToday(), reason
   return { loan: updated, writtenOff: amount };
 }
 
-// Daily job (cron): accrue penalty and flag overdue on every open loan.
+// Integrity check: for every open loan, what the schedule says is owed must equal the ledger balance.
+// A payment is recorded, then the schedule and ledger are updated in separate calls (not one database
+// transaction), so a crash in between would show up here as a difference. Detects; does not repair.
+export async function auditOpenLoans({ store }) {
+  const issues = [];
+  for (const loan of await store.listOpenLoans()) {
+    const outstanding = outstandingOf(await store.getSchedule(loan.id));
+    const ledgerBalance = round2(await store.getLedgerBalance(loan.id));
+    if (Math.abs(outstanding - ledgerBalance) > 0.01) {
+      issues.push({ loan_id: loan.id, schedule_outstanding: outstanding, ledger_balance: ledgerBalance, difference: round2(outstanding - ledgerBalance) });
+    }
+  }
+  return issues;
+}
+
+// Daily job (cron): accrue penalty and flag overdue on every open loan, then audit.
 export async function runDailyServicing({ store, asOf = istToday() }) {
   const loans = await store.listOpenLoans();
   const products = new Map();
@@ -177,5 +192,6 @@ export async function runDailyServicing({ store, asOf = istToday() }) {
       summary.errors.push(`${loan.id}: ${e.message}`); // one bad loan must not stop the run
     }
   }
+  summary.integrityIssues = await auditOpenLoans({ store });
   return summary;
 }

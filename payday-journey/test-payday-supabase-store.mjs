@@ -96,3 +96,11 @@ test('customer upsert is keyed on mobile', async () => {
   await supabaseStore(client).upsertCustomer({ mobile: '9999999991' });
   assert.deepEqual(log[0].ops.find((o) => o[0] === 'upsert'), ['upsert', { mobile: '9999999991' }, { onConflict: 'mobile' }]);
 });
+
+test('pending payouts query: status pending and older than the cutoff', async () => {
+  const { log, client } = fake(() => ok([{ id: 'd1' }]));
+  const rows = await supabaseStore(client).listPendingDisbursements('2026-01-01T00:00:00.000Z');
+  assert.deepEqual(rows, [{ id: 'd1' }]);
+  assert.deepEqual(log[0].ops.find((o) => o[0] === 'eq'), ['eq', 'status', 'pending']);
+  assert.deepEqual(log[0].ops.find((o) => o[0] === 'lt'), ['lt', 'created_at', '2026-01-01T00:00:00.000Z']);
+});

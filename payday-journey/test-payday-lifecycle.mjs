@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createRegistry, memoryStore, runUnderwriting, createApplication, ApplicationError, sendAgreement, recordAgreementSigned,
-  disburseLoan, completeDisbursement, recordPayment, rollover, writeOff, runDailyServicing, getLoanSummary, breakdown, agingBucket,
+  disburseLoan, completeDisbursement, reconcilePendingPayouts, auditOpenLoans, BusinessRuleError, recordPayment, rollover, writeOff, runDailyServicing, getLoanSummary, breakdown, agingBucket,
   nextLimit, repeatEligibility, dueDateFor, nextSalaryDate, splitAmount, daysBetween, istToday, LADDER,
 } from './index.js';
 
@@ -304,4 +304,57 @@ test('database rules are mirrored by the memory store (one open loan, unique utr
   await assert.rejects(() => w.store.insertLoan({ application_id: 'other-app', customer_id: o.customer.id, product_id: product.id, principal: 1, fee_amount: 0, due_date: '2026-03-01' }), /duplicate key/);
   await w.store.insertPayment({ loan_id: 'x', amount: 1, mode: 'upi', utr: 'DUP', status: 'success' });
   await assert.rejects(() => w.store.insertPayment({ loan_id: 'x', amount: 1, mode: 'upi', utr: 'DUP', status: 'success' }), /duplicate key/);
+});
+
+const later = () => new Date(Date.now() + 3600e3); // an hour from now, so a just-created payout counts as old
+
+test('reconcile: an unknown payout is settled by asking the vendor, and only once', async () => {
+  const flaky = { name: 'flaky', disburse: async () => { throw new Error('socket hang up'); }, status: async () => ({ status: 'success', utr: 'UTR-RECON' }) };
+  const w = await world({ overrides: { payout: flaky } });
+  const o = await signedOffer(w);
+  const r = await disburse(w, o);
+  assert.equal(r.status, 'unknown');
+
+  const fresh = await reconcilePendingPayouts({ registry: w.registry, store: w.store });
+  assert.equal(fresh.checked, 0, 'a payout younger than the cutoff is left alone');
+  const out = await reconcilePendingPayouts({ registry: w.registry, store: w.store, olderThanMinutes: 15, now: later() });
+  assert.deepEqual([out.checked, out.settled, out.failed, out.stillPending, out.errors.length], [1, 1, 0, 0, 0]);
+  assert.ok((await w.store.getLoan(r.loan.id)).disbursed_at);
+  assert.equal((await w.store.getApplication(o.application.id)).status, 'disbursed');
+  assert.equal(await w.store.getLedgerBalance(r.loan.id), 10800);
+  const again = await reconcilePendingPayouts({ registry: w.registry, store: w.store, now: later() });
+  assert.equal(again.checked, 0, 'nothing pending any more');
+});
+
+test('reconcile: vendor says failed, still pending, or the lookup errors', async () => {
+  for (const [vendorSays, want] of [
+    [async () => ({ status: 'failed' }), { failed: 1, stillPending: 0, errors: 0, dStatus: 'failed' }],
+    [async () => ({ status: 'pending' }), { failed: 0, stillPending: 1, errors: 0, dStatus: 'pending' }],
+    [async () => { throw new Error('vendor 404'); }, { failed: 0, stillPending: 0, errors: 1, dStatus: 'pending' }],
+  ]) {
+    const w = await world({ overrides: { payout: { name: 'p', disburse: async () => { throw new Error('timeout'); }, status: vendorSays } } });
+    const o = await signedOffer(w);
+    const r = await disburse(w, o);
+    const out = await reconcilePendingPayouts({ registry: w.registry, store: w.store, now: later() });
+    assert.deepEqual([out.failed, out.stillPending, out.errors.length], [want.failed, want.stillPending, want.errors]);
+    assert.equal((await w.store.getDisbursement(r.disbursement.id)).status, want.dStatus, 'an error never settles the payout either way');
+    assert.equal((await w.store.getLoan(r.loan.id)).disbursed_at, null);
+  }
+  const noStatus = await world({ overrides: { payout: { name: 'p', disburse: async () => ({ status: 'pending' }) } } });
+  await assert.rejects(() => reconcilePendingPayouts({ registry: noStatus.registry, store: noStatus.store }), (e) => e instanceof BusinessRuleError && /no status check/.test(e.message));
+});
+
+test('audit: schedule and ledger agree on a healthy loan; a stray ledger entry is reported by the daily job', async () => {
+  const w = await world();
+  const o = await signedOffer(w);
+  const { loan } = await disburse(w, o);
+  assert.deepEqual(await auditOpenLoans({ store: w.store }), []);
+  const clean = await runDailyServicing({ store: w.store, asOf: '2026-01-15' });
+  assert.deepEqual(clean.integrityIssues, []);
+
+  // simulate the crash window: money booked in the ledger but never applied to the schedule
+  await w.store.insertLedger([{ loan_id: loan.id, lender_id: 'lender-A', entry_type: 'repayment', direction: 'credit', amount: 100 }]);
+  const dirty = await runDailyServicing({ store: w.store, asOf: '2026-01-15' });
+  assert.equal(dirty.integrityIssues.length, 1);
+  assert.deepEqual([dirty.integrityIssues[0].loan_id, dirty.integrityIssues[0].difference], [loan.id, 100]);
 });

@@ -74,6 +74,9 @@ export const mockPayout = {
     if (!this.paid.has(idempotencyKey)) this.paid.set(idempotencyKey, { utr: `MOCKUTR-${idempotencyKey}-${amount}`, status: 'success' });
     return this.paid.get(idempotencyKey);
   },
+  async status({ idempotencyKey }) {
+    return this.paid.get(idempotencyKey) ?? { status: 'pending' };
+  },
 };
 
 export const mockCollect = {

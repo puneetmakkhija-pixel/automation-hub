@@ -3,7 +3,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   createApplication, ApplicationError, runUnderwriting, sendAgreement, disburseLoan, recordPayment, rollover, writeOff,
-  runDailyServicing, getLoanSummary, repeatEligibility, createWebhookHandler,
+  runDailyServicing, reconcilePendingPayouts, getLoanSummary, repeatEligibility, createWebhookHandler,
   BusinessRuleError, NotConfiguredError, VendorHttpError,
 } from '../payday-journey/index.js';
 
@@ -142,6 +142,11 @@ export function createApp({ store, registry, env = process.env, log = () => {} }
     ['POST', /^\/v1\/jobs\/daily-servicing$/, async ({ body }) => {
       if (body.as_of !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(body.as_of))) return bad('as_of must be YYYY-MM-DD');
       return json(200, await runDailyServicing({ store, asOf: body.as_of }));
+    }],
+    ['POST', /^\/v1\/jobs\/reconcile-payouts$/, async ({ body }) => {
+      const mins = body.older_than_minutes === undefined ? 15 : Number(body.older_than_minutes);
+      if (!(mins >= 0)) return bad('older_than_minutes must be a number');
+      return json(200, await reconcilePendingPayouts({ registry, store, olderThanMinutes: mins }));
     }],
   ];
 

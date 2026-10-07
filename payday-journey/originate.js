@@ -158,3 +158,26 @@ export async function completeDisbursement({ store, disbursementId, result }) {
   }
   return { status: 'success', disbursement, loan };
 }
+
+// Settle payouts left 'pending' (unknown outcome, or the vendor webhook never arrived) by asking the vendor
+// what happened. Needs the payout vendor to have a status check. Safe to run repeatedly (e.g. every 10 minutes).
+// A lookup that errors (including a vendor "not found") is reported and left pending for a person to decide.
+export async function reconcilePendingPayouts({ registry, store, olderThanMinutes = 15, now = new Date() }) {
+  if (typeof registry.payout.status !== 'function') {
+    throw new BusinessRuleError('the payout vendor has no status check configured (add a `status` block to its spec)');
+  }
+  const cutoff = new Date(now.getTime() - olderThanMinutes * 60000).toISOString();
+  const pending = await store.listPendingDisbursements(cutoff);
+  const out = { checked: pending.length, settled: 0, failed: 0, stillPending: 0, errors: [] };
+  for (const d of pending) {
+    try {
+      const r = await registry.payout.status({ idempotencyKey: d.idempotency_key, loanId: d.loan_id });
+      if (r.status === 'pending') { out.stillPending += 1; continue; }
+      await completeDisbursement({ store, disbursementId: d.id, result: r });
+      if (r.status === 'success') out.settled += 1; else out.failed += 1;
+    } catch (e) {
+      out.errors.push(`${d.id}: ${e.message}`);
+    }
+  }
+  return out;
+}

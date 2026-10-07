@@ -51,6 +51,8 @@ export function assertEsign(r) {
 
 // payout.disburse({ loanId, amount, account, idempotencyKey, reference }) -> { utr, status }
 // A repeated call with the same idempotencyKey must not pay twice.
+// Optional second method payout.status({ idempotencyKey, loanId }) -> same shape, used to settle payouts
+// whose outcome was unknown. It must report what the vendor actually did; 'pending' if it is still in flight.
 export function assertPayout(r) {
   need(r && ['success', 'pending', 'failed'].includes(r.status), 'payout.status invalid');
   need(r.status !== 'success' || (typeof r.utr === 'string' && r.utr), 'a successful payout needs a utr');

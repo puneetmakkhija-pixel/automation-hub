@@ -24,6 +24,7 @@ function acmeServer(calls = []) {
     if (path === '/v1/bank/analyse') return res(200, { summary: { avg_balance: 22000, credit_trend_pct: 4, bounces_6m: 0, txn_per_month: 28, cash_pct: 5 }, salary: { months_credited: 6, variation_pct: 3, trend_pct: 2, latest: 40000 } });
     if (path === '/v1/esign') return res(200, { envelope_id: 'env-1', state: 'SENT', document_url: 'https://acme.invalid/doc', kfs_url: 'https://acme.invalid/kfs' });
     if (path === '/v1/collect') return res(200, { collect_id: 'col-1', state: 'CREATED', pay_url: 'https://acme.invalid/pay/col-1' });
+    if (path.startsWith('/v1/payout/')) return res(200, { state: 'PAID', utr: `UTR-${path.split('/').pop()}` });
     if (path === '/v1/payout') return res(200, { state: 'PAID', utr: `UTR-${init.headers['idempotency-key']}` });
     return res(404, {});
   };
@@ -214,4 +215,20 @@ test('webhook: a failed apply stays unprocessed so the vendor retry succeeds', a
   const retry = await h({ provider: 'acme', rawBody: raw, headers: hdr });
   assert.equal(retry.status, 200);
   assert.equal(retry.body.ok, true, 'the retry is applied, not dismissed as a duplicate');
+});
+
+test('payout.status plugs in through the spec: GET, retried, inherits auth; absent when the vendor has none', async () => {
+  const calls = [];
+  const registry = createRegistry({ env: { ...ENV, VENDOR_PAYOUT: 'acme' }, specs: { acme }, fetchImpl: acmeServer(calls) });
+  const r = await registry.payout.status({ idempotencyKey: 'disb-L1-1', loanId: 'L1' });
+  assert.deepEqual([r.status, r.utr], ['success', 'UTR-disb-L1-1']);
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].path, '/v1/payout/disb-L1-1');
+  assert.equal(calls[0].headers['x-api-key'], 'k-123', 'auth is inherited from the parent payout spec');
+  assert.equal(calls[0].body, null);
+
+  const noStatus = { ...acme, payout: { ...acme.payout, status: undefined } };
+  const r2 = createRegistry({ env: { ...ENV, VENDOR_PAYOUT: 'acme' }, specs: { acme: noStatus }, fetchImpl: acmeServer() });
+  assert.equal(r2.payout.status, undefined);
+  assert.equal(typeof createRegistry({ env: {} }).payout.status, 'function', 'the mock has one');
 });

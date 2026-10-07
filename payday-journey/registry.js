@@ -17,15 +17,20 @@ const SLOTS = {
   bureau: { env: 'VENDOR_BUREAU', method: 'pull', check: assertBureau },
   bankStatement: { env: 'VENDOR_BANK_STATEMENT', method: 'analyse', check: assertBank },
   esign: { env: 'VENDOR_ESIGN', method: 'createRequest', check: assertEsign },
-  payout: { env: 'VENDOR_PAYOUT', method: 'disburse', check: assertPayout },
+  payout: { env: 'VENDOR_PAYOUT', method: 'disburse', check: assertPayout, extra: { status: assertPayout } },
   collect: { env: 'VENDOR_COLLECT', method: 'request', check: assertCollect },
 };
 
-function guard(adapter, { method, check }) {
-  return {
+function guard(adapter, { method, check, extra = {} }) {
+  const g = {
     name: adapter.name,
     [method]: async (...args) => check(await adapter[method](...args)),
   };
+  // optional extra methods (e.g. payout.status) are exposed only if the adapter has them
+  for (const [m, chk] of Object.entries(extra)) {
+    if (typeof adapter[m] === 'function') g[m] = async (...args) => chk(await adapter[m](...args));
+  }
+  return g;
 }
 
 export function createRegistry({ env = process.env, fetchImpl, overrides = {}, specs = DEFAULT_SPECS } = {}) {

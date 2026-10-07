@@ -106,6 +106,7 @@ export function memoryStore(seed = {}) {
       if (p.utr && t.disbursements.some((d) => d.utr === p.utr && d.id !== id)) throw dup('disbursement.utr');
       return patch(t.disbursements, (d) => d.id === id, p);
     },
+    async listPendingDisbursements(beforeIso) { return clone(t.disbursements.filter((d) => d.status === 'pending' && d.created_at < beforeIso)); },
     async listDisbursementsForLoan(loanId) { return clone(t.disbursements.filter((d) => d.loan_id === loanId)); },
     // ---- schedule, payments, ledger
     async insertSchedule(row) {
@@ -211,6 +212,7 @@ export function supabaseStore(client) {
     getDisbursement: (id) => getBy('disbursement', 'id', id),
     findDisbursementByKey: (key) => getBy('disbursement', 'idempotency_key', key),
     patchDisbursement: (id, p) => patchBy('disbursement', 'id', id, p),
+    listPendingDisbursements: (beforeIso) => run(from('disbursement').select('*').eq('status', 'pending').lt('created_at', beforeIso), 'disbursement select pending'),
     listDisbursementsForLoan: (loanId) => run(from('disbursement').select('*').eq('loan_id', loanId), 'disbursement select'),
 
     insertSchedule: (row) => insertOne('repayment_schedule', row),

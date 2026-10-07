@@ -96,6 +96,18 @@ export const acme = {
         utr: 'utr',
       },
     },
+    // Ask the vendor what happened to a payout whose outcome we never learned (timeout). A read, so it is
+    // retried. A vendor 404 ("never saw it") is surfaced as an error and left for a person: we do not assume failure.
+    status: {
+      request: { method: 'GET', path: '/v1/payout/{{idempotencyKey}}' },
+      retry: { count: 2 },
+      response: {
+        fields: {
+          status: { path: 'state', map: { PAID: 'success', QUEUED: 'pending', FAILED: 'failed' }, default: 'pending' },
+          utr: 'utr',
+        },
+      },
+    },
   },
   collect: {
     configured: true,

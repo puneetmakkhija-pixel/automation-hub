@@ -51,8 +51,8 @@ Safety built in: HTTP errors never put response bodies in messages (they carry P
 
 ## Not done / known limits
 - **`supabaseStore` has not been run against a live Supabase project.** It is tested against a recording fake (tables, filters, errors), and the SQL against a scratch Postgres. Do a staging run before production.
-- **A payment is recorded, then the schedule and ledger are updated in separate calls, not one transaction.** A crash in between leaves a payment with no allocation. Wrapping this in a Postgres function is the proper fix.
-- **No status-poll for pending payouts:** settlement relies on the vendor's webhook. Find stuck ones with `select * from payday.disbursement where status = 'pending' and created_at < now() - interval '15 minutes'`.
+- **A payment is recorded, then the schedule and ledger are updated in separate calls, not one transaction.** A crash in between would leave a payment with no allocation. This is now DETECTED, not prevented: the daily job runs `auditOpenLoans` and reports any open loan where the schedule and ledger disagree (`integrityIssues`). Repair is manual. Wrapping the allocation in a Postgres function is the proper fix.
+- **Pending payouts** are settled by the vendor webhook, or by `reconcilePendingPayouts` (API job `POST /v1/jobs/reconcile-payouts`, run it every ~10 minutes), which asks the vendor's `payout.status` what happened. It needs a `status` block in the payout vendor's spec. A lookup that errors, including a vendor "not found", is reported and left pending for a person: we never assume a payout failed.
 - **No auto-debit mandate (e-NACH) registration.** `collect` creates a payment request; recurring mandates would be another slot.
 - Penalty is on the scheduled principal even after a partial principal payment (a simplification). Regulatory treatment of penal charges, KFS content and cooling-off should be reviewed by compliance before launch.
 - The scorecard and limit thresholds are uncalibrated (see `../payday-engine/README.md`).

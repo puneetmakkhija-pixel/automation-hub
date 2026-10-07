@@ -18,7 +18,7 @@ The service refuses to start without those three. It also refuses to start in pr
 | `PORT` | default 3000 |
 
 ## Deploy on Railway
-This service imports the sibling `payday-engine` and `payday-journey` folders, so it must build from the **repo root** (the repo-root `railway.toml` builds only `ivr-router`). Create a service from the repo, leave Root Directory at the repo root, and set the service's config file path to `/payday-api/railway.toml`. That file points at `payday-api/Dockerfile` with context `.`. Health check: `/healthz`. Run the daily job (`POST /v1/jobs/daily-servicing`) from a Railway cron, with the API key header.
+This service imports the sibling `payday-engine` and `payday-journey` folders, so it must build from the **repo root** (the repo-root `railway.toml` builds only `ivr-router`). Create a service from the repo, leave Root Directory at the repo root, and set the service's config file path to `/payday-api/railway.toml`. That file points at `payday-api/Dockerfile` with context `.`. Health check: `/healthz`. Run `POST /v1/jobs/daily-servicing` (daily) and `POST /v1/jobs/reconcile-payouts` (every ~10 minutes) from Railway crons, with the API key header, and alert on a non-empty `integrityIssues` or `errors`.
 
 ## Endpoints
 All need `x-api-key`, except `/healthz` and webhooks (which are authenticated by signature). Bodies are JSON.
@@ -35,7 +35,8 @@ All need `x-api-key`, except `/healthz` and webhooks (which are authenticated by
 | `POST /v1/loans/:id/write-off` | Write off a loan 90+ days overdue. |
 | `GET /v1/loans/:id` | Status, outstanding, days overdue, aging bucket, schedule, ledger balance. |
 | `GET /v1/customers/:id/eligibility?product=CODE` | Eligible, repeat, limit, cycle. |
-| `POST /v1/jobs/daily-servicing` | Penalty accrual and overdue marking. |
+| `POST /v1/jobs/daily-servicing` | Penalty accrual and overdue marking, then an integrity audit (`integrityIssues` lists any loan whose schedule and ledger disagree). Run daily. |
+| `POST /v1/jobs/reconcile-payouts` | `{ older_than_minutes? }`. Settles payouts stuck pending by asking the payout vendor. Run every ~10 minutes. `409` if the vendor has no status check. |
 | `POST /v1/webhooks/:provider` | Vendor callbacks (e-sign, payout, payment). HMAC signature required. |
 | `GET /healthz` | Liveness. |
 

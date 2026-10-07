@@ -8,10 +8,10 @@ export { createHttpAdapter, buildAdapter } from './http-adapter.js';
 export { render, extract, getPath } from './mapping.js';
 export { createApplication, ApplicationError } from './applications.js';
 export {
-  sendAgreement, recordAgreementSigned, failAgreement, disburseLoan, completeDisbursement, resolveShares, dueDateFor,
+  sendAgreement, recordAgreementSigned, failAgreement, disburseLoan, completeDisbursement, resolveShares, dueDateFor, reconcilePendingPayouts,
 } from './originate.js';
 export {
-  recordPayment, accruePenalty, rollover, writeOff, runDailyServicing, getLoanSummary, breakdown, outstandingOf, agingBucket,
+  recordPayment, accruePenalty, rollover, writeOff, runDailyServicing, auditOpenLoans, getLoanSummary, breakdown, outstandingOf, agingBucket,
 } from './servicing.js';
 export { nextLimit, onLoanClosed, blockCustomer, repeatEligibility, LADDER } from './limits.js';
 export { createWebhookHandler, verifySignature } from './webhooks.js';

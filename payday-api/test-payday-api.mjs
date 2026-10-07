@@ -238,3 +238,16 @@ test('over real HTTP: JSON responses, query strings, API key, and the body size 
     await new Promise((r) => server.close(r));
   }
 });
+
+test('reconcile job and the daily job report on payouts and integrity', async () => {
+  const w = setup();
+  assert.equal((await w.call('POST', '/v1/jobs/reconcile-payouts', { older_than_minutes: 'soon' })).status, 400);
+  const r = await w.call('POST', '/v1/jobs/reconcile-payouts', {});
+  assert.deepEqual([r.status, r.body.checked, r.body.settled, r.body.errors], [200, 0, 0, []]);
+  const d = await w.call('POST', '/v1/jobs/daily-servicing', {});
+  assert.deepEqual([d.status, d.body.integrityIssues], [200, []]);
+
+  const noStatus = setup({ overrides: { payout: { name: 'p', disburse: async () => ({ status: 'pending' }) } } });
+  assert.equal((await noStatus.call('POST', '/v1/jobs/reconcile-payouts', {})).status, 409, 'a vendor without a status check is a clear 409, not a crash');
+  assert.equal((await noStatus.call('POST', '/v1/jobs/reconcile-payouts', {}, { key: null })).status, 401);
+});

@@ -89,5 +89,12 @@ const METHOD = { kyc: 'verify', bureau: 'pull', bankStatement: 'analyse', esign:
 
 // -> { name, [method]: fn } for the registry
 export function buildAdapter(vendor, slot, spec, deps) {
-  return { name: vendor, [METHOD[slot]]: createHttpAdapter({ ...spec, vendor, slot }, deps) };
+  const adapter = { name: vendor, [METHOD[slot]]: createHttpAdapter({ ...spec, vendor, slot }, deps) };
+  // optional `status` sub-spec (payout): inherits base URL, auth and configured flag from the parent
+  if (spec.status) {
+    adapter.status = createHttpAdapter({
+      baseUrlEnv: spec.baseUrlEnv, auth: spec.auth, configured: spec.configured, ...spec.status, vendor, slot: `${slot}.status`,
+    }, deps);
+  }
+  return adapter;
 }
