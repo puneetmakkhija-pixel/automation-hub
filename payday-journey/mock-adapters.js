@@ -61,13 +61,24 @@ export const mockBankStatement = {
 export const mockEsign = {
   name: 'mock',
   async createRequest({ application }) {
-    return { providerRef: `mock-esign-${application.id}`, status: 'sent' };
+    return { providerRef: `mock-esign-${application.id}`, status: 'sent', documentUrl: `mock://agreement/${application.id}`, kfsUrl: `mock://kfs/${application.id}` };
   },
 };
 
 export const mockPayout = {
   name: 'mock',
-  async disburse({ loanId, amount }) {
-    return { utr: `MOCKUTR${String(loanId).slice(0, 8)}${amount}`, status: 'success' };
+  // Idempotent like a real vendor: the same key always returns the same result, and a key is paid once.
+  paid: new Map(),
+  async disburse({ idempotencyKey, amount }) {
+    if (!idempotencyKey) throw new Error('mock payout: idempotencyKey required');
+    if (!this.paid.has(idempotencyKey)) this.paid.set(idempotencyKey, { utr: `MOCKUTR-${idempotencyKey}-${amount}`, status: 'success' });
+    return this.paid.get(idempotencyKey);
+  },
+};
+
+export const mockCollect = {
+  name: 'mock',
+  async request({ loan, amount }) {
+    return { providerRef: `mock-collect-${loan.id}-${amount}`, status: 'created', paymentUrl: `mock://pay/${loan.id}?amount=${amount}` };
   },
 };

@@ -84,7 +84,7 @@ test('pending KYC stops the pipeline without scoring', async () => {
 
 test('registry: defaults to mock, refuses mock in production, rejects unknown vendors', () => {
   const r = createRegistry({ env: {} });
-  assert.deepEqual(Object.values(r.names), ['mock', 'mock', 'mock', 'mock', 'mock']);
+  assert.deepEqual(Object.values(r.names), Array(6).fill('mock'));
   assert.throws(() => createRegistry({ env: { NODE_ENV: 'production' } }), /"mock" in production/);
   assert.doesNotThrow(() => createRegistry({ env: { NODE_ENV: 'production', ALLOW_MOCK_VENDORS: '1' } }));
   assert.throws(() => createRegistry({ env: { VENDOR_KYC: 'nonesuch' } }), /Unknown or unsupported vendor/);
@@ -98,7 +98,7 @@ test('digitap: selectable for kyc and bank statement, but refuses to run until c
   assert.equal(r.names.kyc, 'digitap');
   await assert.rejects(() => r.kyc.verify({ customer: customer(1) }), NotConfiguredError);
   const bare = createDigitapAdapters({ env: {}, fetchImpl: async () => { throw new Error('no'); } });
-  await assert.rejects(() => bare.kyc.verify({ customer: customer(1) }), /DIGITAP_BASE_URL/);
+  await assert.rejects(() => bare.kyc.verify({ customer: customer(1) }), (e) => e instanceof NotConfiguredError && /vendor spec/.test(e.message));
 });
 
 test('contract guard: a vendor returning the wrong shape fails at the boundary', async () => {

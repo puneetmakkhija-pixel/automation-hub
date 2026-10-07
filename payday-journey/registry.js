@@ -1,14 +1,15 @@
 // Picks one adapter per slot from env, and checks every adapter's output against contracts.js.
-//   VENDOR_KYC=mock|digitap   VENDOR_BUREAU=mock   VENDOR_BANK_STATEMENT=mock|digitap
-//   VENDOR_ESIGN=mock         VENDOR_PAYOUT=mock
+//   VENDOR_KYC=mock|<vendor>   VENDOR_BUREAU   VENDOR_BANK_STATEMENT   VENDOR_ESIGN   VENDOR_PAYOUT   VENDOR_COLLECT
+// A <vendor> is any key in the spec registry (vendors/index.js) that defines that slot.
 // Default is mock everywhere. In production, mock is refused unless ALLOW_MOCK_VENDORS=1, so a
 // missing env var can never end up approving a real loan on fake KYC or bureau data.
 import {
-  mockKyc, mockBureau, mockBankStatement, mockEsign, mockPayout,
+  mockKyc, mockBureau, mockBankStatement, mockEsign, mockPayout, mockCollect,
 } from './mock-adapters.js';
-import { createDigitapAdapters } from './digitap-adapter.js';
+import { buildAdapter } from './http-adapter.js';
+import { DEFAULT_SPECS } from './vendors/index.js';
 import {
-  assertKyc, assertBureau, assertBank, assertEsign, assertPayout,
+  assertKyc, assertBureau, assertBank, assertEsign, assertPayout, assertCollect,
 } from './contracts.js';
 
 const SLOTS = {
@@ -17,6 +18,7 @@ const SLOTS = {
   bankStatement: { env: 'VENDOR_BANK_STATEMENT', method: 'analyse', check: assertBank },
   esign: { env: 'VENDOR_ESIGN', method: 'createRequest', check: assertEsign },
   payout: { env: 'VENDOR_PAYOUT', method: 'disburse', check: assertPayout },
+  collect: { env: 'VENDOR_COLLECT', method: 'request', check: assertCollect },
 };
 
 function guard(adapter, { method, check }) {
@@ -26,10 +28,8 @@ function guard(adapter, { method, check }) {
   };
 }
 
-export function createRegistry({ env = process.env, fetchImpl, overrides = {} } = {}) {
-  const mocks = { kyc: mockKyc, bureau: mockBureau, bankStatement: mockBankStatement, esign: mockEsign, payout: mockPayout };
-  const digitap = createDigitapAdapters({ env, fetchImpl });
-  const real = { digitap };
+export function createRegistry({ env = process.env, fetchImpl, overrides = {}, specs = DEFAULT_SPECS } = {}) {
+  const mocks = { kyc: mockKyc, bureau: mockBureau, bankStatement: mockBankStatement, esign: mockEsign, payout: mockPayout, collect: mockCollect };
   const registry = {};
   const names = {};
 
@@ -42,8 +42,8 @@ export function createRegistry({ env = process.env, fetchImpl, overrides = {} } 
           throw new Error(`${spec.env} is "mock" in production. Set a real vendor, or ALLOW_MOCK_VENDORS=1 to override.`);
         }
         adapter = mocks[slot];
-      } else if (real[vendor]?.[slot]) {
-        adapter = real[vendor][slot];
+      } else if (specs[vendor]?.[slot]) {
+        adapter = buildAdapter(vendor, slot, specs[vendor][slot], { env, fetchImpl });
       } else {
         throw new Error(`Unknown or unsupported vendor "${vendor}" for slot "${slot}" (${spec.env})`);
       }
@@ -52,5 +52,6 @@ export function createRegistry({ env = process.env, fetchImpl, overrides = {} } 
     names[slot] = adapter.name;
   }
   registry.names = names;
+  registry.specs = specs; // the webhook handler reads webhook specs from here
   return registry;
 }

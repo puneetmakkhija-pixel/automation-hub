@@ -36,5 +36,5 @@ toApplicationPatch(result);              // -> payday.application update
 ## Tests
 `node --test test-payday-engine.mjs` (also run by CI). 15 tests cover weights, scaling, grade boundaries, each hard flag, review flags, missing data, offer caps and rounding, fees, and the table mappers.
 
-## Not here yet
-Reading bureau, bank or salary data from vendors (step 3), writing to Supabase (step 3), repeat-loan limit step-up (step 4).
+## Where it is used
+`../payday-journey` calls `decide()` after KYC and enrichment, and `../payday-api` exposes it over HTTP. Repeat-loan limit step-up lives in `../payday-journey/limits.js` and is passed in here as `customerLimit`.

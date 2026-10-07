@@ -41,16 +41,28 @@ export function assertBank(r) {
   return r;
 }
 
-// esign.createRequest({ application, offer }) -> { providerRef, status }
+// esign.createRequest({ application, customer, offer }) -> { providerRef, status, documentUrl?, kfsUrl? }
 export function assertEsign(r) {
   need(r && typeof r.providerRef === 'string' && r.providerRef, 'esign.providerRef required');
   need(['sent', 'signed', 'failed', 'pending'].includes(r.status), 'esign.status invalid');
+  ['documentUrl', 'kfsUrl'].forEach((k) => need(r[k] === undefined || r[k] === null || typeof r[k] === 'string', `esign.${k} must be a string`));
   return r;
 }
 
-// payout.disburse({ loanId, amount, account }) -> { utr, status }
+// payout.disburse({ loanId, amount, account, idempotencyKey, reference }) -> { utr, status }
+// A repeated call with the same idempotencyKey must not pay twice.
 export function assertPayout(r) {
   need(r && ['success', 'pending', 'failed'].includes(r.status), 'payout.status invalid');
   need(r.status !== 'success' || (typeof r.utr === 'string' && r.utr), 'a successful payout needs a utr');
+  return r;
+}
+
+// collect.request({ loan, customer, amount, reference }) -> { providerRef, status, paymentUrl? }
+// Asks the collection vendor for a way for the customer to repay (UPI collect / payment link / mandate).
+// The money arrives later through the vendor's webhook (payment.received), never from this call.
+export function assertCollect(r) {
+  need(r && typeof r.providerRef === 'string' && r.providerRef, 'collect.providerRef required');
+  need(['created', 'pending', 'failed'].includes(r.status), 'collect.status invalid');
+  need(r.paymentUrl === undefined || r.paymentUrl === null || typeof r.paymentUrl === 'string', 'collect.paymentUrl must be a string');
   return r;
 }

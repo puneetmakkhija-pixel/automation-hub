@@ -13,11 +13,17 @@ const kycRows = (customer, vendor, kyc) => kyc.checks.map((c) => ({
 }));
 
 export async function runUnderwriting({
-  registry, store, customer, application, product, intake = {}, customerLimit = null,
+  registry, store, customer, application, product, intake = {}, customerLimit = null, reuseKyc = false,
 }) {
   // 1. KYC first: do not spend on bureau or bank-statement pulls for someone who failed it.
-  const kyc = await registry.kyc.verify({ customer });
-  await store.saveKycChecks(kycRows(customer, registry.names.kyc, kyc));
+  //    A repeat customer already verified may reuse that KYC (reuseKyc), skipping the vendor call.
+  let kyc;
+  if (reuseKyc && customer.kyc_status === 'verified') {
+    kyc = { status: 'verified', checks: [] };
+  } else {
+    kyc = await registry.kyc.verify({ customer });
+    await store.saveKycChecks(kycRows(customer, registry.names.kyc, kyc));
+  }
 
   if (kyc.status === 'pending') {
     await store.patchApplication(application.id, { status: 'kyc_pending' });
@@ -53,5 +59,5 @@ export async function runUnderwriting({
   await store.saveScorecard(toScorecardRow(application.id, result));
   await store.patchApplication(application.id, toApplicationPatch(result));
 
-  return { stage: 'decided', result, vendorErrors };
+  return { stage: 'decided', result, vendorErrors, kyc };
 }
