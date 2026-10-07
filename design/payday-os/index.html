@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaydayOS Admin Prototype</title>
+<style>
+/* Tokens mirror the Figma file "PaydayOS Design System + Admin".
+   Names match the Figma WEB code syntax: var(--color-bg-page) etc. */
+:root {
+  --indigo-50:#EEF2FF; --indigo-500:#4F46E5; --teal-500:#0D9488;
+  --amber-100:#FEF3C7; --amber-500:#D97706; --red-100:#FEE2E2; --red-500:#DC2626;
+  --green-100:#DCFCE7; --green-500:#16A34A;
+  --gray-0:#FFFFFF; --gray-50:#F8FAFC; --gray-100:#F1F5F9; --gray-200:#E2E8F0;
+  --gray-400:#94A3B8; --gray-500:#64748B; --gray-700:#334155; --gray-800:#1E293B; --gray-900:#0F172A; --gray-950:#020617;
+
+  --spacing-xs:4px; --spacing-sm:8px; --spacing-md:16px; --spacing-lg:24px; --spacing-xl:32px;
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-full:999px;
+
+  --color-bg-page:var(--gray-50);
+  --color-bg-surface:var(--gray-0);
+  --color-bg-subtle:var(--gray-100);
+  --color-border-default:var(--gray-200);
+  --color-text-primary:var(--gray-900);
+  --color-text-secondary:var(--gray-500);
+  --color-text-on-brand:var(--gray-0);
+  --color-brand-primary:var(--indigo-500);
+  --color-brand-primary-subtle:var(--indigo-50);
+  --color-status-success:var(--green-500); --color-status-success-bg:var(--green-100);
+  --color-status-warning:var(--amber-500); --color-status-warning-bg:var(--amber-100);
+  --color-status-danger:var(--red-500);   --color-status-danger-bg:var(--red-100);
+}
+/* Dark mode: Figma Starter plan allows 1 mode per collection, so dark lives here. */
+:root[data-theme="dark"] {
+  --color-bg-page:var(--gray-950);
+  --color-bg-surface:var(--gray-900);
+  --color-bg-subtle:var(--gray-800);
+  --color-border-default:var(--gray-700);
+  --color-text-primary:var(--gray-50);
+  --color-text-secondary:var(--gray-400);
+  --color-brand-primary-subtle:var(--gray-800);
+  --color-status-success-bg:var(--gray-800);
+  --color-status-warning-bg:var(--gray-800);
+  --color-status-danger-bg:var(--gray-800);
+}
+*{box-sizing:border-box;margin:0}
+body{font:400 14px/20px Inter,system-ui,sans-serif;background:var(--color-bg-page);color:var(--color-text-primary)}
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+.side{background:var(--color-bg-surface);border-right:1px solid var(--color-border-default);padding:var(--spacing-lg) var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-xs)}
+.logo{font:600 18px/26px Inter,system-ui;color:var(--color-brand-primary);margin-bottom:var(--spacing-md)}
+.nav{padding:var(--spacing-sm) var(--spacing-md);border-radius:var(--radius-md);color:var(--color-text-secondary);text-decoration:none}
+.nav.active{background:var(--color-brand-primary-subtle);color:var(--color-brand-primary);font-weight:600}
+main{padding:var(--spacing-lg) var(--spacing-xl);display:flex;flex-direction:column;gap:var(--spacing-lg)}
+header{display:flex;justify-content:space-between;align-items:center;gap:var(--spacing-md)}
+h1{font:600 28px/36px Inter,system-ui}
+.caption{font-size:12px;line-height:16px;color:var(--color-text-secondary)}
+.actions{display:flex;gap:var(--spacing-sm)}
+.btn{border:0;border-radius:var(--radius-full);padding:var(--spacing-sm) var(--spacing-md);font:500 12px/16px Inter,system-ui;cursor:pointer;background:var(--color-brand-primary);color:var(--color-text-on-brand)}
+.btn.ghost{background:var(--color-bg-subtle);color:var(--color-text-primary)}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--spacing-md)}
+.card{background:var(--color-bg-surface);border:1px solid var(--color-border-default);border-radius:var(--radius-lg)}
+.kpi{padding:var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-xs)}
+.kpi .v{font:600 28px/36px Inter,system-ui}
+.delta{font:500 12px/16px Inter,system-ui}.up{color:var(--color-status-success)}.down{color:var(--color-status-danger)}
+.bottom{display:grid;grid-template-columns:1fr 320px;gap:var(--spacing-lg);align-items:start}
+.card h2{font:600 18px/26px Inter,system-ui;padding:var(--spacing-md)}
+table{width:100%;border-collapse:collapse}
+th{font:500 12px/16px Inter,system-ui;text-align:left;color:var(--color-text-secondary);background:var(--color-bg-subtle);padding:var(--spacing-sm) var(--spacing-md);text-transform:uppercase}
+td{padding:var(--spacing-sm) var(--spacing-md);border-bottom:1px solid var(--color-border-default);height:48px}
+td:first-child{font-weight:600}.muted{color:var(--color-text-secondary);font-size:12px}
+.badge{display:inline-block;min-width:120px;text-align:center;padding:var(--spacing-xs) var(--spacing-sm);border-radius:var(--radius-full);font:500 12px/16px Inter,system-ui}
+.badge.success{background:var(--color-status-success-bg);color:var(--color-status-success)}
+.badge.warning{background:var(--color-status-warning-bg);color:var(--color-status-warning)}
+.badge.danger{background:var(--color-status-danger-bg);color:var(--color-status-danger)}
+.repeat{padding:var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-md)}
+.repeat h2{padding:0}
+.offer{display:flex;justify-content:space-between;align-items:center;padding:var(--spacing-sm) var(--spacing-md);border-radius:var(--radius-md);background:var(--color-brand-primary-subtle)}
+.offer b{font-weight:600}.offer span{font:500 12px/16px Inter,system-ui;color:var(--color-brand-primary)}
+@media(max-width:1000px){.app{grid-template-columns:1fr}.side{flex-direction:row;overflow-x:auto}.kpis{grid-template-columns:repeat(2,1fr)}.bottom{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo">PaydayOS</div>
+    <a class="nav active" href="#">Dashboard</a><a class="nav" href="#">Applications</a><a class="nav" href="#">Underwriting</a>
+    <a class="nav" href="#">Disbursements</a><a class="nav" href="#">Collections</a><a class="nav" href="#">Repeat Loans</a>
+    <a class="nav" href="#">Co-lenders</a><a class="nav" href="#">Settings</a>
+  </aside>
+  <main>
+    <header>
+      <div><h1>Loan operations</h1><div class="caption">Today · illustrative sample data</div></div>
+      <div class="actions"><button class="btn ghost" id="theme">Dark mode</button><button class="btn">New application</button></div>
+    </header>
+    <section class="kpis">
+      <div class="card kpi"><span class="caption">Applications today</span><span class="v">1,284</span><span class="delta up">▲ 12% vs yesterday</span></div>
+      <div class="card kpi"><span class="caption">Approval rate</span><span class="v">38.4%</span><span class="delta up">▲ 2.1 pt</span></div>
+      <div class="card kpi"><span class="caption">Disbursed today</span><span class="v">₹2.46 Cr</span><span class="delta up">▲ 8%</span></div>
+      <div class="card kpi"><span class="caption">Collection efficiency</span><span class="v">94.7%</span><span class="delta down">▼ 0.6 pt</span></div>
+    </section>
+    <section class="bottom">
+      <div class="card" style="overflow:hidden">
+        <h2>Recent applications</h2>
+        <table>
+          <thead><tr><th>Applicant</th><th>Amount</th><th>Score</th><th>Co-lender</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Anita Verma</td><td>₹12,000</td><td>A · 108</td><td class="muted">Partner A 80/20</td><td><span class="badge success">Disbursed</span></td></tr>
+            <tr><td>Karan Mehta</td><td>₹20,000</td><td>B · 91</td><td class="muted">Partner B 70/30</td><td><span class="badge warning">KYC pending</span></td></tr>
+            <tr><td>Sneha Rao</td><td>₹8,000</td><td>A · 112</td><td class="muted">Partner A 80/20</td><td><span class="badge success">Approved</span></td></tr>
+            <tr><td>Imran Khan</td><td>₹10,000</td><td>D · 52</td><td class="muted">—</td><td><span class="badge danger">Rejected</span></td></tr>
+            <tr><td>Pooja Nair</td><td>₹25,000</td><td>B · 87</td><td class="muted">Partner B 70/30</td><td><span class="badge warning">Agreement sent</span></td></tr>
+            <tr><td>Vikram Joshi</td><td>₹15,000</td><td>C · 66</td><td class="muted">Partner A 80/20</td><td><span class="badge danger">Overdue 3d</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <aside class="card repeat">
+        <h2>Repeat-loan eligible</h2>
+        <div class="caption">Customers repaid on time — ready for an instant re-offer</div>
+        <div class="offer"><b>Anita Verma</b><span>₹12k → ₹18k</span></div>
+        <div class="offer"><b>Rahul Das</b><span>₹10k → ₹15k</span></div>
+        <div class="offer"><b>Meera Iyer</b><span>₹15k → ₹20k</span></div>
+      </aside>
+    </section>
+  </main>
+</div>
+<script>
+const root=document.documentElement,btn=document.getElementById('theme');
+btn.onclick=()=>{const d=root.dataset.theme==='dark';root.dataset.theme=d?'light':'dark';btn.textContent=d?'Dark mode':'Light mode'};
+</script>
+</body>
+</html>
