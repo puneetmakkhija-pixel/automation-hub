@@ -1,0 +1,14 @@
+{
+  "name": "payday-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Payday-loan decision engine: scorecard, red flags, offer sizing. Pure functions, no dependencies.",
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test-payday-engine.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
