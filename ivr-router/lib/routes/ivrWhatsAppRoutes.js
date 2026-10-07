@@ -463,7 +463,7 @@ async function handleKeypress(req, res) {
   // hashes the caller's mobile into one arm of an A/B split instead
   // (lib/botSplit.js). The arm rides along to the Oriserve row so a caller
   // assigned to either side is counted there in crm.voice_dispatch.
-  const route = routePress({ variant, mobile, digit });
+  const route = routePress({ variant, mobile, digit, campaignName: campaign_name });
   if (route.ours) {
     dispatchPressToOurBot(body, { digit, variant });
   } else {

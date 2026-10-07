@@ -16,6 +16,8 @@ import {
   ourBotDailyCap,
   ourBotEnabled,
   ourBotVariants,
+  ourBotFlexiOnly,
+  routePress,
 } from "./lib/ourVoiceBotDispatch.js";
 
 let failed = 0;
@@ -285,8 +287,8 @@ await check("the press is routed by routePress, not unconditionally", () => {
   // unless BOT_SPLIT_MODE=split -- test-bot-split.mjs holds it to that.
   assert.match(
     routeSrc,
-    /const\s+route\s*=\s*routePress\(\s*\{\s*variant\s*,\s*mobile\s*,\s*digit\s*\}\s*\)/,
-    "the routing decision is missing or no longer reads variant, mobile and digit"
+    /const\s+route\s*=\s*routePress\(\s*\{\s*variant\s*,\s*mobile\s*,\s*digit\s*,\s*campaignName\s*:\s*campaign_name\s*\}\s*\)/,
+    "the routing decision is missing or no longer reads variant, mobile, digit and campaign_name"
   );
   assert.match(routeSrc, /if\s*\(\s*route\.ours\s*\)/, "the routing guard is missing");
 });
@@ -310,4 +312,55 @@ await check("neither dispatch is awaited in front of the customer's message", ()
 });
 
 console.log(failed ? `\n${failed} failed\n` : "\nall passed\n");
+console.log("\nflexi-only: only the Flexiloans bot dials\n");
+
+const FLEXI_ONLY = { OUR_BOT_PRESS_ENABLED: "on", OUR_BOT_FLEXI_ONLY: "on" };
+
+await check("the flag is off unless explicitly on", () => {
+  assert.equal(ourBotFlexiOnly({}), false);
+  assert.equal(ourBotFlexiOnly({ OUR_BOT_FLEXI_ONLY: "" }), false);
+  assert.equal(ourBotFlexiOnly({ OUR_BOT_FLEXI_ONLY: "1" }), false);
+  assert.equal(ourBotFlexiOnly({ OUR_BOT_FLEXI_ONLY: "ON" }), true);
+});
+
+await check("a Flexiloans campaign press still goes to the Flexi bot", () => {
+  const r = routePress({ variant: "businessloans", mobile: "9876543210", digit: "1", campaignName: "FLEXILOANS_OCT2026_F_B1_2026100710" }, FLEXI_ONLY);
+  assert.equal(r.ours, true);
+  assert.equal(r.voiceBot, "flexi");
+});
+
+await check("any other businessloans press is no longer ours (it goes to Oriserve, as before our bot)", () => {
+  const r = routePress({ variant: "businessloans", mobile: "9876543210", digit: "1", campaignName: "6OCT_B2_2026100709" }, FLEXI_ONLY);
+  assert.equal(r.ours, false);
+  assert.equal(r.voiceBot, null);
+});
+
+await check("a press with no campaign name is not ours either", () => {
+  assert.equal(routePress({ variant: "businessloans", mobile: "9876543210", digit: "1" }, FLEXI_ONLY).ours, false);
+});
+
+await check("split mode cannot hand Priya a press while flexi-only is on", () => {
+  const env = { ...FLEXI_ONLY, BOT_SPLIT_MODE: "split" };
+  for (const m of ["9000000001", "9000000002", "9000000003", "9000000004"]) {
+    assert.equal(routePress({ variant: "businessloans", mobile: m, digit: "1", campaignName: "other" }, env, () => true).ours, false);
+  }
+});
+
+await check("without the flag, nothing changes: a non-Flexi press is still ours", () => {
+  const r = routePress({ variant: "businessloans", mobile: "9876543210", digit: "1", campaignName: "6OCT_B2_2026100709" }, { OUR_BOT_PRESS_ENABLED: "on" });
+  assert.equal(r.ours, true);
+  assert.equal(r.voiceBot, null);
+});
+
+await check("dispatch itself places no Priya call under flexi-only", async () => {
+  let dialled = false;
+  const out = await dispatchPressToOurBot(
+    { mobile: "9876543210", campaign_name: "6OCT_B2_2026100709" },
+    { digit: "1", variant: "businessloans" },
+    { env: FLEXI_ONLY, pace: async () => { dialled = true; return { dialled: true }; } },
+  );
+  assert.equal(dialled, false);
+  assert.equal(out.dialled, false);
+});
+
 process.exit(failed ? 1 : 0);
