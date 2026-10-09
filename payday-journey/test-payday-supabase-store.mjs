@@ -66,6 +66,12 @@ test('countLoans counts disbursed loans only', async () => {
   assert.ok(log[0].ops.some((o) => o[0] === 'not' && o[1] === 'disbursed_at'));
 });
 
+test('countApplicationsSince counts applications for a customer from a time onwards', async () => {
+  const { log, client } = fake(() => ({ data: null, error: null, count: 2 }));
+  assert.equal(await supabaseStore(client).countApplicationsSince('c1', '2026-01-01T00:00:00.000Z'), 2);
+  assert.ok(log[0].ops.some((o) => o[0] === 'gte' && o[1] === 'created_at'));
+});
+
 test('limits and ledger balance', async () => {
   const { log, client } = fake((table) => (table === 'loan_ledger_balance' ? ok({ balance: '10800.00' }) : ok({ limit_amount: 15000 })));
   const s = supabaseStore(client);
