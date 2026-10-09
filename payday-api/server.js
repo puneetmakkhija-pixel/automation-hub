@@ -1,5 +1,6 @@
 // node:http wrapper around app.js. Start: `node payday-api/server.js`.
-// Required env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, PAYDAY_API_KEY.
+// Required env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY. PAYDAY_API_KEY (the bootstrap admin key) is required only until
+// a real admin client exists; once one does, unset it so no shared all-powerful key remains.
 // Optional: PORT (default 3000), PAN_PEPPER, VENDOR_* and each vendor's own variables.
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
@@ -45,8 +46,17 @@ export function makeHttpServer(app) {
   });
 }
 
+// The service must have some way to authenticate an admin: the bootstrap key, or at least one active admin client
+// (created through POST /v1/clients). Returns a message when it has neither, otherwise null.
+export async function adminAccessProblem({ store, env }) {
+  if (env.PAYDAY_API_KEY) return null;
+  const clients = await store.listApiClients();
+  if (clients.some((c) => c.role === 'admin' && c.active && !c.revoked_at)) return null;
+  return 'no admin access: set PAYDAY_API_KEY to bootstrap, then create an admin client with POST /v1/clients and unset it';
+}
+
 async function main(env = process.env) {
-  const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PAYDAY_API_KEY'].filter((k) => !env[k]);
+  const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'].filter((k) => !env[k]);
   if (missing.length) {
     console.error(`payday-api: missing env ${missing.join(', ')}`);
     process.exit(1);
@@ -55,7 +65,13 @@ async function main(env = process.env) {
   const client = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   // Throws in production if any vendor slot is still "mock" (see registry.js).
   const registry = createRegistry({ env });
-  const app = createApp({ store: supabaseStore(client), registry, env, log: (l) => console.log(l) });
+  const store = supabaseStore(client);
+  const problem = await adminAccessProblem({ store, env });
+  if (problem) {
+    console.error(`payday-api: ${problem}`);
+    process.exit(1);
+  }
+  const app = createApp({ store, registry, env, log: (l) => console.log(l) });
   const port = Number(env.PORT) || 3000;
   makeHttpServer(app).listen(port, () => console.log(`payday-api listening on ${port}; vendors: ${JSON.stringify(registry.names)}`));
 }

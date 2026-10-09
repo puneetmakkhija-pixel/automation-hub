@@ -6,7 +6,8 @@
 //   ops      day-to-day operations: customers, applications, disbursement, payments, rollover, jobs, read policies
 //   partner  only its own customers and applications: create customers, record consent, apply, read status,
 //            send the agreement, request a repayment link. It never sees scoring detail or other partners' data.
-// The key in PAYDAY_API_KEY is a bootstrap admin so a new deployment can create real clients; then unset it.
+// The key in PAYDAY_API_KEY is a bootstrap admin so a new deployment can create real clients; then unset it (the server
+// starts without it as soon as an active admin client exists, see server.js).
 import { createHash } from 'node:crypto';
 import { NO_BANK_POLICY, DEFAULT_POLICY } from '../payday-engine/index.js';
 import {

@@ -6,12 +6,12 @@ HTTP service for the payday LOS+LMS. A thin wrapper (`app.js`) over `../payday-j
 ```
 SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... PAYDAY_API_KEY=... node payday-api/server.js
 ```
-The service refuses to start without those three. It also refuses to start in production (`NODE_ENV=production`) with any vendor slot left on `mock`, unless `ALLOW_MOCK_VENDORS=1`.
+The service refuses to start without the Supabase variables, and without some way to authenticate an admin: `PAYDAY_API_KEY`, or at least one active admin client. Bootstrap with the key, create an admin client (`POST /v1/clients`), then **unset `PAYDAY_API_KEY`** so no shared all-powerful key remains. It also refuses to start in production (`NODE_ENV=production`) with any vendor slot left on `mock`, unless `ALLOW_MOCK_VENDORS=1`.
 
 | Env var | Purpose |
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Database. Service role is required: the `payday` tables have row-level security and no policies. |
-| `PAYDAY_API_KEY` | Callers send it as `x-api-key`. No key configured means every route except `/healthz` and webhooks answers 503. |
+| `PAYDAY_API_KEY` | Bootstrap admin key, sent as `x-api-key`. Optional once an admin client exists; unset it then. Without it, only per-client keys work. |
 | `PAN_PEPPER` | Secret for hashing PAN. Without it, sending a PAN is refused (503). |
 | `VENDOR_KYC`, `VENDOR_BUREAU`, `VENDOR_BANK_STATEMENT`, `VENDOR_ESIGN`, `VENDOR_PAYOUT`, `VENDOR_COLLECT` | Vendor per slot (default `mock`). |
 | each vendor's own variables | e.g. base URL, key, webhook secret. Named in its spec file. |

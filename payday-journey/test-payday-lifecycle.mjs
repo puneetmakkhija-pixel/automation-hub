@@ -167,6 +167,39 @@ test('disbursement: a failed payout can be retried with a new attempt and reuses
   assert.equal(w.store.db.disbursements.length, 2);
 });
 
+test('disbursement: a new attempt cannot open while an earlier payout is pending (no double payout)', async () => {
+  const timeout = { name: 'flaky', disburse: async () => { throw new Error('socket hang up'); } };
+  const w = await world({ overrides: { payout: timeout } });
+  const o = await signedOffer(w);
+  const r1 = await disburse(w, o);
+  assert.equal(r1.status, 'unknown');
+  // the operator retries with the next attempt number: refused, nothing is sent
+  w.registry.payout = createRegistry({ env: {} }).payout;
+  await assert.rejects(() => disburse(w, o, { attempt: 2 }), /earlier payout \(disb-.*-1\) for this loan is pending/);
+  assert.equal(w.store.db.disbursements.length, 1, 'no second payout row was created');
+  // the same attempt number is still the idempotent retry
+  const same = await disburse(w, o, { attempt: 1 });
+  assert.equal(same.status, 'success');
+  assert.equal(w.store.db.disbursements.length, 1);
+});
+
+test('disbursement: a second payout reporting success is refused, not booked as another success', async () => {
+  const failing = { name: 'f', disburse: async () => ({ status: 'failed' }) };
+  const w = await world({ overrides: { payout: failing } });
+  const o = await signedOffer(w);
+  const r1 = await disburse(w, o); // attempt 1: failed
+  w.registry.payout = createRegistry({ env: {} }).payout;
+  const r2 = await disburse(w, o, { attempt: 2 }); // attempt 2: paid
+  assert.equal(r2.status, 'success');
+  // the vendor later says attempt 1 ALSO paid (it overrides 'failed'): that is a double payout
+  await assert.rejects(
+    () => completeDisbursement({ store: w.store, disbursementId: r1.disbursement.id, result: { status: 'success', utr: 'UTR-DOUBLE' } }),
+    (e) => e instanceof BusinessRuleError && e.bad === true && /DUPLICATE PAYOUT/.test(e.message),
+  );
+  assert.equal((await w.store.getDisbursement(r1.disbursement.id)).status, 'failed', 'left as it was, for a person to refund');
+  assert.equal(w.store.db.ledger.filter((e) => e.entry_type === 'disbursal').length, 2, 'ledger written once');
+});
+
 test('servicing: on-time payment closes the loan and steps the limit up the ladder', async () => {
   const w = await world();
   const o = await signedOffer(w);

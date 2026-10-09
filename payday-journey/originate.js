@@ -112,6 +112,17 @@ export async function disburseLoan({
   }
 
   const key = `disb-${loan.id}-${attempt}`;
+  // A new attempt number means a new payout key, so it must never open while an earlier payout may have paid. A pending
+  // one (unknown outcome, webhook not yet in) is settled by the vendor webhook or reconcile-payouts first; a successful
+  // one means the loan is already paid. Only when every earlier payout has FAILED may another attempt go out.
+  const earlier = await store.listDisbursementsForLoan(loan.id);
+  const open = earlier.find((d) => d.idempotency_key !== key && (d.status === 'pending' || d.status === 'success'));
+  if (open) {
+    throw new BusinessRuleError(
+      `cannot start payout attempt ${attempt}: an earlier payout (${open.idempotency_key}) for this loan is ${open.status}. `
+      + 'Settle it first (vendor webhook or reconcile-payouts); a new attempt is only allowed once every earlier payout has failed',
+    );
+  }
   let disbursement = await store.findDisbursementByKey(key);
   if (!disbursement) {
     disbursement = await store.insertDisbursement({
@@ -140,6 +151,15 @@ export async function completeDisbursement({ store, disbursementId, result }) {
   if (result.status === 'pending') return { status: 'pending', disbursement: d, loan: await store.getLoan(d.loan_id) };
   if (result.status === 'failed') {
     return { status: 'failed', disbursement: await store.patchDisbursement(d.id, { status: 'failed' }), loan: await store.getLoan(d.loan_id) };
+  }
+
+  // A loan is paid out once. A second payout reporting success means money moved twice: refuse to book it as
+  // another success (the database allows one successful disbursement per loan) and flag it for a person to refund.
+  const paid = (await store.listDisbursementsForLoan(d.loan_id)).find((x) => x.id !== d.id && x.status === 'success');
+  if (paid) {
+    const e = new BusinessRuleError(`DUPLICATE PAYOUT: loan ${d.loan_id} was already paid by disbursement ${paid.id}; ${d.id} also reports success. Refund needed`);
+    e.bad = true; // not retryable: a person has to deal with it
+    throw e;
   }
 
   // success (also overrides an earlier 'failed': if the vendor says it paid, the money moved)
