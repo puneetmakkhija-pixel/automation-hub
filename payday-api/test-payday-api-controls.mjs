@@ -363,3 +363,29 @@ test('start-up: the bootstrap key is only needed until a real admin client exist
   assert.match(await adminAccessProblem({ store, env: {} }), /no admin access/, 'a revoked admin does not count');
   assert.ok(client.id);
 });
+
+test('partner application limit: a partner key gets 3 applications per customer per 24h, ops and admin are not limited', async () => {
+  const w = await world();
+  const A = await newPartner(w, 'Acme');
+  const cust = (await A.call('POST', '/v1/customers', { mobile: mobile() })).body.customer_id;
+  assert.equal((await grant(A.call, cust)).status, 201);
+  for (let i = 0; i < 3; i += 1) assert.equal((await apply(A.call, cust)).status, 200, `application ${i + 1} is allowed`);
+  const over = await apply(A.call, cust);
+  assert.deepEqual([over.status, over.body.code], [429, 'TOO_MANY_APPLICATIONS']);
+  assert.equal(w.store.db.applications.length, 3, 'the refused request created nothing and called no vendor');
+  // an operator is not limited
+  const ops = await newClient(w, { name: 'Ops desk', role: 'ops' });
+  assert.equal((await apply(ops.call, cust)).status, 200);
+  // another partner's customer is counted separately, and the limit is configurable (0 = off)
+  const off = await world({ env: { PAYDAY_PARTNER_APPS_PER_DAY: '0' } });
+  const B = await newPartner(off, 'Acme');
+  const c2 = (await B.call('POST', '/v1/customers', { mobile: mobile() })).body.customer_id;
+  await grant(B.call, c2);
+  for (let i = 0; i < 5; i += 1) assert.equal((await apply(B.call, c2)).status, 200);
+  const one = await world({ env: { PAYDAY_PARTNER_APPS_PER_DAY: '1' } });
+  const C = await newPartner(one, 'Acme');
+  const c3 = (await C.call('POST', '/v1/customers', { mobile: mobile() })).body.customer_id;
+  await grant(C.call, c3);
+  assert.equal((await apply(C.call, c3)).status, 200);
+  assert.equal((await apply(C.call, c3)).status, 429);
+});

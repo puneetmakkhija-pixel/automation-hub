@@ -41,6 +41,9 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
   // Small tickets do not pull a bank statement. PAYDAY_BANK_STATEMENT_ABOVE=<amount> pulls one for requests above that
   // amount; unset means never. With no policy activated, the scorecard without bank data applies unless a bank pull is on.
   const bankStatementAbove = env.PAYDAY_BANK_STATEMENT_ABOVE === undefined || env.PAYDAY_BANK_STATEMENT_ABOVE === '' ? Infinity : Number(env.PAYDAY_BANK_STATEMENT_ABOVE);
+  // A partner key may open at most this many applications per customer in any 24 hours (each one triggers paid vendor
+  // pulls: KYC, bureau, bank statement). PAYDAY_PARTNER_APPS_PER_DAY=0 switches the limit off. Ops and admin are not limited.
+  const partnerAppsPerDay = env.PAYDAY_PARTNER_APPS_PER_DAY === undefined || env.PAYDAY_PARTNER_APPS_PER_DAY === '' ? 3 : Number(env.PAYDAY_PARTNER_APPS_PER_DAY);
   const fallback = bankStatementAbove === Infinity ? NO_BANK_POLICY : DEFAULT_POLICY;
 
   const missing = (label) => Object.assign(new Error(`${label} not found`), { notFound: true });
@@ -127,6 +130,12 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
     ['POST', /^\/v1\/applications$/, ALL, async ({ actor, body }) => {
       if (!body.customer_id || !body.product_code) return bad('customer_id and product_code are required');
       const customer = await ownedCustomer(actor, body.customer_id);
+      if (actor.role === 'partner' && partnerAppsPerDay > 0) {
+        const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+        if ((await store.countApplicationsSince(customer.id, since)) >= partnerAppsPerDay) {
+          return json(429, { error: `at most ${partnerAppsPerDay} applications per customer in 24 hours`, code: 'TOO_MANY_APPLICATIONS' });
+        }
+      }
       const product = await need(() => store.getProductByCode(body.product_code), 'product');
       const policy = await loadActivePolicy({ store, fallback }); // an error here stops the decision: never fall back silently
       await note(actor, 'application.create', 'customer', customer.id, {

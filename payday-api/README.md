@@ -12,6 +12,7 @@ The service refuses to start without the Supabase variables, and without some wa
 |---|---|
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Database. Service role is required: the `payday` tables have row-level security and no policies. |
 | `PAYDAY_API_KEY` | Bootstrap admin key, sent as `x-api-key`. Optional once an admin client exists; unset it then. Without it, only per-client keys work. |
+| `PAYDAY_PARTNER_APPS_PER_DAY` | Applications a partner key may open per customer in 24 hours (default 3; each triggers paid vendor pulls). Over the limit answers 429 `TOO_MANY_APPLICATIONS`. `0` switches it off. Ops and admin are not limited. |
 | `PAN_PEPPER` | Secret for hashing PAN. Without it, sending a PAN is refused (503). |
 | `VENDOR_KYC`, `VENDOR_BUREAU`, `VENDOR_BANK_STATEMENT`, `VENDOR_ESIGN`, `VENDOR_PAYOUT`, `VENDOR_COLLECT` | Vendor per slot (default `mock`). |
 | each vendor's own variables | e.g. base URL, key, webhook secret. Named in its spec file. |
