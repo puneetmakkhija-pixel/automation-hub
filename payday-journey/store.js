@@ -83,6 +83,7 @@ export function memoryStore(seed = {}) {
     async getLoan(id) { return find(t.loans, (l) => l.id === id); },
     async getLoanByApplication(appId) { return find(t.loans, (l) => l.application_id === appId); },
     async patchLoan(id, p) { return patch(t.loans, (l) => l.id === id, p); },
+    async countApplicationsSince(customerId, sinceIso) { return t.applications.filter((a) => a.customer_id === customerId && a.created_at >= sinceIso).length; },
     async countLoans(customerId) { return t.loans.filter((l) => l.customer_id === customerId && l.disbursed_at).length; },
     async hasOpenLoan(customerId) { return t.loans.some((l) => l.customer_id === customerId && OPEN.includes(l.status)); },
     async listOpenLoans() { return clone(t.loans.filter((l) => OPEN.includes(l.status) && l.disbursed_at)); },
@@ -273,6 +274,12 @@ export function supabaseStore(client) {
     getLoan: (id) => getBy('loan', 'id', id),
     getLoanByApplication: (appId) => getBy('loan', 'application_id', appId),
     patchLoan: (id, p) => patchBy('loan', 'id', id, p),
+    async countApplicationsSince(customerId, sinceIso) {
+      const { count, error } = await from('application').select('id', { count: 'exact', head: true })
+        .eq('customer_id', customerId).gte('created_at', sinceIso);
+      if (error) throw new Error(`payday.application count: ${error.message}`);
+      return count ?? 0;
+    },
     async countLoans(customerId) {
       const { count, error } = await from('loan').select('id', { count: 'exact', head: true })
         .eq('customer_id', customerId).not('disbursed_at', 'is', null);
