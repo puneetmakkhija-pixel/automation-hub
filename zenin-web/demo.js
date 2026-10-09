@@ -21,7 +21,7 @@ import {
 } from '../payday-journey/index.js';
 
 export const DEMO_PRODUCT = Object.freeze({
-  id: 'prod-zenin-30', code: 'ZENIN_30', min_amount: 5000, max_amount: 25000, tenure_days: 30,
+  id: 'prod-zenin-30', code: 'ZENIN_30', min_amount: 5000, max_amount: 50000, tenure_days: 30,
   fee_type: 'percent_of_principal', fee_value: 8, penalty_per_day_pct: 1,
   rollover_allowed: false, max_rollovers: 0, active: true,
 });
