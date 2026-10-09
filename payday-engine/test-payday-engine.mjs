@@ -2,12 +2,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  decide, scale, classify, maxPoints, trendPct, repaymentFor, offerFor,
-  toScorecardRow, toApplicationPatch, config,
+  decide, scale, classify, maxPoints, trendPct, repaymentFor, offerFor, aprFor,
+  toScorecardRow, toApplicationPatch, config, DEFAULT_POLICY, validatePolicy, resolvePolicy, PolicyError,
 } from './index.js';
 
 const product = {
-  code: 'PAYDAY_30', min_amount: 5000, max_amount: 25000,
+  code: 'PAYDAY_30', min_amount: 5000, max_amount: 25000, tenure_days: 30,
   fee_type: 'percent_of_principal', fee_value: 8,
 };
 
@@ -162,14 +162,121 @@ test('mappers: rows match payday.scorecard_result and payday.application', () =>
   assert.deepEqual(Object.keys(row).sort(), ['application_id', 'decision', 'grade', 'model_version', 'parameters', 'total_points']);
   assert.ok(['approve', 'reject', 'refer'].includes(row.decision));
   assert.equal(row.parameters.params.length, 23);
-  assert.deepEqual(toApplicationPatch(ok), { status: 'offered', approved_amount: 15000, decision_reasons: [] });
+  assert.deepEqual(toApplicationPatch(ok), { status: 'offered', approved_amount: 15000, offered_apr_pct: aprFor(product, 15000, 30).aprEffectivePct, decision_reasons: [] });
 
   const rej = decide({ features: { ...perfect(), npaStatus: 'npa' }, product, requestedAmount: 15000 });
   const patch = toApplicationPatch(rej);
   assert.equal(patch.status, 'rejected');
   assert.equal(patch.approved_amount, null);
+  assert.equal(patch.offered_apr_pct, null, 'no offer, no APR');
 
   const ref = decide({ features: { ...perfect(), maxDpd12m: 45 }, product, requestedAmount: 15000 });
   assert.equal(toApplicationPatch(ref).status, 'scored');
   assert.equal(toApplicationPatch(ref).approved_amount, null);
+});
+
+// ---------------------------------------------------------------- credit policy
+const policy = () => structuredClone(DEFAULT_POLICY);
+const errorsOf = (p) => validatePolicy(p).errors.join(' | ');
+
+test('policy: the built-in default is valid, reproduces the old behaviour, and is stored as plain JSON', () => {
+  const v = validatePolicy(DEFAULT_POLICY);
+  assert.deepEqual([v.ok, v.maxPoints], [true, 122]);
+  assert.equal(JSON.parse(JSON.stringify(DEFAULT_POLICY)).bands[4].min, null, 'the lowest band survives a JSON round trip');
+  const r = decide({ features: perfect(), product, requestedAmount: 15000, policy: JSON.parse(JSON.stringify(DEFAULT_POLICY)) });
+  assert.deepEqual([r.totalPoints, r.grade, r.decision, r.modelVersion], [122, 'A', 'approve', 'PAYDAY_V1']);
+});
+
+test('policy: a credit-team edit changes the decision and the version is recorded on the result', () => {
+  const stricter = policy();
+  stricter.version = 'PAYDAY_V2';
+  stricter.bands[0].min = 121;                       // A now needs 121 of 122
+  stricter.bands[1].min = 120;
+  const f = { ...perfect(), cibil: 700 };            // a slightly weaker file
+  const base = decide({ features: f, product, requestedAmount: 10000 });
+  const strict = decide({ features: f, product, requestedAmount: 10000, policy: stricter });
+  assert.equal(base.grade, 'A');
+  assert.notEqual(strict.grade, 'A');
+  assert.equal(strict.modelVersion, 'PAYDAY_V2');
+
+  const lowerCap = policy();
+  lowerCap.maxPctOfSalary.A = 0.1;                   // offers capped at 10% of salary
+  assert.equal(decide({ features: perfect(), product, requestedAmount: 15000, policy: lowerCap }).offer.amount, 6000);
+
+  const looseDpd = policy();
+  looseDpd.flags.review.RF4.dpd = 60;                // DPD 45 no longer needs a person
+  assert.equal(decide({ features: { ...perfect(), maxDpd12m: 45 }, product, requestedAmount: 10000, policy: looseDpd }).decision, 'approve');
+  const flagOff = policy();
+  flagOff.flags.review.RF4.enabled = false;
+  assert.equal(decide({ features: { ...perfect(), maxDpd12m: 45 }, product, requestedAmount: 10000, policy: flagOff }).decision, 'approve');
+});
+
+test('policy: safety rules cannot be edited away', () => {
+  const p = policy(); p.decisionByGrade.E = 'approve';
+  assert.match(errorsOf(p), /grade E must decide "reject"/);
+  const q = policy(); q.flags.hard = { RF1: { enabled: false } };
+  assert.match(errorsOf(q), /hard declines are fixed in code/);
+  // and a hard decline still rejects whatever the policy says
+  const lenient = policy(); lenient.bands[4].min = null; lenient.bands[3].min = 0; lenient.bands[2].min = 1;
+  assert.equal(decide({ features: { ...perfect(), npaStatus: 'npa' }, product, requestedAmount: 10000, policy: lenient }).decision, 'reject');
+});
+
+test('policy: bad edits are caught with a plain-language reason', () => {
+  const cases = [
+    [(p) => { p.params[0].field = 'creditScoreFromTheMoon'; }, /not a feature the system produces/],
+    [(p) => { p.params[0].weight = -3; }, /weight must be a number above 0/],
+    [(p) => { p.params[1].code = p.params[0].code; }, /is duplicated/],
+    [(p) => { p.params[0].worst = p.params[0].best; }, /worst and best must differ/],
+    [(p) => { p.params[2].map.none = 11; }, /must be 0 to 10/],
+    [(p) => { p.bands[0].min = 5; }, /must be above band B min/],
+    [(p) => { p.bands[0].min = 500; p.bands[1].min = 400; p.bands[2].min = 300; p.bands[3].min = 200; }, /no one could reach it/],
+    [(p) => { p.bands[4].min = 0; }, /band E must have min null/],
+    [(p) => { p.bands.splice(2, 1); }, /exactly A, B, C, D, E/],
+    [(p) => { p.maxPctOfSalary.A = 1.5; }, /maxPctOfSalary needs a number from 0 to 1/],
+    [(p) => { p.amountStep = 0; }, /amountStep must be a whole number/],
+    [(p) => { p.flags.review.RF8.pct = 250; }, /RF8\.pct must be 0 to 100/],
+    [(p) => { delete p.flags.review.RF12; }, /RF12 needs enabled/],
+    [(p) => { p.surprise = true; }, /unknown key "surprise"/],
+    [(p) => { p.version = 'has spaces!'; }, /version must be/],
+    [(p) => { p.maxMissingForAuto = 99; }, /maxMissingForAuto/],
+  ];
+  for (const [mutate, want] of cases) {
+    const p = policy(); mutate(p);
+    assert.match(errorsOf(p), want);
+  }
+  assert.equal(validatePolicy(null).ok, false);
+  assert.equal(validatePolicy([]).ok, false);
+});
+
+test('policy: an invalid policy never decides (fail closed)', () => {
+  const p = policy(); p.bands[0].min = 5;
+  assert.throws(() => decide({ features: perfect(), product, requestedAmount: 10000, policy: p }), PolicyError);
+  assert.throws(() => resolvePolicy({}), PolicyError);
+});
+
+test('policy: a policy may drop a parameter; the maximum score follows its weights', () => {
+  const p = policy();
+  p.params = p.params.filter((q) => q.code !== 'SC12');  // drop cash deposits (weight 3)
+  p.version = 'NO_CASH';
+  p.bands[0].min = 95;
+  const r = decide({ features: perfect(), product, requestedAmount: 10000, policy: p });
+  assert.deepEqual([r.maxPoints, r.totalPoints, r.parameters.length], [119, 119, 22]);
+});
+
+// ---------------------------------------------------------------- APR
+test('APR: effective (compounded) and simple readings for a single-repayment loan', () => {
+  const a = aprFor(product, 10000, 30);
+  assert.equal(a.aprSimplePct, 97.33);                                        // 8% x 365 / 30
+  assert.equal(a.aprEffectivePct, Math.round((Math.pow(1.08, 365 / 30) - 1) * 10000) / 100);
+  assert.deepEqual(aprFor(product, 0, 30), { aprEffectivePct: null, aprSimplePct: null });
+  assert.deepEqual(aprFor(product, 10000, 0), { aprEffectivePct: null, aprSimplePct: null });
+  const flat = aprFor({ fee_type: 'flat', fee_value: 500 }, 10000, 15);
+  assert.equal(flat.aprSimplePct, 121.67);                                    // 5% x 365 / 15
+});
+
+test('APR travels with the offer and into the application row', () => {
+  const r = decide({ features: perfect(), product, requestedAmount: 10000 });
+  assert.equal(r.offer.tenureDays, 30);
+  assert.equal(r.offer.aprSimplePct, 97.33);
+  assert.equal(toApplicationPatch(r).offered_apr_pct, r.offer.aprEffectivePct);
 });

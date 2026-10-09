@@ -26,6 +26,7 @@ export function toApplicationPatch(result) {
   return {
     status,
     approved_amount: result.decision === 'approve' ? result.offer.amount : null,
+    offered_apr_pct: result.offer ? result.offer.aprEffectivePct : null,
     decision_reasons: result.reasons,
   };
 }

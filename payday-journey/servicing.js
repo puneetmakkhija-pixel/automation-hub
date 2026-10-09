@@ -11,6 +11,7 @@ import {
   round2, istToday, toDate, addDays, daysBetween, splitAmount,
 } from './dates.js';
 import { onLoanClosed, blockCustomer } from './limits.js';
+import { emitPartnerEvent } from './partners.js';
 
 const OPEN = ['active', 'overdue'];
 const EPS = 0.004;
@@ -113,6 +114,7 @@ export async function recordPayment({ store, loan: loanRef, product, amount, mod
   if (outstanding <= EPS) {
     loan = await store.patchLoan(loan.id, { status: 'closed', closed_at: paidAt });
     await onLoanClosed({ store, loan, product, closedAt: payDate });
+    await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.closed', data: { loan_id: loan.id } });
     closed = true;
   }
   return { duplicate: false, payment, applied, unapplied: round2(amount - applied), closed, outstanding };

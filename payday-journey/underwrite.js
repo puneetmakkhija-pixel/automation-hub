@@ -2,6 +2,7 @@
 // Stops at the decision. Agreement (e-sign) and disbursement (payout) come after an accepted offer.
 import { decide, toScorecardRow, toApplicationPatch } from '../payday-engine/index.js';
 import { buildFeatures } from './features.js';
+import { emitPartnerEvent } from './partners.js';
 
 const kycRows = (customer, vendor, kyc) => kyc.checks.map((c) => ({
   customer_id: customer.id,
@@ -13,7 +14,7 @@ const kycRows = (customer, vendor, kyc) => kyc.checks.map((c) => ({
 }));
 
 export async function runUnderwriting({
-  registry, store, customer, application, product, intake = {}, customerLimit = null, reuseKyc = false,
+  registry, store, customer, application, product, intake = {}, customerLimit = null, reuseKyc = false, policy = undefined,
 }) {
   // 1. KYC first: do not spend on bureau or bank-statement pulls for someone who failed it.
   //    A repeat customer already verified may reuse that KYC (reuseKyc), skipping the vendor call.
@@ -52,12 +53,25 @@ export async function runUnderwriting({
 
   // 3. Decide.
   const features = buildFeatures({ intake, kyc, bureau, bank });
-  const result = decide({ features, product, requestedAmount: application.requested_amount, customerLimit });
+  const result = decide({
+    features, product, requestedAmount: application.requested_amount, customerLimit, ...(policy ? { policy } : {}),
+  });
   if (vendorErrors.length) result.reasons.push(...vendorErrors.map((e) => `Vendor unavailable: ${e}`));
 
   // 4. Persist.
   await store.saveScorecard(toScorecardRow(application.id, result));
   await store.patchApplication(application.id, toApplicationPatch(result));
+  // Partners hear the outcome and the offer, not the scoring detail.
+  await emitPartnerEvent({
+    store, applicationId: application.id, type: 'application.decided',
+    data: {
+      decision: result.decision,
+      offer: result.offer ? {
+        amount: result.offer.amount, fee: result.offer.feeAmount, repayment: result.offer.repaymentAmount,
+        tenure_days: result.offer.tenureDays, apr_effective_pct: result.offer.aprEffectivePct, apr_simple_pct: result.offer.aprSimplePct,
+      } : null,
+    },
+  });
 
   return { stage: 'decided', result, vendorErrors, kyc };
 }

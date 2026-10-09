@@ -42,6 +42,14 @@ All need `x-api-key`, except `/healthz` and webhooks (which are authenticated by
 
 Errors: `400` bad input, `401`/`503` auth, `404` not found, `409` not allowed right now (wrong status, open loan, blocked, rule violated), `422` amount or product out of range, `502` vendor failure, `500` unexpected (no details returned).
 
+## Access, roles, partners and controls (migration 007)
+- `x-api-key` is either the bootstrap key (`PAYDAY_API_KEY`, treated as admin) or a per-client key from `POST /v1/clients` (shown once, stored as a sha256 hash). Roles: `admin` (everything), `ops` (customers, applications, loans, simulate), `partner` (only its own customers and applications; other partners' records return 404).
+- Consent is required before any vendor pull (`POST /v1/customers/:id/consents`, purposes `kyc`, `credit_bureau`, `bank_data`, `terms`). `PAYDAY_REQUIRE_CONSENT=0` turns it off for migrations only.
+- Credit policy is data, not code: `POST /v1/policies` (draft), `POST /v1/policies/simulate` (nothing saved), `POST /v1/policies/:id/activate`. Active versions are frozen; every decision records its version. `PAYDAY_POLICY_MAKER_CHECKER=1` requires a different admin to activate.
+- Partners: `POST /v1/partners` with an https `callback_url` and `callback_secret_env` (env var name). Events (`application.decided`, `agreement.signed`, `loan.disbursed`, `loan.closed`) go out signed (`x-signature` over `timestamp.body`); run `POST /v1/jobs/deliver-partner-events` every minute or two.
+- `GET /v1/audit` (admin) lists who did what; the log is append-only in the database and secrets are redacted.
+- Offers and loans carry APR (effective and simple) for the key fact statement. Not applied to the live database until migration 007 is run.
+
 ## Security notes
 - Raw PAN is never stored. It is passed to vendors for the one call it is sent in.
 - `fraudFlag`, `kycFailed` and other internal fields cannot be set by a caller; only the listed intake answers are read.

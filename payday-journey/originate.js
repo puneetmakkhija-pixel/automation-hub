@@ -4,9 +4,10 @@
 //    because the money may have moved; the vendor webhook or a status check settles it
 //  * the loan row is created BEFORE the payout, and the database allows only one open loan per customer
 import { BusinessRuleError } from './errors.js';
-import { feeFor } from '../payday-engine/index.js';
+import { feeFor, repaymentFor, aprFor } from '../payday-engine/index.js';
+import { emitPartnerEvent } from './partners.js';
 import {
-  istToday, addDays, nextSalaryDate, splitAmount,
+  istToday, addDays, nextSalaryDate, splitAmount, daysBetween,
 } from './dates.js';
 
 export async function sendAgreement({ registry, store, customer, application }) {
@@ -19,7 +20,14 @@ export async function sendAgreement({ registry, store, customer, application }) 
     throw new BusinessRuleError(`cannot send agreement: application status is "${app.status}", expected "offered"`);
   }
 
-  const r = await registry.esign.createRequest({ application: app, customer, offer: { amount: app.approved_amount } });
+  // The key fact statement needs the amount, fee, repayment, tenure and APR: pass them all to the e-sign vendor.
+  const product = await store.getProduct(app.product_id);
+  const amount = Number(app.approved_amount);
+  const offer = product ? {
+    amount, fee: feeFor(product, amount), repayment: repaymentFor(product, amount), tenureDays: Number(product.tenure_days),
+    ...aprFor(product, amount, Number(product.tenure_days)),
+  } : { amount };
+  const r = await registry.esign.createRequest({ application: app, customer, offer });
   const agreement = await store.saveAgreement({
     application_id: app.id,
     kfs_url: r.kfsUrl ?? null,
@@ -40,6 +48,7 @@ export async function recordAgreementSigned({ store, applicationId, signedAt = n
   const updated = await store.patchAgreementByApplication(applicationId, { esign_status: 'signed', signed_at: signedAt });
   const app = await store.getApplication(applicationId);
   if (app && app.status === 'agreement_sent') await store.patchApplication(applicationId, { status: 'signed' });
+  await emitPartnerEvent({ store, applicationId, type: 'agreement.signed' });
   return { agreement: updated, alreadySigned: false };
 }
 
@@ -93,6 +102,8 @@ export async function disburseLoan({
     loan = await store.insertLoan({
       application_id: app.id, customer_id: customer.id, product_id: product.id,
       cycle_number: cycle, principal, fee_amount: fee, due_date: due,
+      // APR on the ACTUAL number of days to the due date (it differs from the product tenure when snapped to a salary day)
+      apr_pct: aprFor(product, principal, daysBetween(asOf, due)).aprEffectivePct,
     });
     await store.insertLoanLenderShares(splitAmount(principal, shares).map((p, i) => ({
       loan_id: loan.id, lender_id: p.lender_id, share_pct: shares[i].share_pct, principal_share: p.amount,
@@ -149,6 +160,10 @@ export async function completeDisbursement({ store, disbursementId, result }) {
       })),
     ]);
     await store.patchApplication(loan.application_id, { status: 'disbursed' });
+    await emitPartnerEvent({
+      store, applicationId: loan.application_id, type: 'loan.disbursed',
+      data: { loan_id: loan.id, amount: Number(loan.principal), fee: Number(loan.fee_amount), due_date: loan.due_date, apr_pct: loan.apr_pct ?? null },
+    });
     if (loan.cycle_number === 1 && !(await store.getCurrentLimit(loan.customer_id))) {
       await store.insertCustomerLimit({
         customer_id: loan.customer_id, limit_amount: Number(loan.principal), cycle_number: 1,

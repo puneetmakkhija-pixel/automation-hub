@@ -55,6 +55,7 @@ const mobiles = [];
 async function journey(label) {
   const m = mobile(); mobiles.push(m);
   const c = await call('POST', '/v1/customers', { mobile: m, salary_day: 1, source: `e2e-${RUN}` });
+  await call('POST', `/v1/customers/${c.body.customer_id}/consents`, { channel: 'e2e', text_version: 'e2e-v1', purposes: ['kyc', 'credit_bureau', 'bank_data', 'terms'] }); // needs migration 007
   check(`${label}: customer created`, c.status === 200 && c.body.customer_id, JSON.stringify(c));
   const a = await call('POST', '/v1/applications', { customer_id: c.body.customer_id, product_code: CODE, requested_amount: 10000, intake });
   check(`${label}: application approved at grade A with a 10,000 offer`, a.status === 200 && a.body.decision === 'approve' && a.body.offer?.amount === 10000, JSON.stringify(a.body));

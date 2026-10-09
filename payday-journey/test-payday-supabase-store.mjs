@@ -9,6 +9,11 @@ function fake(respond) {
   const log = [];
   const client = {
     schema: (s) => ({
+      rpc: (fn, args) => {
+        const ops = [['rpc', fn, args]];
+        log.push({ schema: s, table: `rpc:${fn}`, ops });
+        return { then: (res, rej) => Promise.resolve(respond(`rpc:${fn}`, ops)).then(res, rej) };
+      },
       from: (table) => {
         const ops = [];
         const entry = { schema: s, table, ops };
@@ -103,4 +108,50 @@ test('pending payouts query: status pending and older than the cutoff', async ()
   assert.deepEqual(rows, [{ id: 'd1' }]);
   assert.deepEqual(log[0].ops.find((o) => o[0] === 'eq'), ['eq', 'status', 'pending']);
   assert.deepEqual(log[0].ops.find((o) => o[0] === 'lt'), ['lt', 'created_at', '2026-01-01T00:00:00.000Z']);
+});
+
+test('new control tables: clients, audit, consent, policies, outbox use the right tables and filters', async () => {
+  const { log, client } = fake((table) => {
+    if (table === 'consent') return ok([{ purpose: 'kyc' }, { purpose: 'kyc' }, { purpose: 'terms' }]);
+    if (table === 'rpc:activate_credit_policy') return ok({ id: 'p1', status: 'active' });
+    return ok([{ id: 'x' }]);
+  });
+  const s = supabaseStore(client);
+  const op = (i, name) => log[i].ops.find((o) => o[0] === name);
+
+  await s.findApiClientByKeyHash('abc');
+  assert.deepEqual([log[0].table, op(0, 'eq')], ['api_client', ['eq', 'key_hash', 'abc']]);
+
+  await s.listApiClients();
+  assert.equal(log[1].table, 'api_client');
+  assert.equal(String(op(1, 'select')[1]).includes('key_hash'), false, 'listing clients never reads the key hash');
+
+  await s.insertAudit({ action: 'x' });
+  assert.deepEqual([log[2].table, op(2, 'insert')[0]], ['audit_log', 'insert']);
+
+  const consents = await s.getActiveConsents('c1');
+  assert.deepEqual(consents.map((c) => c.purpose), ['kyc', 'terms'], 'one entry per purpose');
+  assert.deepEqual(op(3, 'is'), ['is', 'revoked_at', null]);
+
+  assert.equal(await s.revokeConsent('c1', 'kyc', '2026-01-01T00:00:00Z'), 3, 'reports how many rows the database revoked');
+  assert.deepEqual(op(4, 'update')[1], { revoked_at: '2026-01-01T00:00:00Z' });
+  assert.deepEqual(log[4].ops.filter((o) => o[0] === 'eq').map((o) => o[2]), ['c1', 'kyc']);
+  assert.deepEqual(op(4, 'is'), ['is', 'revoked_at', null], 'only rows not already revoked');
+
+  await s.getActivePolicy();
+  assert.deepEqual([log[5].table, op(5, 'eq')], ['credit_policy', ['eq', 'status', 'active']]);
+  await s.listPolicies();
+  assert.equal(String(op(6, 'select')[1]).includes('config'), false, 'the list does not drag every full policy along');
+
+  const act = await s.activatePolicy('p1', 'ravi');
+  assert.deepEqual([log[7].table, op(7, 'rpc')], ['rpc:activate_credit_policy', ['rpc', 'activate_credit_policy', { p_id: 'p1', p_by: 'ravi' }]]);
+  assert.equal(act.status, 'active', 'activation goes through the atomic database function');
+
+  await s.listDuePartnerEvents('2026-01-01T00:00:00Z', 10);
+  assert.deepEqual(op(8, 'eq'), ['eq', 'status', 'pending']);
+  assert.deepEqual(op(8, 'lte'), ['lte', 'next_attempt_at', '2026-01-01T00:00:00Z']);
+  assert.deepEqual(op(8, 'limit'), ['limit', 10]);
+
+  await s.getCustomerByMobile('9000000001');
+  assert.deepEqual([log[9].table, op(9, 'eq')], ['customer', ['eq', 'mobile', '9000000001']]);
 });

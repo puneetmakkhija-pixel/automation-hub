@@ -22,6 +22,7 @@ export function memoryStore(seed = {}) {
     colending: [...(seed.colending || [])],
     lenders: seed.lenders || [{ id: 'lender-own-book', name: 'OWN_BOOK', lender_type: 'own_book' }],
     kycChecks: [], enrichment: [], scorecards: [], applicationPatches: [],
+    partners: [], apiClients: [], audit: [], consents: [], policies: [], partnerEvents: [],
   };
   const find = (list, pred) => clone(list.find(pred) ?? null);
   const patch = (list, pred, p) => {
@@ -135,6 +136,87 @@ export function memoryStore(seed = {}) {
       const rows = t.limits.filter((l) => l.customer_id === customerId);
       return clone(rows.length ? rows[rows.length - 1] : null);
     },
+    // ---- customers by mobile
+    async getCustomerByMobile(mobile) { return find(t.customers, (c) => c.mobile === mobile); },
+    // ---- partners and API clients
+    async insertPartner(row) {
+      if (t.partners.some((x) => x.name === row.name)) throw dup('partner.name');
+      const x = withId({ active: true, callback_url: null, callback_secret_env: null, ...row });
+      t.partners.push(x);
+      return clone(x);
+    },
+    async getPartner(id) { return find(t.partners, (x) => x.id === id); },
+    async patchPartner(id, p) { return patch(t.partners, (x) => x.id === id, p); },
+    async listPartners() { return clone(t.partners); },
+    async insertApiClient(row) {
+      if ((row.role === 'partner') !== Boolean(row.partner_id)) { const e = new Error('check violation: a partner key names its partner; no other role does'); e.code = '23514'; throw e; }
+      if (t.apiClients.some((x) => x.key_hash === row.key_hash)) throw dup('api_client.key_hash');
+      const x = withId({ active: true, last_used_at: null, revoked_at: null, partner_id: null, ...row });
+      t.apiClients.push(x);
+      return clone(x);
+    },
+    async findApiClientByKeyHash(hash) { return find(t.apiClients, (x) => x.key_hash === hash); },
+    async touchApiClient(id) { const x = t.apiClients.find((c) => c.id === id); if (x) x.last_used_at = new Date().toISOString(); },
+    async revokeApiClient(id) { return patch(t.apiClients, (x) => x.id === id, { active: false, revoked_at: new Date().toISOString() }); },
+    async listApiClients() { return clone(t.apiClients.map(({ key_hash, ...rest }) => rest)); },
+    // ---- audit log (append only)
+    async insertAudit(row) { t.audit.push({ id: t.audit.length + 1, at: new Date().toISOString(), ...clone(row) }); },
+    async listAudit({ entityType = null, entityId = null, limit = 100 } = {}) {
+      return clone(t.audit.filter((a) => (!entityType || a.entity_type === entityType) && (!entityId || a.entity_id === entityId)).slice(-limit).reverse());
+    },
+    // ---- consent
+    async insertConsents(rows) { t.consents.push(...rows.map((r) => withId({ granted_at: new Date().toISOString(), revoked_at: null, evidence: null, ...clone(r) }))); },
+    async getActiveConsents(customerId) {
+      const seen = new Map();
+      for (const c of t.consents) if (c.customer_id === customerId && !c.revoked_at) seen.set(c.purpose, c);
+      return clone([...seen.values()]);
+    },
+    async revokeConsent(customerId, purpose, atIso) {
+      const rows = t.consents.filter((c) => c.customer_id === customerId && c.purpose === purpose && !c.revoked_at);
+      rows.forEach((c) => { c.revoked_at = atIso; });
+      return rows.length;
+    },
+    // ---- credit policies (mirrors the database triggers: frozen once active, one active at a time)
+    async insertPolicy(row) {
+      if (t.policies.some((x) => x.version === row.version)) throw dup('credit_policy.version');
+      const x = withId({ status: 'draft', note: null, activated_by: null, activated_at: null, ...clone(row) });
+      t.policies.push(x);
+      return clone(x);
+    },
+    async getPolicyById(id) { return find(t.policies, (x) => x.id === id); },
+    async getPolicyByVersion(v) { return find(t.policies, (x) => x.version === v); },
+    async getActivePolicy() { return find(t.policies, (x) => x.status === 'active'); },
+    async listPolicies() { return clone(t.policies.map(({ config, ...rest }) => rest)); },
+    async patchPolicy(id, p) {
+      const x = t.policies.find((y) => y.id === id);
+      if (!x) throw new Error('row not found');
+      if (x.status !== 'draft' && p.config !== undefined && JSON.stringify(p.config) !== JSON.stringify(x.config)) throw new Error('an activated credit policy cannot be edited: create a new version');
+      Object.assign(x, p);
+      return clone(x);
+    },
+    async deletePolicy(id) {
+      const x = t.policies.find((y) => y.id === id);
+      if (x && x.status !== 'draft') throw new Error('only a draft credit policy can be deleted');
+      t.policies = t.policies.filter((y) => y.id !== id);
+    },
+    async activatePolicy(id, by) {
+      const x = t.policies.find((y) => y.id === id);
+      if (!x || x.status !== 'draft') throw new Error('only a draft credit policy can be activated');
+      t.policies.filter((y) => y.status === 'active').forEach((y) => { y.status = 'retired'; });
+      Object.assign(x, { status: 'active', activated_by: by, activated_at: new Date().toISOString() });
+      return clone(x);
+    },
+    // ---- partner callback outbox
+    async insertPartnerEvent(row) {
+      if (t.partnerEvents.some((e) => e.partner_id === row.partner_id && e.event_id === row.event_id)) throw dup('partner_event');
+      const x = withId({ status: 'pending', attempts: 0, next_attempt_at: new Date().toISOString(), last_error: null, delivered_at: null, ...clone(row) });
+      t.partnerEvents.push(x);
+      return clone(x);
+    },
+    async listDuePartnerEvents(nowIso, limit = 50) {
+      return clone(t.partnerEvents.filter((e) => e.status === 'pending' && e.next_attempt_at <= nowIso).slice(0, limit));
+    },
+    async patchPartnerEvent(id, p) { return patch(t.partnerEvents, (e) => e.id === id, p); },
     // ---- vendor webhooks
     async recordVendorEvent(ev) {
       const existing = t.events.find((e) => e.provider === ev.provider && e.event_id === ev.event_id);
@@ -230,6 +312,44 @@ export function supabaseStore(client) {
     insertCustomerLimit: (row) => insertOne('customer_limit', row),
     getCurrentLimit: (customerId) => run(from('customer_limit').select('*').eq('customer_id', customerId)
       .order('effective_from', { ascending: false }).limit(1).maybeSingle(), 'customer_limit select'),
+
+    getCustomerByMobile: (mobile) => getBy('customer', 'mobile', mobile),
+    insertPartner: (row) => insertOne('partner', row),
+    getPartner: (id) => getBy('partner', 'id', id),
+    patchPartner: (id, p) => patchBy('partner', 'id', id, p),
+    listPartners: () => run(from('partner').select('*'), 'partner select'),
+    insertApiClient: (row) => insertOne('api_client', row),
+    findApiClientByKeyHash: (hash) => getBy('api_client', 'key_hash', hash),
+    touchApiClient: (id) => run(from('api_client').update({ last_used_at: new Date().toISOString() }).eq('id', id), 'api_client touch'),
+    revokeApiClient: (id) => patchBy('api_client', 'id', id, { active: false, revoked_at: new Date().toISOString() }),
+    listApiClients: () => run(from('api_client').select('id, name, role, partner_id, active, created_at, last_used_at, revoked_at'), 'api_client select'),
+    insertAudit: (row) => run(from('audit_log').insert(row), 'audit_log insert'),
+    listAudit({ entityType = null, entityId = null, limit = 100 } = {}) {
+      let q = from('audit_log').select('*');
+      if (entityType) q = q.eq('entity_type', entityType);
+      if (entityId) q = q.eq('entity_id', entityId);
+      return run(q.order('id', { ascending: false }).limit(limit), 'audit_log select');
+    },
+    insertConsents: (rows) => run(from('consent').insert(rows), 'consent insert'),
+    async getActiveConsents(customerId) {
+      const rows = await run(from('consent').select('*').eq('customer_id', customerId).is('revoked_at', null), 'consent select');
+      return [...new Map(rows.map((c) => [c.purpose, c])).values()];
+    },
+    async revokeConsent(customerId, purpose, atIso) {
+      const rows = await run(from('consent').update({ revoked_at: atIso }).eq('customer_id', customerId).eq('purpose', purpose).is('revoked_at', null).select('id'), 'consent revoke');
+      return rows.length;
+    },
+    insertPolicy: (row) => insertOne('credit_policy', row),
+    getPolicyById: (id) => getBy('credit_policy', 'id', id),
+    getPolicyByVersion: (v) => getBy('credit_policy', 'version', v),
+    getActivePolicy: () => getBy('credit_policy', 'status', 'active'),
+    listPolicies: () => run(from('credit_policy').select('id, version, status, note, created_by, created_at, activated_by, activated_at').order('created_at', { ascending: false }), 'credit_policy select'),
+    patchPolicy: (id, p) => patchBy('credit_policy', 'id', id, p),
+    deletePolicy: (id) => run(from('credit_policy').delete().eq('id', id), 'credit_policy delete'),
+    activatePolicy: (id, by) => run(client.schema('payday').rpc('activate_credit_policy', { p_id: id, p_by: by }), 'activate_credit_policy'),
+    insertPartnerEvent: (row) => insertOne('partner_event', row),
+    listDuePartnerEvents: (nowIso, limit = 50) => run(from('partner_event').select('*').eq('status', 'pending').lte('next_attempt_at', nowIso).order('next_attempt_at').limit(limit), 'partner_event select'),
+    patchPartnerEvent: (id, p) => patchBy('partner_event', 'id', id, p),
 
     async recordVendorEvent(ev) {
       const { error } = await from('vendor_event').insert(ev);

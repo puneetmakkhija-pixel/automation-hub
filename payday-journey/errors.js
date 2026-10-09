@@ -23,3 +23,12 @@ export class BusinessRuleError extends Error {
     this.name = 'BusinessRuleError';
   }
 }
+
+// Input that is not acceptable as sent (bad shape or value). The API answers these with 400.
+export class ValidationError extends Error {
+  constructor(message, details = []) {
+    super(details.length ? `${message}: ${details.join('; ')}` : message);
+    this.name = 'ValidationError';
+    this.details = details;
+  }
+}

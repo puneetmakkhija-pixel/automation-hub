@@ -1,13 +1,14 @@
 // Run: node --test test-payday-journey.mjs  (CI also runs it as `node test-payday-journey.mjs`)
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { aprFor } from '../payday-engine/index.js';
 import {
   runUnderwriting, createRegistry, buildFeatures, memoryStore, supabaseStore,
   NotConfiguredError, createDigitapAdapters, contracts,
 } from './index.js';
 
 const product = {
-  code: 'PAYDAY_30', min_amount: 5000, max_amount: 25000,
+  code: 'PAYDAY_30', min_amount: 5000, max_amount: 25000, tenure_days: 30,
   fee_type: 'percent_of_principal', fee_value: 8,
 };
 const intake = {
@@ -36,7 +37,7 @@ test('happy path: clean customer is approved and everything is persisted', async
   assert.equal(store.db.scorecards.length, 1);
   assert.equal(store.db.scorecards[0].application_id, 'app-1');
   assert.deepEqual(store.db.applicationPatches[0], {
-    id: 'app-1', patch: { status: 'offered', approved_amount: 10000, decision_reasons: [] },
+    id: 'app-1', patch: { status: 'offered', approved_amount: 10000, offered_apr_pct: aprFor(product, 10000, 30).aprEffectivePct, decision_reasons: [] },
   });
 });
 

@@ -32,16 +32,19 @@ function setup({ env = ENV, overrides = {}, store = memoryStore({ products: [pro
   return { store, registry, app, call };
 }
 
+const consent = (w, customerId) => w.call('POST', `/v1/customers/${customerId}/consents`, { purposes: ['kyc', 'credit_bureau', 'terms'], text_version: 'v1', channel: 'app' });
+
 async function onboard(w, digit = 3) {
   const c = await w.call('POST', '/v1/customers', { mobile: mobile(digit), salary_day: 1 });
   assert.equal(c.status, 200);
+  assert.equal((await consent(w, c.body.customer_id)).status, 201);
   const a = await w.call('POST', '/v1/applications', { customer_id: c.body.customer_id, product_code: 'PAYDAY_30', requested_amount: 10000, intake });
   return { customerId: c.body.customer_id, app: a };
 }
 
-test('auth: no key configured is 503, wrong or missing key is 401, healthz is open', async () => {
+test('auth: wrong or missing key is 401, healthz is open, and with no bootstrap key only database clients work', async () => {
   const none = setup({ env: {} });
-  assert.equal((await none.call('GET', '/v1/loans/abc')).status, 503);
+  assert.equal((await none.call('GET', '/v1/loans/abc')).status, 401, 'no bootstrap key configured and no client row: nobody gets in');
   assert.equal((await none.call('GET', '/healthz', undefined, { key: null })).status, 200);
 
   const w = setup();
@@ -78,6 +81,7 @@ test('PAN is never stored raw; it reaches vendors for the call only; a bad PAN i
   assert.equal(row.pan_last4, '234F');
   assert.match(row.pan_hash, /^[0-9a-f]{64}$/);
 
+  await consent(w, c.body.customer_id);
   const a = await w.call('POST', '/v1/applications', { customer_id: c.body.customer_id, product_code: 'PAYDAY_30', requested_amount: 10000, intake, pan: 'ABCDE1234F' });
   assert.equal(a.status, 200);
   assert.equal(seen, 'ABCDE1234F', 'the bureau vendor got the PAN');
@@ -90,6 +94,7 @@ test('PAN is never stored raw; it reaches vendors for the call only; a bad PAN i
 test('a client cannot set the fraud flag or other internal fields through intake', async () => {
   const w = setup();
   const c = await w.call('POST', '/v1/customers', { mobile: mobile(3) });
+  await consent(w, c.body.customer_id);
   const a = await w.call('POST', '/v1/applications', { customer_id: c.body.customer_id, product_code: 'PAYDAY_30', requested_amount: 10000, intake: { ...intake, fraudFlag: true, kycFailed: true, npaStatus: 'npa' } });
   assert.equal(a.body.decision, 'approve', 'fraudFlag, kycFailed and npaStatus from the client are ignored');
 });
