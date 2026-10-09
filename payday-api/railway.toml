@@ -1,0 +1,11 @@
+# Config for the payday-api service. In Railway: create a service from this repo, leave Root Directory
+# at the repo root, and set the service's "config file path" to /payday-api/railway.toml.
+# (The repo-root railway.toml builds only ivr-router; this service needs payday-engine and
+# payday-journey in its build context too.)
+[build]
+builder = "dockerfile"
+dockerfile = "payday-api/Dockerfile"
+context = "."
+
+[deploy]
+healthcheckPath = "/healthz"
