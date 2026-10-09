@@ -162,7 +162,7 @@ const SCREENS = {
   offer: () => {
     const o = S.me.offer;
     return {
-      body: `<span class="badge ok">${esc(t('approved'))}</span><h1>${esc(t('offerTitle'))}</h1><p class="muted">${esc(t('offerSub'))}</p>
+      body: `<span class="stamp offer-stamp">${esc(t('approved'))}</span><h1>${esc(t('offerTitle'))}</h1><p class="muted">${esc(t('offerSub'))}</p>
         <div class="money-card"><span class="label">${esc(t('borrow'))}</span><span class="big">${inr(o.amount)}</span></div>
         ${kv([...termsRows(o), [t('lateCharge'), esc(t('lateChargeVal', { pct: o.lateChargePctPerDay }))]])}
         <p class="fine">${esc(t('dueRule', { days: o.tenureDays }))}</p>`,
@@ -288,12 +288,12 @@ function render() {
   const signedIn = !!S.me;
   document.documentElement.lang = S.lang;
   root.innerHTML = `<div class="shell">
-    <header class="appbar"><a class="brand" href="/app"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="58 12" transform="rotate(-70 16 16)"/></svg><span>${esc(t('brand'))}</span></a>
+    <header class="appbar"><a class="brand" href="/app"><svg class="mark" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="58 12" transform="rotate(-70 16 16)"/></svg><span>${esc(t('brand'))}</span></a>
       <div class="tools"><button class="chip" data-act="lang" data-lang="en" aria-pressed="${S.lang === 'en'}">EN</button><button class="chip" data-act="lang" data-lang="hi" aria-pressed="${S.lang === 'hi'}" lang="hi">हिं</button>
       ${signedIn ? `<button class="chip" data-act="open-menu" aria-label="${esc(t('menu'))}">☰</button>` : ''}</div></header>
     ${S.cfg?.mode === 'demo' ? `<div class="demo-strip" role="note">${esc(t('demoStrip'))}</div>` : ''}
-    ${idx >= 0 ? `<div class="progress" aria-hidden="true">${FLOW.slice(0, 8).map((_, i) => `<i class="${i <= idx ? 'on' : ''}"></i>`).join('')}</div>` : ''}
-    <main class="screen" id="screen">${view.body}</main>
+    ${idx >= 0 ? `<div class="stepline">${esc(t('step', { n: idx + 1, total: FLOW.length }))}</div>` : ''}
+    <main class="screen" id="screen"><div class="tape">${view.body}</div></main>
     ${view.foot ? `<div class="footbar">${view.foot}</div>` : ''}
     ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ''}
     ${sheetHtml()}

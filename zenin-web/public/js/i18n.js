@@ -2,7 +2,7 @@
 // lender's compliance team before real customers see it, especially the permission, key-fact and decline texts.
 export const STRINGS = {
   en: {
-    brand: 'Zenin Credit', signOut: 'Sign out', menu: 'Menu', help: 'Help', language: 'Language', back: 'Back', cont: 'Continue',
+    step: 'Step {n} of {total}', brand: 'Zenin Credit', signOut: 'Sign out', menu: 'Menu', help: 'Help', language: 'Language', back: 'Back', cont: 'Continue',
     tryAgain: 'Try again', loading: 'Loading', offline: 'No connection. Please check your internet and try again.', install: 'Install app',
     permissions: 'Your permissions', history: 'Your loans', privacy: 'Privacy notice', terms: 'Terms of use', website: 'Website', close: 'Close',
     demoStrip: 'Demo: no real money or data. Do not enter real details.', demoTip: 'Demo tip: numbers ending 0 to 6 are approved; 7, 8 and 9 are declined. Choosing "Other personal use" as the purpose sends an approved file to review. Code: {otp}.',
@@ -40,7 +40,7 @@ export const STRINGS = {
     e_signed_out: 'Please sign in again.', e_generic: 'Something went wrong. Please try again.', e_check: 'Please check the highlighted fields.',
   },
   hi: {
-    brand: 'ज़ेनिन क्रेडिट', signOut: 'साइन आउट', menu: 'मेन्यू', help: 'मदद', language: 'भाषा', back: 'वापस', cont: 'आगे बढ़ें',
+    step: 'चरण {n} / {total}', brand: 'ज़ेनिन क्रेडिट', signOut: 'साइन आउट', menu: 'मेन्यू', help: 'मदद', language: 'भाषा', back: 'वापस', cont: 'आगे बढ़ें',
     tryAgain: 'फिर कोशिश करें', loading: 'लोड हो रहा है', offline: 'इंटरनेट नहीं है। कृपया जाँचकर फिर कोशिश करें।', install: 'ऐप इंस्टॉल करें',
     permissions: 'आपकी अनुमतियाँ', history: 'आपके लोन', privacy: 'गोपनीयता सूचना', terms: 'उपयोग की शर्तें', website: 'वेबसाइट', close: 'बंद करें',
     demoStrip: 'डेमो: कोई असली पैसा या डेटा नहीं। असली जानकारी न डालें।', demoTip: 'डेमो सुझाव: 0 से 6 पर खत्म होने वाले नंबर मंज़ूर होते हैं; 7, 8 और 9 अस्वीकार होते हैं। उद्देश्य में "अन्य निजी उपयोग" चुनने पर मंज़ूर फ़ाइल समीक्षा में जाती है। कोड: {otp}।',
