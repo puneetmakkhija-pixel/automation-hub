@@ -44,11 +44,14 @@ Errors: `400` bad input, `401`/`503` auth, `404` not found, `409` not allowed ri
 
 ## Access, roles, partners and controls (migration 007)
 - `x-api-key` is either the bootstrap key (`PAYDAY_API_KEY`, treated as admin) or a per-client key from `POST /v1/clients` (shown once, stored as a sha256 hash). Roles: `admin` (everything), `ops` (customers, applications, loans, simulate), `partner` (only its own customers and applications; other partners' records return 404).
-- Consent is required before any vendor pull (`POST /v1/customers/:id/consents`, purposes `kyc`, `credit_bureau`, `bank_data`, `terms`). `PAYDAY_REQUIRE_CONSENT=0` turns it off for migrations only.
+- Consent is required before any vendor pull (`POST /v1/customers/:id/consents`, purposes `kyc`, `credit_bureau`, `terms`; `bank_data` only if a bank statement is used). `PAYDAY_REQUIRE_CONSENT=0` turns it off for migrations only.
 - Credit policy is data, not code: `POST /v1/policies` (draft), `POST /v1/policies/simulate` (nothing saved), `POST /v1/policies/:id/activate`. Active versions are frozen; every decision records its version. `PAYDAY_POLICY_MAKER_CHECKER=1` requires a different admin to activate.
 - Partners: `POST /v1/partners` with an https `callback_url` and `callback_secret_env` (env var name). Events (`application.decided`, `agreement.signed`, `loan.disbursed`, `loan.closed`) go out signed (`x-signature` over `timestamp.body`); run `POST /v1/jobs/deliver-partner-events` every minute or two.
 - `GET /v1/audit` (admin) lists who did what; the log is append-only in the database and secrets are redacted.
 - Offers and loans carry APR (effective and simple) for the key fact statement. Not applied to the live database until migration 007 is run.
+
+## Bank statement (small tickets)
+No bank statement is pulled for small tickets. `PAYDAY_BANK_STATEMENT_ABOVE=<amount>` pulls one for requests above that amount; unset means never. With no policy activated, the no-bank scorecard `PAYDAY_LITE_V1` applies (14 parameters from bureau, declared income and profile; max 75 points). If a bank pull is switched on, the full 23-parameter `PAYDAY_V1` is the fallback. Declared salary is not verified without a bank statement, so offers are capped by grade and by the product limit; check this against your fraud risk before raising limits.
 
 ## Security notes
 - Raw PAN is never stored. It is passed to vendors for the one call it is sent in.

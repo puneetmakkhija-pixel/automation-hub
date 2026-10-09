@@ -8,6 +8,7 @@
 //            send the agreement, request a repayment link. It never sees scoring detail or other partners' data.
 // The key in PAYDAY_API_KEY is a bootstrap admin so a new deployment can create real clients; then unset it.
 import { createHash } from 'node:crypto';
+import { NO_BANK_POLICY, DEFAULT_POLICY } from '../payday-engine/index.js';
 import {
   createApplication, ApplicationError, runUnderwriting, sendAgreement, disburseLoan, recordPayment, rollover, writeOff,
   runDailyServicing, reconcilePendingPayouts, deliverPartnerEvents, getLoanSummary, repeatEligibility, createWebhookHandler,
@@ -36,6 +37,10 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
   const requiredConsents = env.PAYDAY_REQUIRE_CONSENT === '0' ? [] : REQUIRED_CONSENTS;
   // Optional maker-checker: a policy must be activated by someone other than who created it.
   const makerChecker = env.PAYDAY_POLICY_MAKER_CHECKER === '1';
+  // Small tickets do not pull a bank statement. PAYDAY_BANK_STATEMENT_ABOVE=<amount> pulls one for requests above that
+  // amount; unset means never. With no policy activated, the scorecard without bank data applies unless a bank pull is on.
+  const bankStatementAbove = env.PAYDAY_BANK_STATEMENT_ABOVE === undefined || env.PAYDAY_BANK_STATEMENT_ABOVE === '' ? Infinity : Number(env.PAYDAY_BANK_STATEMENT_ABOVE);
+  const fallback = bankStatementAbove === Infinity ? NO_BANK_POLICY : DEFAULT_POLICY;
 
   const missing = (label) => Object.assign(new Error(`${label} not found`), { notFound: true });
   const need = async (loader, label) => {
@@ -122,7 +127,7 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       if (!body.customer_id || !body.product_code) return bad('customer_id and product_code are required');
       const customer = await ownedCustomer(actor, body.customer_id);
       const product = await need(() => store.getProductByCode(body.product_code), 'product');
-      const policy = await loadActivePolicy({ store }); // an error here stops the decision: never fall back silently
+      const policy = await loadActivePolicy({ store, fallback }); // an error here stops the decision: never fall back silently
       await note(actor, 'application.create', 'customer', customer.id, {
         product_code: product.code, requested_amount: body.requested_amount, policy_version: policy.version,
       });
@@ -134,7 +139,7 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       const forVendors = body.pan ? { ...customer, pan: body.pan } : customer;
       const out = await runUnderwriting({
         registry, store, customer: forVendors, application, product, intake: pick(body.intake, INTAKE_FIELDS),
-        customerLimit, reuseKyc: isRepeat && customer.kyc_status === 'verified', policy,
+        customerLimit, reuseKyc: isRepeat && customer.kyc_status === 'verified', policy, bankStatementAbove,
       });
       if (out.kyc.checks.length) await store.patchCustomer(customer.id, { kyc_status: out.kyc.status });
       if (out.stage === 'kyc_pending') return json(202, { application_id: application.id, stage: 'kyc_pending' });
@@ -254,13 +259,13 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
     ['GET', /^\/v1\/policies$/, INTERNAL, async () => json(200, { policies: await store.listPolicies() })],
     ['GET', /^\/v1\/policies\/active$/, INTERNAL, async () => {
       const row = await store.getActivePolicy();
-      return json(200, row ? { source: 'database', version: row.version, config: row.config } : { source: 'built-in default', version: (await loadActivePolicy({ store })).version, config: await loadActivePolicy({ store }) });
+      return json(200, row ? { source: 'database', version: row.version, config: row.config } : { source: 'built-in default', version: (await loadActivePolicy({ store, fallback })).version, config: await loadActivePolicy({ store, fallback }) });
     }],
     ['GET', /^\/v1\/policies\/([^/]+)$/, INTERNAL, async ({ params }) => json(200, await need(() => store.getPolicyById(params[0]), 'policy'))],
     ['POST', /^\/v1\/policies\/simulate$/, INTERNAL, async ({ body }) => {
       if (!body.features || typeof body.features !== 'object') return bad('features is required');
       const product = await need(() => store.getProductByCode(body.product_code), 'product');
-      const policy = body.config ?? (body.policy_id ? (await need(() => store.getPolicyById(body.policy_id), 'policy')).config : await loadActivePolicy({ store }));
+      const policy = body.config ?? (body.policy_id ? (await need(() => store.getPolicyById(body.policy_id), 'policy')).config : await loadActivePolicy({ store, fallback }));
       // read-only: nothing is saved
       return json(200, { result: simulatePolicy({ policy, features: body.features, product, requestedAmount: Number(body.requested_amount), customerLimit: body.customer_limit ?? null }) });
     }],

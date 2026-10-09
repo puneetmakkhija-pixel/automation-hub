@@ -238,7 +238,7 @@ test('credit policy: draft, simulate, activate; the credit team changes a decisi
   assert.equal((await ops.call('POST', '/v1/policies/simulate', { features: {}, product_code: 'PAYDAY_30', requested_amount: 10000, config: { nope: 1 } })).status, 400);
 
   const before = await apply(w.admin, c.body.customer_id);
-  assert.equal(before.body.policy_version, 'PAYDAY_V1');
+  assert.equal(before.body.policy_version, 'PAYDAY_LITE_V1', 'no bank statement is pulled, so the no-bank scorecard applies');
   assert.equal((await w.admin('GET', '/v1/policies/active')).body.source, 'built-in default');
 
   const act = await w.admin('POST', `/v1/policies/${made.body.id}/activate`);
@@ -251,7 +251,7 @@ test('credit policy: draft, simulate, activate; the credit team changes a decisi
   await grant(w.admin, c2.body.customer_id);
   const after = await apply(w.admin, c2.body.customer_id);
   assert.deepEqual([after.body.decision, after.body.policy_version], ['reject', 'PAYDAY_V2']);
-  assert.deepEqual(w.store.db.scorecards.map((s) => s.model_version), ['PAYDAY_V1', 'PAYDAY_V2']);
+  assert.deepEqual(w.store.db.scorecards.map((s) => s.model_version), ['PAYDAY_LITE_V1', 'PAYDAY_V2']);
 });
 
 test('credit policy: optional maker-checker needs a second admin', async () => {
@@ -332,4 +332,20 @@ test('APR is shown on the offer and stored on the application', async () => {
   assert.ok(a.body.offer.aprEffectivePct > 150);
   const got = await w.admin('GET', `/v1/applications/${a.body.application_id}`);
   assert.equal(got.body.offered_apr_pct, a.body.offer.aprEffectivePct);
+});
+
+test('small ticket: no bank statement is pulled by default, and a clean file is approved on the no-bank scorecard', async () => {
+  let bankCalls = 0;
+  const bankStatement = { name: 'spy', analyse: async () => { bankCalls += 1; throw new Error('must not be called'); } };
+  const w = await world({ overrides: { bankStatement } });
+  const c = await w.admin('POST', '/v1/customers', { mobile: mobile() });
+  await grant(w.admin, c.body.customer_id);
+  const a = await apply(w.admin, c.body.customer_id);
+  assert.deepEqual([a.status, a.body.decision, a.body.policy_version], [200, 'approve', 'PAYDAY_LITE_V1']);
+  assert.equal(bankCalls, 0);
+  assert.equal((await w.admin('GET', '/v1/policies/active')).body.version, 'PAYDAY_LITE_V1');
+
+  // switched on for larger tickets: the bank statement is pulled and the full scorecard is the fallback
+  const w2 = await world({ overrides: { bankStatement }, env: { PAYDAY_BANK_STATEMENT_ABOVE: '20000' } });
+  assert.equal((await w2.admin('GET', '/v1/policies/active')).body.version, 'PAYDAY_V1');
 });

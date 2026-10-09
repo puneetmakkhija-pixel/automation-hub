@@ -3,7 +3,7 @@
 The payday-loan business logic: vendor slots, underwriting pipeline, agreement and disbursement, servicing, repeat-loan limits, vendor webhooks. No dependencies. It uses `../payday-engine` for the scorecard decision and writes to the `payday` tables from `database/migrations/003` and `004`. The HTTP service on top of it is `../payday-api`.
 
 ```
- customer -> application -> KYC -> bureau + bank statement -> decision (payday-engine)
+ customer -> application -> KYC -> bureau (+ bank statement only above a configured amount) -> decision (payday-engine)
     -> offer -> agreement (e-sign) -> signed -> payout (co-lender split) -> loan active
     -> collect link -> payment webhook -> repayment allocated -> closed -> limit steps up -> repeat loan
                                    \-> overdue: daily penalty -> rollover or write-off

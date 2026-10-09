@@ -49,6 +49,26 @@ export const DEFAULT_POLICY = Object.freeze({
   flags: { review: clone(DEFAULT_REVIEW) },
 });
 
+// Policy for small tickets where no bank statement is pulled: bureau, declared income and profile only. Every
+// parameter that needs bank data is dropped (a policy that kept them would see them all "missing" and refer
+// every file), the bands are scaled to the smaller maximum score, and the flags that read bank data are off.
+// Like every threshold here this is a proposal, not calibrated on repayment data.
+const BANK_FIELDS = new Set(['abbToRepayment', 'abb', 'creditTrendPct', 'bankBounces6m', 'txnPerMonth', 'cashDepositPct',
+  'salaryCredits6m', 'salaryVariationPct', 'salaryTrendPct', 'salaryMatchVariancePct']);
+const noBankParams = clone(PARAMS).filter((q) => !BANK_FIELDS.has(q.field));
+const noBankMax = noBankParams.reduce((a, q) => a + q.weight, 0);
+const bandAt = (frac) => Math.round(noBankMax * frac);
+export const NO_BANK_POLICY = Object.freeze({
+  ...clone(DEFAULT_POLICY),
+  version: 'PAYDAY_LITE_V1',
+  params: noBankParams,
+  maxMissingForAuto: 3,
+  // same share of the maximum score as the full scorecard's bands (about 80 / 65 / 50 / 35 percent)
+  bands: [{ grade: 'A', min: bandAt(0.8) }, { grade: 'B', min: bandAt(0.65) }, { grade: 'C', min: bandAt(0.5) },
+    { grade: 'D', min: bandAt(0.35) }, { grade: 'E', min: null }],
+  flags: { review: { ...clone(DEFAULT_REVIEW), RF7: { enabled: false, pct: 30 }, RF9: { enabled: false, count: 2 } } },
+});
+
 const TOP_KEYS = ['version', 'params', 'missingScore10', 'maxMissingForAuto', 'bands', 'decisionByGrade', 'maxPctOfSalary', 'amountStep', 'flags'];
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

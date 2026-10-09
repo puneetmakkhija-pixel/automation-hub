@@ -34,9 +34,9 @@ export async function activatePolicy({ store, id, by }) {
 }
 
 // The policy decisions use: the active version, or the built-in default if none has been activated yet.
-export async function loadActivePolicy({ store }) {
+export async function loadActivePolicy({ store, fallback = DEFAULT_POLICY }) {
   const row = await store.getActivePolicy();
-  return row ? row.config : DEFAULT_POLICY;
+  return row ? row.config : fallback;
 }
 
 // Run a policy on made-up inputs without saving anything, so the credit team can see the effect of a change.

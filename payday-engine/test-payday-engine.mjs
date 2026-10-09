@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   decide, scale, classify, maxPoints, trendPct, repaymentFor, offerFor, aprFor,
-  toScorecardRow, toApplicationPatch, config, DEFAULT_POLICY, validatePolicy, resolvePolicy, PolicyError,
+  toScorecardRow, toApplicationPatch, config, DEFAULT_POLICY, NO_BANK_POLICY, validatePolicy, resolvePolicy, PolicyError,
 } from './index.js';
 
 const product = {
@@ -279,4 +279,29 @@ test('APR travels with the offer and into the application row', () => {
   assert.equal(r.offer.tenureDays, 30);
   assert.equal(r.offer.aprSimplePct, 97.33);
   assert.equal(toApplicationPatch(r).offered_apr_pct, r.offer.aprEffectivePct);
+});
+
+test('no-bank policy: valid, 14 parameters, none of them reads bank data', () => {
+  const v = validatePolicy(NO_BANK_POLICY);
+  assert.deepEqual([v.ok, v.errors, v.maxPoints, NO_BANK_POLICY.params.length], [true, [], 75, 14]);
+  const bankFields = ['abbToRepayment', 'abb', 'creditTrendPct', 'bankBounces6m', 'txnPerMonth', 'cashDepositPct', 'salaryCredits6m', 'salaryVariationPct', 'salaryTrendPct', 'salaryMatchVariancePct'];
+  assert.ok(NO_BANK_POLICY.params.every((p) => !bankFields.includes(p.field)));
+  assert.equal(NO_BANK_POLICY.flags.review.RF9.enabled, false);
+});
+
+test('no-bank policy: a clean file with no bank data is approved; the full scorecard would refer it', () => {
+  const f = perfect();
+  for (const k of ['abb', 'creditTrendPct', 'bankBounces6m', 'txnPerMonth', 'cashDepositPct', 'salaryCredits6m', 'salaryVariationPct', 'salaryTrendPct', 'salaryMatchVariancePct']) f[k] = null;
+  const lite = decide({ features: f, product, requestedAmount: 10000, policy: NO_BANK_POLICY });
+  assert.deepEqual([lite.grade, lite.decision, lite.missingCount, lite.modelVersion], ['A', 'approve', 0, 'PAYDAY_LITE_V1']);
+  const full = decide({ features: f, product, requestedAmount: 10000 });
+  assert.equal(full.decision, 'refer');
+  assert.match(full.reasons.join(' '), /Insufficient data/);
+});
+
+test('no-bank policy: missing bureau data is never approved, and hard declines still apply', () => {
+  const f = { ...perfect(), cibil: null, maxDpd12m: null, activeLoans: null, enquiries90d: null, bureauEmiBounces: null, ccUtilPct: null };
+  assert.notEqual(decide({ features: f, product, requestedAmount: 10000, policy: NO_BANK_POLICY }).decision, 'approve');
+  const npa = decide({ features: { ...perfect(), npaStatus: 'npa' }, product, requestedAmount: 10000, policy: NO_BANK_POLICY });
+  assert.deepEqual([npa.grade, npa.decision], ['E', 'reject']);
 });

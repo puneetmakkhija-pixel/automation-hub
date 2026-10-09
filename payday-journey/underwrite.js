@@ -15,6 +15,9 @@ const kycRows = (customer, vendor, kyc) => kyc.checks.map((c) => ({
 
 export async function runUnderwriting({
   registry, store, customer, application, product, intake = {}, customerLimit = null, reuseKyc = false, policy = undefined,
+  // The bank statement is only pulled when the requested amount is above this. 0 = always (library default);
+  // payday-api passes Infinity, so small tickets never pull one.
+  bankStatementAbove = 0,
 }) {
   // 1. KYC first: do not spend on bureau or bank-statement pulls for someone who failed it.
   //    A repeat customer already verified may reuse that KYC (reuseKyc), skipping the vendor call.
@@ -37,15 +40,18 @@ export async function runUnderwriting({
   let bureau = null;
   let bank = null;
   if (kyc.status === 'verified') {
+    const wantBank = Number(application.requested_amount) > bankStatementAbove;
     const [b, k] = await Promise.allSettled([
       registry.bureau.pull({ customer }),
-      registry.bankStatement.analyse({ customer }),
+      wantBank ? registry.bankStatement.analyse({ customer }) : Promise.resolve(null),
     ]);
     if (b.status === 'fulfilled') {
       bureau = b.value;
       await store.saveEnrichment({ customer_id: customer.id, source: 'bureau', provider: registry.names.bureau, payload: bureau });
     } else vendorErrors.push(`bureau: ${b.reason.message}`);
-    if (k.status === 'fulfilled') {
+    if (k.status === 'fulfilled' && k.value === null) {
+      bank = null; // not requested for this ticket size
+    } else if (k.status === 'fulfilled') {
       bank = k.value;
       await store.saveEnrichment({ customer_id: customer.id, source: 'bank_statement', provider: registry.names.bankStatement, payload: bank });
     } else vendorErrors.push(`bank statement: ${k.reason.message}`);

@@ -1,7 +1,7 @@
 // Run: node --test test-payday-journey.mjs  (CI also runs it as `node test-payday-journey.mjs`)
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { aprFor } from '../payday-engine/index.js';
+import { aprFor, NO_BANK_POLICY } from '../payday-engine/index.js';
 import {
   runUnderwriting, createRegistry, buildFeatures, memoryStore, supabaseStore,
   NotConfiguredError, createDigitapAdapters, contracts,
@@ -150,4 +150,27 @@ test('supabaseStore: writes go to the payday schema with the right tables', asyn
 
   const failing = { schema: () => ({ from: () => ({ insert: () => Promise.resolve({ error: { message: 'rls denied' } }) }) }) };
   await assert.rejects(() => supabaseStore(failing).saveScorecard({}), /payday\.scorecard_result insert: rls denied/);
+});
+
+test('small ticket: no bank statement is pulled, and the file is still decided on bureau and declared income', async () => {
+  let bankCalls = 0;
+  const bank = { name: 'spy', analyse: async () => { bankCalls += 1; throw new Error('must not be called'); } };
+  const store = memoryStore();
+  const registry = createRegistry({ env: {}, overrides: { bankStatement: bank } });
+  const out = await runUnderwriting({
+    registry, store, customer: customer(3), application, product, intake, policy: NO_BANK_POLICY, bankStatementAbove: Infinity,
+  });
+  assert.equal(bankCalls, 0);
+  assert.deepEqual(store.db.enrichment.map((e) => e.source), ['bureau']);
+  assert.equal(out.vendorErrors.length, 0);
+  assert.deepEqual([out.result.decision, out.result.modelVersion], ['approve', 'PAYDAY_LITE_V1']);
+});
+
+test('the bank statement is pulled above the configured amount', async () => {
+  let bankCalls = 0;
+  const bank = { name: 'spy', analyse: async () => { bankCalls += 1; return { abb: 30000 }; } };
+  const registry = createRegistry({ env: {}, overrides: { bankStatement: bank } });
+  await runUnderwriting({ registry, store: memoryStore(), customer: customer(3), application: { id: 'a', requested_amount: 10000 }, product, intake, bankStatementAbove: 9999 });
+  await runUnderwriting({ registry, store: memoryStore(), customer: customer(3), application: { id: 'a', requested_amount: 9000 }, product, intake, bankStatementAbove: 9999 });
+  assert.equal(bankCalls, 1);
 });
