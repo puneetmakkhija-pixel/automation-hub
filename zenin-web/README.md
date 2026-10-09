@@ -39,6 +39,26 @@ mock KYC and a fixed OTP.
 - Bank account numbers are validated, passed once to the payout step, never echoed and not kept by this site.
 - CSP forbids inline scripts and any outside host except Google Fonts. No third-party scripts.
 
+## Returning customers and the wheel
+
+A customer who has borrowed before sees one of these, worked out on the server each time:
+
+| State | When | Screen |
+|---|---|---|
+| Pre-approved | all checks still fresh | Welcome back: amount, saved details, purpose, bill. No re-typing, no PAN |
+| Saved offer | offer made, not accepted, under `OFFER_VALID_DAYS` | The offer with the date it lapses |
+| Refresh | permission withdrawn, identity older than `KYC_VALID_DAYS`, job details older than `DATA_VALID_DAYS` | "A quick check first": only the stale items are asked |
+| No offer | under review, declined (with the date to try again), not available, identity check pending | A plain reason; never a score |
+
+From the third repaid loan, each repaid loan earns one spin of a ten-slice wheel. It waives 10 to 50 percent of the
+processing fee (a share of the fee, not percentage points) on the next loan. The draw is on the server, the odds are
+shown on the wheel screen, the reward is valid 30 days and is used up only when the money is paid. Needs migration
+`database/migrations/009_payday_fee_waiver_wheel.sql` before it runs against Supabase. Compliance must sign off the
+wheel before live: it is a chance-based promotion on repeat borrowing.
+
+`node zenin-web/prototype/build.mjs` writes `prototype/zenin-prototype.html`: the real app with an in-browser mock of
+the API and a scenario switcher. One file, no server.
+
 ## Configuration
 
 | Variable | Meaning |
@@ -48,6 +68,7 @@ mock KYC and a fixed OTP.
 | `SESSION_SECRET` | 32+ random characters; required in live |
 | `PORT` | default 3000 |
 | `FIRST_LOAN_MAX` | most a first-time customer may ask for (default 10000) |
+| `KYC_VALID_DAYS`, `DATA_VALID_DAYS`, `BUREAU_VALID_DAYS`, `OFFER_VALID_DAYS` | how long identity (365), job details (90), credit report (30) and an offer (7) stay valid |
 | `REAPPLY_AFTER_DAYS` | wait after a decline (live default 30, demo 0) |
 | `SESSION_HOURS` | session length (default 2) |
 | `LEGAL_REVIEWED` | set to `1` only after compliance signs off the legal pages |
