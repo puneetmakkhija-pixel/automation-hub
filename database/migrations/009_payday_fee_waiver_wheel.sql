@@ -1,6 +1,7 @@
 -- 009_payday_fee_waiver_wheel.sql
 -- Loyalty reward: customers who have repaid 3 or more loans earn spins of a wheel; each spin is a waiver of 10 to 50
--- percent of the fee on their next loan. DRAFT: not applied to any database yet. Run after 003-008.
+-- percent of the fee on their next loan. Applied to the smecircle Supabase project (ymdkcaedwnnhszhzirli) on 2026-10-09 as migration
+-- "payday_fee_waiver_wheel". Run after 003-008. Safe to re-run: every statement is idempotent.
 create table if not exists payday.customer_reward (
   id             uuid primary key default gen_random_uuid(),
   customer_id    uuid not null references payday.customer(id) on delete cascade,

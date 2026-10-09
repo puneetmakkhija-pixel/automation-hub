@@ -52,8 +52,8 @@ A customer who has borrowed before sees one of these, worked out on the server e
 
 From the third repaid loan, each repaid loan earns one spin of a ten-slice wheel. It waives 10 to 50 percent of the
 processing fee (a share of the fee, not percentage points) on the next loan. The draw is on the server, the odds are
-shown on the wheel screen, the reward is valid 30 days and is used up only when the money is paid. Needs migration
-`database/migrations/009_payday_fee_waiver_wheel.sql` before it runs against Supabase. Compliance must sign off the
+shown on the wheel screen, the reward is valid 30 days and is used up only when the money is paid. Migration
+`database/migrations/009_payday_fee_waiver_wheel.sql` is applied to the smecircle project. Compliance must sign off the
 wheel before live: it is a chance-based promotion on repeat borrowing.
 
 `node zenin-web/prototype/build.mjs` writes `prototype/zenin-prototype.html`: the real app with an in-browser mock of
