@@ -3,7 +3,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
 import { createApp } from './app.js';
-import { createRegistry, memoryStore } from '../payday-journey/index.js';
+import { createRegistry, memoryStore, createApiClient } from '../payday-journey/index.js';
+import { adminAccessProblem } from './server.js';
 import { DEFAULT_POLICY } from '../payday-engine/index.js';
 import { acme } from '../payday-journey/vendors/_example-acme.spec.js';
 
@@ -348,4 +349,17 @@ test('small ticket: no bank statement is pulled by default, and a clean file is 
   // switched on for larger tickets: the bank statement is pulled and the full scorecard is the fallback
   const w2 = await world({ overrides: { bankStatement }, env: { PAYDAY_BANK_STATEMENT_ABOVE: '20000' } });
   assert.equal((await w2.admin('GET', '/v1/policies/active')).body.version, 'PAYDAY_V1');
+});
+
+test('start-up: the bootstrap key is only needed until a real admin client exists', async () => {
+  const store = memoryStore({});
+  assert.match(await adminAccessProblem({ store, env: {} }), /no admin access/, 'no key and no admin client: refuse to start');
+  assert.equal(await adminAccessProblem({ store, env: { PAYDAY_API_KEY: 'k' } }), null, 'bootstrap key present');
+  const { client } = await createApiClient({ store, name: 'ops lead', role: 'ops' });
+  assert.match(await adminAccessProblem({ store, env: {} }), /no admin access/, 'an ops client is not admin access');
+  const { client: admin } = await createApiClient({ store, name: 'cto', role: 'admin' });
+  assert.equal(await adminAccessProblem({ store, env: {} }), null, 'an active admin client makes the bootstrap key unnecessary');
+  await store.revokeApiClient(admin.id);
+  assert.match(await adminAccessProblem({ store, env: {} }), /no admin access/, 'a revoked admin does not count');
+  assert.ok(client.id);
 });

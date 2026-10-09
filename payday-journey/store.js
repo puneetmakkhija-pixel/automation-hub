@@ -105,6 +105,11 @@ export function memoryStore(seed = {}) {
     async findDisbursementByKey(key) { return find(t.disbursements, (d) => d.idempotency_key === key); },
     async patchDisbursement(id, p) {
       if (p.utr && t.disbursements.some((d) => d.utr === p.utr && d.id !== id)) throw dup('disbursement.utr');
+      // mirrors the database: one successful disbursement per loan (migration 008)
+      if (p.status === 'success') {
+        const cur = t.disbursements.find((d) => d.id === id);
+        if (cur && t.disbursements.some((d) => d.loan_id === cur.loan_id && d.id !== id && d.status === 'success')) throw dup('disbursement.one_success_per_loan');
+      }
       return patch(t.disbursements, (d) => d.id === id, p);
     },
     async listPendingDisbursements(beforeIso) { return clone(t.disbursements.filter((d) => d.status === 'pending' && d.created_at < beforeIso)); },
