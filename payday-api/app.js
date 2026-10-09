@@ -15,6 +15,7 @@ import {
   runDailyServicing, reconcilePendingPayouts, deliverPartnerEvents, getLoanSummary, repeatEligibility, createWebhookHandler,
   recordConsents, revokeConsent, REQUIRED_CONSENTS, createApiClient, authenticate, createPartner, audit,
   createPolicyDraft, updatePolicyDraft, activatePolicy, loadActivePolicy, simulatePolicy, ROLES,
+  WHEEL, wheelOdds, getRewardState, spinWheel, applyReward,
   BusinessRuleError, NotConfiguredError, VendorHttpError, ValidationError,
 } from '../payday-journey/index.js';
 
@@ -119,6 +120,18 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       return json(200, await revokeConsent({ store, customerId: c.id, purpose: body.purpose }));
     }],
 
+    ['GET', /^\/v1\/customers\/([^/]+)\/rewards$/, ALL, async ({ actor, params }) => {
+      const c = await ownedCustomer(actor, params[0]);
+      return json(200, { ...(await getRewardState({ store, customerId: c.id })), wheel: { slices: WHEEL, odds: wheelOdds() } });
+    }],
+    ['POST', /^\/v1\/customers\/([^/]+)\/wheel\/spin$/, ALL, async ({ actor, params }) => {
+      const c = await ownedCustomer(actor, params[0]);
+      await note(actor, 'reward.spin', 'customer', c.id, {});
+      const r = await spinWheel({ store, customerId: c.id });
+      await note(actor, 'reward.spin.result', 'customer', c.id, { waiver_pct: r.waiver_pct, slice: r.slice });
+      return json(200, { slice: r.slice, waiver_pct: r.waiver_pct, expires_at: r.expires_at });
+    }],
+
     ['GET', /^\/v1\/customers\/([^/]+)\/eligibility$/, INTERNAL, async ({ params, query }) => {
       const customer = await need(() => store.getCustomer(params[0]), 'customer');
       const product = await need(() => store.getProductByCode(query.product), 'product');
@@ -147,8 +160,10 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       });
       // PAN, if supplied, goes to the vendors for this call only; it is not stored.
       const forVendors = body.pan ? { ...customer, pan: body.pan } : customer;
+      // A fee waiver won on the loyalty wheel lowers the fee in this offer. It comes from the database, never from the request.
+      const { product: pricedProduct } = await applyReward({ store, application, product });
       const out = await runUnderwriting({
-        registry, store, customer: forVendors, application, product, intake: pick(body.intake, INTAKE_FIELDS),
+        registry, store, customer: forVendors, application, product: pricedProduct, intake: pick(body.intake, INTAKE_FIELDS),
         customerLimit, reuseKyc: isRepeat && customer.kyc_status === 'verified', policy, bankStatementAbove,
       });
       if (out.kyc.checks.length) await store.patchCustomer(customer.id, { kyc_status: out.kyc.status });
@@ -170,7 +185,7 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       const loan = await store.getLoanByApplication(a.id);
       return json(200, {
         application_id: a.id, status: a.status, is_repeat: a.is_repeat, requested_amount: a.requested_amount,
-        approved_amount: a.approved_amount, offered_apr_pct: a.offered_apr_pct ?? null, loan_id: loan?.id ?? null,
+        approved_amount: a.approved_amount, offered_apr_pct: a.offered_apr_pct ?? null, fee_waiver_pct: Number(a.fee_waiver_pct ?? 0), loan_id: loan?.id ?? null,
         ...(actor.role !== 'partner' ? { partner_id: a.partner_id ?? null, decision_reasons: a.decision_reasons ?? null } : {}),
       });
     }],

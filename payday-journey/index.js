@@ -28,3 +28,6 @@ export {
 export {
   createPolicyDraft, updatePolicyDraft, activatePolicy, loadActivePolicy, simulatePolicy,
 } from './policies.js';
+export {
+  WHEEL, MIN_REPAID_LOANS, REWARD_VALID_DAYS, wheelOdds, spinsAvailable, getRewardState, spinWheel, applyReward, consumeReward,
+} from './rewards.js';

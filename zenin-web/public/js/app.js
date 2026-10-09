@@ -62,10 +62,19 @@ function go(screen) {
 
 function route(me) {
   S.me = me;
-  const map = { start: 'amount', offer: 'offer', sign: 'sign', bank: 'bank', loan: 'loan', review: 'review', declined: 'declined', kyc_pending: 'kyc_pending', blocked: 'blocked' };
+  const map = { start: 'amount', refresh: 'refresh', offer: 'offer', sign: 'sign', bank: 'bank', loan: 'loan', review: 'review', declined: 'declined', kyc_pending: 'kyc_pending', blocked: 'blocked' };
   if (S.form.amount === undefined) S.form.amount = Math.min(10000, me.cap);
   S.form.amount = Math.min(Math.max(S.form.amount, me.min_amount), me.cap);
-  go(map[me.next] || 'amount');
+  // a returning customer sees what we already know, so nothing is typed twice
+  if (me.profile && !S.form.prefilled) {
+    Object.assign(S.form, {
+      monthly_salary: String(me.profile.monthly_salary ?? ''), employer_type: me.profile.employer_type ?? '',
+      months_with_employer: me.profile.months_with_employer === null ? '' : String(me.profile.months_with_employer), residence: me.profile.residence ?? '', prefilled: true,
+    });
+  }
+  const target = me.next === 'start' && me.preapproved ? 'welcome' : (map[me.next] || 'amount');
+  go(target);
+  if (target === 'welcome') loadQuote();
 }
 
 async function refreshMe() { S.me = await api('/me'); return S.me; }
@@ -87,9 +96,25 @@ const kv = (rows) => `<dl class="kv panel">${rows.map(([k, v]) => `<div><dt>${es
 const btn = (label, act, cls = '', extra = '') => `<button class="btn block ${cls}" type="button" data-act="${act}" ${extra} ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
 const ghost = (label, act) => `<button class="btn block ghost" type="button" data-act="${act}" ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
 const termsRows = (o) => [
-  [t('youReceive'), inr(o.amount)], [t('fee'), inr(o.fee)], [t('youRepay', { days: o.tenureDays }), `<strong>${inr(o.repayment)}</strong>`],
+  [t('youReceive'), inr(o.amount)],
+  o.waiverPct ? [t('feeWaived', { pct: o.waiverPct }), `<s>${inr(o.feeBeforeWaiver)}</s> ${inr(o.fee)}`] : [t('fee'), inr(o.fee)],
+  [t('youRepay', { days: o.tenureDays }), `<strong>${inr(o.repayment)}</strong>`],
   [t('aprSimple'), pct(o.aprSimplePct)], [t('aprEff'), pct(o.aprEffectivePct)],
 ];
+const rewardBanner = () => (S.me?.reward ? `<div class="reward-banner">${esc(t('rewardBanner', { pct: S.me.reward.waiver_pct, date: dateFmt(S.me.reward.expires_at) }))}</div>` : '');
+const spinBanner = () => (S.me?.spins > 0 ? `<div class="reward-banner spin"><b>${esc(t('spinBannerTitle'))}</b><button class="linkbtn" type="button" data-act="open-wheel">${esc(t('spinBannerBtn'))}</button></div>` : '');
+
+// the wheel: ten equal slices drawn from the list the server sends; slice 0 is at the top and the pointer is fixed
+const WHEEL_FILL = { 10: ['#fafaf5', '#16241f'], 20: ['#ffd23f', '#16241f'], 30: ['#9fd8cf', '#16241f'], 40: ['#15514a', '#fafaf5'], 50: ['#c8352b', '#fafaf5'] };
+function wheelSvg(slices, angle) {
+  const pt = (deg, r) => [r * Math.sin((deg * Math.PI) / 180), -r * Math.cos((deg * Math.PI) / 180)];
+  const parts = slices.map((w, i) => {
+    const [x0, y0] = pt(i * 36 - 18, 100); const [x1, y1] = pt(i * 36 + 18, 100); const [bg, fg] = WHEEL_FILL[w] || WHEEL_FILL[10];
+    return `<path d="M0 0 L${x0.toFixed(2)} ${y0.toFixed(2)} A100 100 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z" fill="${bg}" stroke="#16241f" stroke-width="1.5"/>`
+      + `<text transform="rotate(${i * 36}) translate(0 -70)" text-anchor="middle" dominant-baseline="middle" font-family="DM Mono, monospace" font-weight="500" font-size="15" fill="${fg}">${w}%</text>`;
+  }).join('');
+  return `<svg viewBox="-112 -112 224 224" class="wheel" role="img" aria-label="${esc(t('wheelTitle'))}"><g id="rotor" transform="rotate(${angle})">${parts}</g><circle r="11" fill="#16241f"/><path d="M-10 -113 L10 -113 L0 -90 Z" fill="#c8352b" stroke="#16241f" stroke-width="2"/></svg>`;
+}
 
 const SCREENS = {
   boot: () => ({ body: `<p class="muted">${esc(t('loading'))}</p>` }),
@@ -115,11 +140,54 @@ const SCREENS = {
     const me = S.me; const q = S.quote;
     return {
       body: `<h1>${esc(me.is_repeat ? t('welcomeBack') + '. ' + t('amountTitle') : t('amountTitle'))}</h1><p class="muted">${esc(t('amountSub', { cap: inr(me.cap) }))}</p>
+        ${rewardBanner()}${spinBanner()}
         <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
         <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
         <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
         <p class="fine">${esc(t('amountNote'))}</p>`,
       foot: btn(t('cont'), 'amount-next'),
+    };
+  },
+
+  welcome: () => {
+    const me = S.me; const q = S.quote; const f = S.form; const pr = me.profile;
+    return {
+      body: `<h1>${esc(t('welcomeBack'))}</h1><p class="muted">${esc(t('welcomeSub', { cap: inr(me.cap) }))}</p>
+        ${rewardBanner()}${spinBanner()}
+        <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
+        <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
+        <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
+        <div class="panel"><b>${esc(t('yourDetails'))}</b>
+          ${kv([[t('sumSalary'), inr(pr.monthly_salary)], [t('sumEmployer'), esc(t('emp_' + pr.employer_type))], [t('sumMonths'), esc(t('monthsUnit', { n: pr.months_with_employer }))], [t('sumHome'), esc(t('res_' + pr.residence))]])}
+          <p class="fine">${esc(t('stillCorrect'))}</p></div>
+        ${select({ id: 'purpose', label: t('purposeLabel'), options: ['medical', 'bills', 'education', 'travel', 'family', 'other'], value: f.purpose, error: S.errors.purpose, prefix: 'pur_' })}
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('seeBill'), 'welcome-apply') + ghost(t('changeDetails'), 'change-details'),
+    };
+  },
+
+  refresh: () => {
+    const items = S.me.refresh_items;
+    return {
+      body: `<h1>${esc(t('refreshTitle'))}</h1><p class="muted">${esc(t('refreshSub'))}</p>
+        <div class="list">${items.map((k) => `<div class="item"><span><b>${esc(t('ri_' + k))}</b><br><small class="muted">${esc(t('ri_' + k + '_d'))}</small></span></div>`).join('')}</div>`,
+      foot: btn(t('updateContinue'), 'refresh-go'),
+    };
+  },
+
+  wheel: () => {
+    const w = S.wheel; const info = S.wheelInfo; const r = w.result;
+    return {
+      body: `<h1>${esc(t('wheelTitle'))}</h1>
+        ${r ? '' : `<p class="muted">${esc(t('wheelSub', { n: info?.repaid_loans ?? 3 }))}</p>`}
+        <div class="wheel-wrap">${wheelSvg(info ? info.slices : [], w.angle)}</div>
+        ${r ? `<div class="won"><span class="stamp">${esc(t('wonTitle', { pct: r.waiver_pct }))}</span>
+            <p>${esc(t('wonSub', { date: dateFmt(r.expires_at) }))}</p>
+            ${w.quote ? `<p class="fine">${esc(t('wonExample', { amount: inr(w.quote.amount), fee: inr(w.quote.fee), before: inr(w.quote.feeBeforeWaiver) }))}</p>` : ''}</div>`
+          : `<p class="fine">${esc(t('wheelOdds'))}</p>${(info?.spins ?? 0) < 1 ? `<p class="muted">${esc(t('wheelNone'))}</p>` : ''}`}
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: r ? btn(t('useIt'), 'use-reward', 'money')
+        : btn(w.busy ? t('spinning') : t('spinBtn'), 'spin', 'money', (info?.spins ?? 0) < 1 || w.busy ? 'disabled' : '') + ghost(t('back'), 'use-reward'),
     };
   },
 
@@ -144,7 +212,7 @@ const SCREENS = {
         ${field({ id: 'months_with_employer', label: t('monthsLabel'), value: f.months_with_employer || '', attrs: 'inputmode="numeric" autocomplete="off"', error: e.months_with_employer })}
         ${select({ id: 'residence', label: t('residenceLabel'), options: ['owned', 'family', 'rented_long', 'rented_short', 'none'], value: f.residence, error: e.residence, prefix: 'res_' })}
         ${select({ id: 'purpose', label: t('purposeLabel'), options: ['medical', 'bills', 'education', 'travel', 'family', 'other'], value: f.purpose, error: e.purpose, prefix: 'pur_' })}
-        ${field({ id: 'pan', label: t('panLabel'), hint: t('panHint'), value: f.pan || '', attrs: 'autocomplete="off" autocapitalize="characters" maxlength="10" style="text-transform:uppercase"', error: e.pan })}
+        ${S.me.need_pan === false ? '' : field({ id: 'pan', label: t('panLabel'), hint: t('panHint'), value: f.pan || '', attrs: 'autocomplete="off" autocapitalize="characters" maxlength="10"', error: e.pan })}
         ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
       foot: btn(t('getOffer'), 'apply'),
     };
@@ -165,7 +233,8 @@ const SCREENS = {
       body: `<span class="stamp offer-stamp">${esc(t('approved'))}</span><h1>${esc(t('offerTitle'))}</h1><p class="muted">${esc(t('offerSub'))}</p>
         <div class="money-card"><span class="label">${esc(t('borrow'))}</span><span class="big">${inr(o.amount)}</span></div>
         ${kv([...termsRows(o), [t('lateCharge'), esc(t('lateChargeVal', { pct: o.lateChargePctPerDay }))]])}
-        <p class="fine">${esc(t('dueRule', { days: o.tenureDays }))}</p>`,
+        ${o.waiverPct ? `<p class="fine"><b>${esc(t('waiverApplied', { pct: o.waiverPct }))}</b></p>` : ''}
+        <p class="fine">${esc(t('dueRule', { days: o.tenureDays }))}${S.me.offer_expires ? ` · ${esc(t('offerValid', { date: dateFmt(S.me.offer_expires) }))}` : ''}</p>`,
       foot: btn(t('acceptOffer'), 'accept', 'money') + ghost(t('notNow'), 'not-now'),
     };
   },
@@ -216,7 +285,7 @@ const SCREENS = {
       body: `<h1>${esc(t('bankTitle'))}</h1><p class="muted">${esc(t('bankSub'))}</p>
         ${field({ id: 'acct_name', label: t('nameLabel'), value: f.acct_name || '', attrs: 'autocomplete="name"', error: e.name })}
         ${field({ id: 'acct_number', label: t('accLabel'), value: f.acct_number || '', attrs: 'inputmode="numeric" autocomplete="off"', error: e.number })}
-        ${field({ id: 'acct_ifsc', label: t('ifscLabel'), value: f.acct_ifsc || '', attrs: 'autocomplete="off" autocapitalize="characters" maxlength="11" style="text-transform:uppercase"', error: e.ifsc })}
+        ${field({ id: 'acct_ifsc', label: t('ifscLabel'), value: f.acct_ifsc || '', attrs: 'autocomplete="off" autocapitalize="characters" maxlength="11"', error: e.ifsc })}
         <p class="fine">${esc(t('notStored'))}</p>
         ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
       foot: btn(t('sendMoney', { amount: inr(o.amount) }), 'disburse', 'money'),
@@ -253,7 +322,8 @@ const SCREENS = {
   },
 
   repaid: () => ({
-    body: `<div class="tick" aria-hidden="true">✓</div><h1>${esc(t('repaidTitle'))}</h1><p class="muted">${esc(t('repaidSub'))}</p>`,
+    body: `<div class="tick" aria-hidden="true">✓</div><h1>${esc(t('repaidTitle'))}</h1><p class="muted">${esc(t('repaidSub'))}</p>
+      ${S.me?.spins > 0 ? `<div class="reward-banner spin"><b>${esc(t('earnedSpin'))}</b><button class="linkbtn" type="button" data-act="open-wheel">${esc(t('spinBannerBtn'))}</button></div>` : ''}`,
     foot: btn(t('borrowAgain'), 'borrow-again') + ghost(t('done'), 'logout'),
   }),
 };
@@ -320,6 +390,27 @@ function openSheet(name) {
   if (first) first.focus();
 }
 
+async function runApplication(body, back) {
+  if (S.busy) return;
+  S.busy = true; S.errors = {}; S.formError = '';
+  go('checking');
+  S.checkStep = 0; render();
+  const timer = setInterval(() => { if (S.screen === 'checking' && S.checkStep < 2) { S.checkStep += 1; render(); } }, 700);
+  try {
+    const [r] = await Promise.all([api('/applications', { method: 'POST', body }), sleep(2200)]);
+    S.checkStep = 3; render(); await sleep(250);
+    await refreshMe();
+    route(S.me);
+    if (r.decision === 'review' || r.decision === 'declined' || r.decision === 'kyc_pending') go(r.decision);
+  } catch (e) {
+    go(back);
+    if (e instanceof ApiError && e.status !== 401 && e.status !== 0) {
+      S.errors = e.data.fields || {};
+      S.formError = e.data.fields ? t('e_check') : (e.data.message || t('e_generic'));
+    }
+  } finally { clearInterval(timer); S.busy = false; render(); }
+}
+
 const ACTIONS = {
   lang(el) { S.lang = el.dataset.lang; store.set('zenin_lang', S.lang); render(); },
   'open-menu'() { openSheet('menu'); },
@@ -355,36 +446,57 @@ const ACTIONS = {
     return guarded(async () => {
       await api('/consents', { method: 'POST', body: { purposes: ['kyc', 'credit_bureau', 'terms'] } });
       await refreshMe();
-      go('details');
+      const left = (S.me.refresh_items || []).filter((k) => k !== 'permissions');
+      if (S.me.is_repeat && !left.length) route(S.me); else go('details');
     });
   },
-  async apply() {
+  apply() {
     const f = S.form;
-    if (S.busy) return;
-    S.busy = true; S.errors = {}; S.formError = '';
-    go('checking');
-    S.checkStep = 0; render();
-    const timer = setInterval(() => { if (S.screen === 'checking' && S.checkStep < 2) { S.checkStep += 1; render(); } }, 700);
-    try {
-      const [r] = await Promise.all([
-        api('/applications', { method: 'POST', body: {
-          amount: S.form.amount, monthly_salary: digits(f.monthly_salary), employer_type: f.employer_type, months_with_employer: digits(f.months_with_employer),
-          residence: f.residence, purpose: f.purpose, pan: String(f.pan || '').toUpperCase(),
-        } }),
-        sleep(2200),
-      ]);
-      S.checkStep = 3; render(); await sleep(250);
-      await refreshMe();
-      route(S.me);
-      if (r.decision === 'review' || r.decision === 'declined' || r.decision === 'kyc_pending') go(r.decision);
-    } catch (e) {
-      go('details');
-      if (e instanceof ApiError && e.status !== 401 && e.status !== 0) {
-        S.errors = e.data.fields || {};
-        S.formError = e.data.fields ? t('e_check') : (e.data.message || t('e_generic'));
-      }
-    } finally { clearInterval(timer); S.busy = false; render(); }
+    const body = { amount: f.amount, monthly_salary: digits(f.monthly_salary), employer_type: f.employer_type, months_with_employer: digits(f.months_with_employer), residence: f.residence, purpose: f.purpose };
+    if (S.me.need_pan !== false) body.pan = String(f.pan || '').toUpperCase();
+    return runApplication(body, 'details');
   },
+  'welcome-apply'() {
+    if (!S.form.purpose) { S.errors = { purpose: t('choose') }; S.formError = t('e_check'); render(); return; }
+    return runApplication({ amount: S.form.amount, use_saved: true, purpose: S.form.purpose }, 'welcome');
+  },
+  'change-details'() { go('details'); },
+  'refresh-go'() {
+    const items = S.me.refresh_items || [];
+    go(items.includes('permissions') ? 'consent' : 'details');
+  },
+  async 'open-wheel'() {
+    return guarded(async () => {
+      S.wheelInfo = await api('/wheel');
+      S.wheel = { angle: 0, busy: false, result: null, quote: null };
+      go('wheel');
+    });
+  },
+  async spin() {
+    const w = S.wheel;
+    if (!w || w.busy) return;
+    w.busy = true; S.formError = ''; render();
+    try {
+      const r = await api('/wheel/spin', { method: 'POST' });
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const target = 360 * 6 - r.slice * 36;
+      const rotor = document.getElementById('rotor');
+      if (rotor && !reduce) {
+        rotor.style.transition = 'transform 4.2s cubic-bezier(.12,.6,.1,1)';
+        rotor.getBoundingClientRect();
+        rotor.style.transform = `rotate(${target}deg)`;
+        await sleep(4300);
+      }
+      w.angle = reduce ? 0 : target;
+      w.result = r;
+      await refreshMe();
+      S.wheelInfo = { ...S.wheelInfo, spins: S.me.spins ?? 0 };
+      try { const q = await fetch('/api/quote?amount=10000', { credentials: 'same-origin' }); if (q.ok) w.quote = await q.json(); } catch { /* example is optional */ }
+    } catch (e) {
+      if (e instanceof ApiError && e.status !== 401 && e.status !== 0) S.formError = e.data.message || t('e_generic');
+    } finally { w.busy = false; render(); }
+  },
+  'use-reward'() { return guarded(async () => { route(await refreshMe()); }); },
 
   accept() { return guarded(async () => { await api(`/applications/${S.me.application.id}/accept`, { method: 'POST' }); await refreshMe(); go('sign'); }); },
   'not-now'() { go('saved'); },
@@ -470,7 +582,7 @@ async function loadQuote() {
     if (!q.ok) return;
     S.quote = await q.json();
     const box = document.getElementById('quote');
-    if (box && S.screen === 'amount') box.innerHTML = kv(termsRows(S.quote));
+    if (box && (S.screen === 'amount' || S.screen === 'welcome')) box.innerHTML = kv(termsRows(S.quote));
   } catch { /* offline: keep the last quote */ }
 }
 

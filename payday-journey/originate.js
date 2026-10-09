@@ -4,7 +4,7 @@
 //    because the money may have moved; the vendor webhook or a status check settles it
 //  * the loan row is created BEFORE the payout, and the database allows only one open loan per customer
 import { BusinessRuleError } from './errors.js';
-import { feeFor, repaymentFor, aprFor } from '../payday-engine/index.js';
+import { feeFor, repaymentFor, aprFor, withFeeWaiver } from '../payday-engine/index.js';
 import { emitPartnerEvent } from './partners.js';
 import {
   istToday, addDays, nextSalaryDate, splitAmount, daysBetween,
@@ -21,7 +21,8 @@ export async function sendAgreement({ registry, store, customer, application }) 
   }
 
   // The key fact statement needs the amount, fee, repayment, tenure and APR: pass them all to the e-sign vendor.
-  const product = await store.getProduct(app.product_id);
+  const baseProduct = await store.getProduct(app.product_id);
+  const product = baseProduct ? withFeeWaiver(baseProduct, app.fee_waiver_pct) : baseProduct; // a won fee waiver is in the key facts
   const amount = Number(app.approved_amount);
   const offer = product ? {
     amount, fee: feeFor(product, amount), repayment: repaymentFor(product, amount), tenureDays: Number(product.tenure_days),
@@ -96,14 +97,15 @@ export async function disburseLoan({
 
   if (!loan) {
     const shares = await resolveShares(store, product, asOf);
-    const fee = feeFor(product, principal);
+    const feeProduct = withFeeWaiver(product, app.fee_waiver_pct);
+    const fee = feeFor(feeProduct, principal);
     const due = dueDateFor({ asOf, product, salaryDay: customer.salary_day, snapToSalaryDay });
     const cycle = (await store.countLoans(customer.id)) + 1;
     loan = await store.insertLoan({
       application_id: app.id, customer_id: customer.id, product_id: product.id,
       cycle_number: cycle, principal, fee_amount: fee, due_date: due,
       // APR on the ACTUAL number of days to the due date (it differs from the product tenure when snapped to a salary day)
-      apr_pct: aprFor(product, principal, daysBetween(asOf, due)).aprEffectivePct,
+      apr_pct: aprFor(feeProduct, principal, daysBetween(asOf, due)).aprEffectivePct,
     });
     await store.insertLoanLenderShares(splitAmount(principal, shares).map((p, i) => ({
       loan_id: loan.id, lender_id: p.lender_id, share_pct: shares[i].share_pct, principal_share: p.amount,
@@ -180,6 +182,7 @@ export async function completeDisbursement({ store, disbursementId, result }) {
       })),
     ]);
     await store.patchApplication(loan.application_id, { status: 'disbursed' });
+    await store.markRewardUsed(loan.application_id, new Date().toISOString()); // a fee waiver is used up once the money is paid
     await emitPartnerEvent({
       store, applicationId: loan.application_id, type: 'loan.disbursed',
       data: { loan_id: loan.id, amount: Number(loan.principal), fee: Number(loan.fee_amount), due_date: loan.due_date, apr_pct: loan.apr_pct ?? null },

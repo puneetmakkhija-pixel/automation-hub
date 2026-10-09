@@ -200,3 +200,17 @@ input.code{font-family:var(--mono);letter-spacing:.4em;font-size:1.5rem;text-ali
 .linkbtn{background:none;border:0;color:var(--teal);font:inherit;text-decoration:underline;cursor:pointer;padding:6px 0;text-align:left}
 .shell a{color:var(--yellow)}
 .tape a{color:var(--teal)}
+
+/* returning customers: reward banner and the wheel */
+.reward-banner{border:2px dashed var(--yellow);background:rgb(255 210 63 / .28);color:var(--ink);padding:10px 14px;margin:12px 0;font-family:var(--mono);font-size:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.reward-banner.spin{border-style:solid;background:var(--yellow);color:var(--ink)}
+.reward-banner.spin .linkbtn{color:var(--ink);font-weight:600;text-decoration:underline}
+.wheel-wrap{display:flex;justify-content:center;margin:12px 0}
+.wheel{width:min(300px,78vw);height:auto;filter:drop-shadow(0 10px 20px rgb(0 0 0 / .35))}
+.won{text-align:center;margin:8px 0}
+.won .stamp{display:inline-block;transform:rotate(-6deg);margin:6px 0 10px}
+@media (prefers-reduced-motion:reduce){#rotor{transition:none!important}}
+#rotor{transform-origin:0 0}
+#pan,#acct_ifsc{text-transform:uppercase}
+.cta-row.center{justify-content:center}
+noscript .pad{padding:24px}

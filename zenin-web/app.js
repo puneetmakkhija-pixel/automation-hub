@@ -5,8 +5,8 @@
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { feeFor, repaymentFor, aprFor } from '../payday-engine/index.js';
-import { REQUIRED_CONSENTS, CONSENT_PURPOSES } from '../payday-journey/index.js';
+import { feeFor, repaymentFor, aprFor, withFeeWaiver } from '../payday-engine/index.js';
+import { REQUIRED_CONSENTS, CONSENT_PURPOSES, WHEEL, wheelOdds, REWARD_VALID_DAYS, MIN_REPAID_LOANS } from '../payday-journey/index.js';
 import { createSessions } from './session.js';
 import { createLimiter } from './ratelimit.js';
 import { renderPage, renderAppShell, renderNotFound, SITEMAP_PATHS } from './pages.js';
@@ -61,8 +61,10 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
   const mask = (last4) => `XXXXXX${String(last4).slice(-4)}`;
   const todayIso = () => new Date(now()).toISOString().slice(0, 10);
 
-  async function termsFor(amount) {
-    const p = await product();
+  // The bill for an amount. A fee waiver won on the wheel lowers the fee, the repayment and both yearly costs.
+  async function termsFor(amount, waiverPct = 0) {
+    const base = await product();
+    const p = withFeeWaiver(base, waiverPct);
     const days = Number(p.tenure_days);
     const fee = feeFor(p, amount);
     const apr = aprFor(p, amount, days);
@@ -70,6 +72,7 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       amount, fee, repayment: repaymentFor(p, amount), tenureDays: days,
       aprSimplePct: apr.aprSimplePct, aprEffectivePct: apr.aprEffectivePct,
       lateChargePctPerDay: Number(p.penalty_per_day_pct),
+      waiverPct: Number(waiverPct) || 0, feeBeforeWaiver: waiverPct ? feeFor(base, amount) : null,
     };
   }
 
@@ -85,6 +88,12 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
     const p = await product();
     const openLoan = snap.loans.find((l) => ['active', 'overdue'].includes(l.status) && l.disbursed_at) ?? null;
     const lastApp = snap.applications[0] ?? null;
+    const daysSince = (iso) => (now() - Date.parse(iso)) / 86_400_000;
+    // An offer that was not accepted in time lapses: it can no longer be accepted, and a new application is allowed.
+    if (lastApp && lastApp.status === 'offered' && daysSince(lastApp.created_at) > cfg.offerValidDays) {
+      await gateway.expireOffer(lastApp.id);
+      lastApp.status = 'expired';
+    }
     let next = 'start';
     let declinedUntil = null;
     if (openLoan) next = 'loan';
@@ -101,6 +110,16 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       }
     }
     const blocked = snap.limit !== null && snap.limit.amount <= 0;
+    const isRepeat = snap.loans.some((l) => l.disbursed_at);
+    // For a returning customer, find what is out of date. Only those things are asked again.
+    const missingConsents = REQUIRED_CONSENTS.filter((c) => !snap.consents.includes(c));
+    const refreshItems = [];
+    if (isRepeat && next === 'start' && !(blocked && !openLoan)) {
+      if (missingConsents.length) refreshItems.push('permissions');
+      if (snap.firstApplicationAt && daysSince(snap.firstApplicationAt) > cfg.kycValidDays) refreshItems.push('identity');
+      if (lastApp && daysSince(lastApp.created_at) > cfg.dataValidDays) refreshItems.push('job');
+    }
+    if (refreshItems.length) next = 'refresh';
     const out = {
       mode: cfg.mode,
       mobile_masked: mobile ? mask(mobile) : null,
@@ -109,7 +128,9 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       next: blocked && !openLoan ? 'blocked' : next,
       cap: await capFor(snap),
       min_amount: Number(p.min_amount),
-      is_repeat: snap.loans.some((l) => l.disbursed_at),
+      is_repeat: isRepeat,
+      refresh_items: refreshItems,
+      need_pan: !isRepeat || refreshItems.includes('identity'),
       declined_until: next === 'declined' ? declinedUntil : null,
       history: snap.loans.map((l) => ({
         loan_id: l.id, status: l.status, amount: Number(l.principal), disbursed_at: l.disbursed_at, closed_at: l.closed_at ?? null,
@@ -117,7 +138,21 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
     };
     if (['offer', 'sign', 'bank'].includes(out.next)) {
       out.application = { id: lastApp.id, status: lastApp.status };
-      out.offer = await termsFor(Number(lastApp.approved_amount));
+      out.offer = await termsFor(Number(lastApp.approved_amount), Number(lastApp.fee_waiver_pct || 0));
+      if (out.next === 'offer') out.offer_expires = addDaysIso(lastApp.created_at, cfg.offerValidDays);
+    }
+    out.preapproved = isRepeat && out.next === 'start';
+    const rw = await gateway.rewards(customerId);
+    out.spins = rw.spins_available;
+    out.reward = rw.reward;
+    // Why there is no offer right now, in words that are safe to show: never a score or a grade.
+    out.reason = { review: 'under_review', declined: 'reapply_later', blocked: 'not_available' }[out.next] ?? null;
+    if (isRepeat && snap.profile && ['start', 'refresh'].includes(out.next)) {
+      const monthsSince = Math.max(0, Math.floor(daysSince(lastApp?.created_at ?? new Date(now()).toISOString()) / 30));
+      out.profile = {
+        monthly_salary: snap.profile.monthly_salary, employer_type: snap.profile.employer_type, residence: snap.profile.residence,
+        months_with_employer: snap.profile.months_with_employer === null ? null : Number(snap.profile.months_with_employer) + monthsSince,
+      };
     }
     if (['review', 'declined', 'kyc_pending'].includes(out.next)) out.application = { id: lastApp.id, status: lastApp.status, reference: lastApp.id.slice(0, 8).toUpperCase() };
     if (out.next === 'loan') out.loan = await loanView(openLoan.id);
@@ -141,7 +176,7 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
   const IFSC = /^[A-Z]{4}0[A-Z0-9]{6}$/;
   const intOr = (v) => (Number.isInteger(Number(v)) && String(v).trim() !== '' ? Number(v) : NaN);
 
-  function validateIntake(b) {
+  function validateIntake(b, { needPan = true } = {}) {
     const errors = {};
     const salary = Number(b.monthly_salary);
     if (!(salary >= 8000 && salary <= 1_000_000)) errors.monthly_salary = 'Enter your monthly take-home salary in rupees.';
@@ -151,8 +186,8 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
     if (!ENUMS.residence.includes(b.residence)) errors.residence = 'Choose where you live.';
     if (!ENUMS.purpose.includes(b.purpose)) errors.purpose = 'Choose what the money is for.';
     const pan = String(b.pan ?? '').toUpperCase().replace(/\s/g, '');
-    if (!PAN.test(pan)) errors.pan = 'Enter your PAN, for example ABCDE1234F.';
-    return { errors, pan, intake: {
+    if (needPan && !PAN.test(pan)) errors.pan = 'Enter your PAN, for example ABCDE1234F.';
+    return { errors, pan: needPan ? pan : undefined, intake: {
       declaredSalary: salary, tenureMonths: months, employerCategory: b.employer_type, residence: b.residence,
       // Self-declared answers only. We collect no references, so none are marked verified; "other" purpose is scored as vague.
       purposeClarity: b.purpose === 'other' ? 'vague_personal' : 'generic', referencesVerified: 'none',
@@ -183,6 +218,7 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
         mode: cfg.mode, brand: cfg.brand,
         product: { min: Number(p.min_amount), max: Number(p.max_amount), tenure_days: Number(p.tenure_days), late_charge_pct_per_day: Number(p.penalty_per_day_pct) },
         first_loan_max: Math.min(cfg.firstLoanMax, Number(p.max_amount)),
+        wheel: { slices: WHEEL, odds: wheelOdds(), valid_days: REWARD_VALID_DAYS, repaid_needed: MIN_REPAID_LOANS },
         demo: demo ? { otp: '123456', sign_code: DEMO_SIGN_CODE, hint: 'Numbers ending 0 to 6 are approved. 7 has no credit history and 8 has a defaulted loan: both are declined. 9 fails the identity check. Choosing "Other personal use" as the purpose sends an approved file to review.' } : null,
       });
     }
@@ -190,7 +226,10 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       const p = await product();
       const amount = Number(new URLSearchParams(req.query || {}).get('amount') ?? req.query?.amount);
       if (!(amount >= Number(p.min_amount) && amount <= Number(p.max_amount)) || amount % 500 !== 0) return fail(400, 'bad_amount', `Choose an amount from ${p.min_amount} to ${p.max_amount} in steps of 500.`);
-      return json(200, await termsFor(amount));
+      // A signed-in customer with a fee waiver sees their own, lower bill.
+      const s = sessions.read(headers.cookie);
+      const rw = s ? await gateway.rewards(s.cid) : null;
+      return json(200, await termsFor(amount, rw?.reward?.waiver_pct ?? 0));
     }
 
     if (method === 'POST' && sub === '/otp/send') {
@@ -250,6 +289,17 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       return json(200, { history: v.history });
     }
 
+    if (method === 'GET' && sub === '/wheel') {
+      const rw = await gateway.rewards(cid);
+      return json(200, { spins: rw.spins_available, reward: rw.reward, repaid_loans: rw.repaid_loans, loans_needed: rw.loans_needed, slices: WHEEL, odds: wheelOdds() });
+    }
+    if (method === 'POST' && sub === '/wheel/spin') {
+      const r = await gateway.spin(cid);
+      if (r.status === 409) return fail(409, 'no_spin', 'There is no spin waiting for you.');
+      if (r.status !== 200) return fail(502, 'try_later', 'Something went wrong on our side. Please try again in a little while.');
+      return json(200, { slice: r.body.slice, waiver_pct: r.body.waiver_pct, expires_at: r.body.expires_at });
+    }
+
     if (method === 'POST' && sub === '/applications') {
       const snap = await gateway.snapshot(cid);
       const v = await view(cid, mobile);
@@ -263,14 +313,26 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       const amount = intOr(body.amount);
       const p = await product();
       if (!(amount >= Number(p.min_amount) && amount <= v.cap) || amount % 500 !== 0) return fail(400, 'bad_amount', `You can ask for ${p.min_amount} to ${v.cap} in steps of 500.`);
-      const { errors, pan, intake } = validateIntake(body);
+      // A returning customer whose details are still fresh can reuse them: only the purpose is asked.
+      let form = body;
+      if (body.use_saved === true) {
+        if (!v.preapproved || !v.profile || v.profile.employer_type === null) return fail(409, 'details_needed', 'Please confirm your details first.');
+        form = { ...v.profile, purpose: body.purpose };
+      }
+      const { errors, pan, intake } = validateIntake(form, { needPan: v.need_pan });
       if (Object.keys(errors).length) return fail(400, 'invalid', 'Please check the highlighted fields.', { fields: errors });
+      // Identity out of date: have the loan system run the identity check again for this application.
+      if (v.refresh_items.includes('identity')) await gateway.expireKyc(cid);
+      await gateway.saveProfile(cid, { monthly_salary: intake.declaredSalary });
       const r = await gateway.apply(cid, { amount, pan, intake });
       if (r.status === 202) return json(202, { decision: 'kyc_pending' });
       if (r.status === 409) return fail(409, r.body.code === 'CONSENT_REQUIRED' ? 'consent_required' : 'not_allowed', 'We cannot take this application right now.');
       if (r.status !== 200) return fail(502, 'try_later', 'Something went wrong on our side. Please try again in a little while.');
       const d = r.body.decision;
-      if (d === 'approve') return json(200, { decision: 'approved', application_id: r.body.application_id, offer: await termsFor(Number(r.body.offer.amount)) });
+      if (d === 'approve') {
+        const after = await gateway.snapshot(cid);
+        return json(200, { decision: 'approved', application_id: r.body.application_id, offer: await termsFor(Number(r.body.offer.amount), Number(after.applications[0]?.fee_waiver_pct || 0)) });
+      }
       if (d === 'refer') return json(200, { decision: 'review', application_id: r.body.application_id, reference: r.body.application_id.slice(0, 8).toUpperCase() });
       return json(200, { decision: 'declined', application_id: r.body.application_id });
     }

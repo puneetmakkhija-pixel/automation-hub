@@ -305,3 +305,20 @@ test('no-bank policy: missing bureau data is never approved, and hard declines s
   const npa = decide({ features: { ...perfect(), npaStatus: 'npa' }, product, requestedAmount: 10000, policy: NO_BANK_POLICY });
   assert.deepEqual([npa.grade, npa.decision], ['E', 'reject']);
 });
+
+test('fee waiver: a share of the fee is given back, and fee, repayment and APR all follow; the product is untouched', async () => {
+  const { withFeeWaiver } = await import('./index.js');
+  assert.equal(withFeeWaiver(product, 0), product, 'no waiver returns the same product');
+  const half = withFeeWaiver(product, 50);
+  assert.deepEqual([half.fee_value, product.fee_value], [4, 8], 'half the fee value, original unchanged');
+  assert.deepEqual([config && repaymentFor(product, 10000), repaymentFor(half, 10000)], [10800, 10400]);
+  assert.equal(withFeeWaiver(product, 10).fee_value, 7.2);
+  const aprFull = aprFor(product, 10000, 30);
+  const aprHalf = aprFor(half, 10000, 30);
+  assert.ok(aprHalf.aprSimplePct < aprFull.aprSimplePct && aprHalf.aprEffectivePct < aprFull.aprEffectivePct);
+  assert.equal(aprHalf.aprSimplePct, 48.67);
+  const flat = withFeeWaiver({ ...product, fee_type: 'flat', fee_value: 500 }, 20);
+  assert.equal(flat.fee_value, 400, 'a flat fee is scaled the same way');
+  assert.throws(() => withFeeWaiver(product, 101), RangeError);
+  assert.throws(() => withFeeWaiver(product, -5), RangeError);
+});

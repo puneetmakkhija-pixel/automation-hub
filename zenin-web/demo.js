@@ -62,10 +62,18 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
       const limitRow = await store.getCurrentLimit(customerId);
       const applications = store.db.applications.filter((a) => a.customer_id === customerId).sort(byNewest).map((a) => ({ ...a }));
       const loans = store.db.loans.filter((l) => l.customer_id === customerId).sort(byNewest).map((l) => ({ ...l }));
+      // What we last knew about their job, read from the last scorecard (employer type, months, home) and the customer row (salary)
+      const lastApp = applications[0];
+      const sc = lastApp ? store.db.scorecards.find((s) => s.application_id === lastApp.id) : null;
+      const val = (code) => sc?.parameters?.params?.find((p) => p.code === code)?.value ?? null;
+      const profile = c.monthly_salary ? {
+        monthly_salary: Number(c.monthly_salary), employer_type: val('SC19'), months_with_employer: val('SC18'), residence: val('SC20'),
+      } : null;
       return {
-        kycStatus: c.kyc_status, consents, applications, loans,
+        kycStatus: c.kyc_status, consents, applications, loans, profile,
         limit: limitRow ? { amount: Number(limitRow.limit_amount), cycle: limitRow.cycle_number } : null,
         panLast4: c.pan_last4 ?? null,
+        firstApplicationAt: applications.length ? applications[applications.length - 1].created_at : null,
       };
     },
 
@@ -81,6 +89,15 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
         customer_id: customerId, product_code: DEMO_PRODUCT.code, requested_amount: amount, pan, intake,
       });
     },
+    // The offer ran out of time: it can no longer be accepted.
+    async expireOffer(applicationId) { return store.patchApplication(applicationId, { status: 'expired' }); },
+    // Identity is out of date: mark it unverified so the next application runs the identity check again.
+    async expireKyc(customerId) { return store.patchCustomer(customerId, { kyc_status: 'pending' }); },
+    async saveProfile(customerId, { monthly_salary: salary }) { return store.patchCustomer(customerId, { monthly_salary: salary }); },
+
+    async rewards(customerId) { return (await call('GET', `/v1/customers/${customerId}/rewards`)).body; },
+    async spin(customerId) { return call('POST', `/v1/customers/${customerId}/wheel/spin`, {}); },
+
     async sendAgreement(applicationId) { return call('POST', `/v1/applications/${applicationId}/agreement`, {}); },
     async disburse(applicationId, account) { return call('POST', `/v1/applications/${applicationId}/disburse`, { account }); },
     async loanView(loanId) { return call('GET', `/v1/loans/${loanId}`); },
@@ -101,7 +118,8 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
       if (!s || s.outstanding <= 0) return null;
       const product = await store.getProduct(s.loan.product_id);
       return recordPayment({
-        store, loan: s.loan, product, amount: s.outstanding, mode: 'upi', utr: `DEMO-${loanId}`, paidAt: now().toISOString(),
+        store, loan: s.loan, product, amount: s.outstanding, mode: 'upi', utr: `DEMO-${loanId}`,
+        paidAt: new Date().toISOString(), // the loan system dates the loan by the real calendar, so the simulated payment does too
       });
     },
   };

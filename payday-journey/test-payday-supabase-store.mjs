@@ -161,3 +161,29 @@ test('new control tables: clients, audit, consent, policies, outbox use the righ
   await s.getCustomerByMobile('9000000001');
   assert.deepEqual([log[9].table, op(9, 'eq')], ['customer', ['eq', 'mobile', '9000000001']]);
 });
+
+test('loyalty rewards: right tables and filters; counts closed loans only; usable means unused, unexpired, oldest first', async () => {
+  const { log, client } = fake((table) => (table === 'loan' || table === 'customer_reward' ? ok(null, { count: 3 }) : ok([])));
+  const s = supabaseStore(client);
+  assert.equal(await s.countClosedLoans('c1'), 3);
+  const closed = log.find((e) => e.table === 'loan');
+  assert.deepEqual(closed.ops.filter((o) => ['eq', 'not'].includes(o[0])), [['eq', 'customer_id', 'c1'], ['eq', 'status', 'closed'], ['not', 'disbursed_at', 'is', null]]);
+  assert.equal(await s.countRewards('c1'), 3);
+
+  const u = fake(() => ok([{ id: 'r1', waiver_pct: 20 }]));
+  const usable = await supabaseStore(u.client).getUsableReward('c1', '2026-10-09T00:00:00Z');
+  assert.equal(usable.id, 'r1');
+  const ops = u.log[0].ops;
+  assert.deepEqual(ops.filter((o) => ['eq', 'is', 'gt', 'order', 'limit'].includes(o[0])), [
+    ['eq', 'customer_id', 'c1'], ['is', 'used_at', null], ['gt', 'expires_at', '2026-10-09T00:00:00Z'], ['order', 'expires_at'], ['limit', 1],
+  ]);
+  const none = await supabaseStore(fake(() => ok([])).client).getUsableReward('c1', 'x');
+  assert.equal(none, null);
+
+  const m = fake(() => ok([{ id: 'r1' }]));
+  await supabaseStore(m.client).markRewardUsed('app1', '2026-10-09T00:00:00Z');
+  assert.deepEqual(m.log[0].ops.filter((o) => ['update', 'eq', 'is'].includes(o[0])), [['update', { used_at: '2026-10-09T00:00:00Z' }], ['eq', 'application_id', 'app1'], ['is', 'used_at', null]]);
+
+  const dupe = fake(() => ({ data: null, error: { message: 'duplicate key', code: '23505' } }));
+  await assert.rejects(() => supabaseStore(dupe.client).insertReward({ customer_id: 'c1', spin_no: 1 }), (e) => e.code === '23505');
+});

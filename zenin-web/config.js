@@ -46,6 +46,11 @@ export function loadConfig(env = process.env) {
     sessionHours: num(env.SESSION_HOURS, 2),
     // First-time customers may ask for up to this much. Repeat customers are limited by their limit.
     firstLoanMax: num(env.FIRST_LOAN_MAX, 10000),
+    // How long what we know about a returning customer stays good. Past these, we ask again, and only for what is stale.
+    kycValidDays: num(env.KYC_VALID_DAYS, 365),
+    dataValidDays: num(env.DATA_VALID_DAYS, 90),
+    bureauValidDays: num(env.BUREAU_VALID_DAYS, 30),
+    offerValidDays: num(env.OFFER_VALID_DAYS, 7),
     // After a decline, no new application for this many days. Demo allows an immediate retry so people can try numbers.
     reapplyAfterDays: num(env.REAPPLY_AFTER_DAYS, mode === 'demo' ? 0 : 30),
     port: num(env.PORT, 3000),

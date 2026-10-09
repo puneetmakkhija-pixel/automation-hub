@@ -173,7 +173,7 @@ test('site: costs shown on the pages come from the engine, and nothing is double
   assert.doesNotMatch(home, /<script>alert/);
   assert.match(home, /&lt;script&gt;alert\(1\)&lt;\/script&gt; Ltd/);
   const q = await site().get('/api/quote', { query: { amount: '15000' } });
-  assert.deepEqual(JSON.parse(q.body), { amount: 15000, fee: 1200, repayment: 16200, tenureDays: 30, aprSimplePct: 97.33, aprEffectivePct: 155.07, lateChargePctPerDay: 1 });
+  assert.deepEqual(JSON.parse(q.body), { amount: 15000, fee: 1200, repayment: 16200, tenureDays: 30, aprSimplePct: 97.33, aprEffectivePct: 155.07, lateChargePctPerDay: 1, waiverPct: 0, feeBeforeWaiver: null });
 });
 
 test('static files: served with the right type, nothing outside public/, only known types', async () => {
@@ -468,4 +468,206 @@ test('demo: refuses new customers past its cap instead of growing without limit,
   assert.deepEqual([full.status, JSON.parse(full.body).error], [503, 'busy']);
   assert.equal((await enter(first)).status, 200, 'the customer already in can still sign in');
   void cookie;
+});
+
+// ------------------------------------------------------------------ returning customers
+const DAY = 24 * 60 * 60 * 1000;
+// A customer comes back on a later day: time passes, the 2-hour session is gone, so they sign in again.
+const comeBack = async (s, c, m, days) => { s.advance(days * DAY); return (await login(c, m)).me; };
+// One full loan: apply, accept, sign, receive, repay. gapDays: days that pass afterwards (the customer returns later).
+async function cycle(s, c, m, { body = details(), gapDays = 0 } = {}) {
+  const a = await c.call('POST', '/api/applications', body);
+  assert.equal(a.body.decision, 'approved', JSON.stringify(a.body));
+  const id = a.body.application_id;
+  await c.call('POST', `/api/applications/${id}/accept`);
+  await c.call('POST', `/api/applications/${id}/sign`, { code: '246810' });
+  assert.equal((await c.call('POST', `/api/applications/${id}/disburse`, { account })).body.status, 'paid');
+  assert.equal((await c.call('POST', '/api/loan/pay')).body.status, 'paid');
+  if (gapDays) await comeBack(s, c, m, gapDays);
+  return { id, offer: a.body.offer };
+}
+// A customer with three repaid loans (the third one earns the first spin).
+async function loyal(s, c, m, loans = 3) {
+  for (let i = 0; i < loans; i += 1) await cycle(s, c, m, { body: i === 0 ? details() : { amount: 10000, use_saved: true, purpose: 'bills' }, gapDays: 2 });
+}
+
+test('RETURNING: a customer with fresh details is pre-approved: no permissions, no PAN, only the purpose is asked', async () => {
+  const s = site();
+  const c = s.client();
+  const { mobile: m } = await login(c); await consent(c);
+  assert.equal((await c.call('POST', '/api/applications', { ...details(), use_saved: true })).body.error, 'details_needed', 'a first-timer has nothing saved');
+  await cycle(s, c, m);
+  const me = (await c.call('GET', '/api/me')).body;
+  assert.deepEqual([me.next, me.preapproved, me.is_repeat, me.need_pan, me.refresh_items, me.cap], ['start', true, true, false, [], 15000]);
+  assert.deepEqual(me.profile, { monthly_salary: 48000, employer_type: 'listed_large', months_with_employer: 26, residence: 'rented_long' });
+  const checksBefore = s.gateway.store.db.kycChecks.length;
+  const r = await c.call('POST', '/api/applications', { amount: 12000, use_saved: true, purpose: 'bills' });
+  assert.deepEqual([r.status, r.body.decision, r.body.offer.amount], [200, 'approved', 12000]);
+  assert.equal(s.gateway.store.db.kycChecks.length, checksBefore, 'identity is not checked again');
+  // the saved shortcut cannot be used to smuggle other values in
+  const c2 = s.client();
+  await login(c2, mobile(3)); await consent(c2);
+  assert.equal((await c2.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills', monthly_salary: '900000' })).body.error, 'details_needed');
+});
+
+test('RETURNING: stale details are asked again, and only the stale ones: job after 90 days, identity after a year', async () => {
+  const s = site();
+  const c = s.client();
+  const { mobile: m } = await login(c); await consent(c);
+  await cycle(s, c, m);
+  let me = await comeBack(s, c, m, 89);
+  assert.deepEqual([me.next, me.refresh_items], ['start', []], '89 days: still fresh');
+
+  me = await comeBack(s, c, m, 2); // 91 days
+  assert.deepEqual([me.next, me.refresh_items, me.need_pan, me.preapproved], ['refresh', ['job'], false, false]);
+  assert.equal(me.profile.months_with_employer, 29, 'months at the employer move on with time: 26 plus 3');
+  assert.equal(me.profile.monthly_salary, 48000, 'so the form can be prefilled');
+  assert.equal((await c.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills' })).body.error, 'details_needed', 'stale details cannot be reused');
+  const checks = s.gateway.store.db.kycChecks.length;
+  const ok = await cycle(s, c, m, { body: details({ pan: undefined }) });
+  assert.equal(ok.offer.amount, 10000, 'no PAN needed: identity is still good');
+  assert.equal(s.gateway.store.db.kycChecks.length, checks);
+
+  me = await comeBack(s, c, m, 366);
+  assert.deepEqual([me.next, me.refresh_items, me.need_pan], ['refresh', ['identity', 'job'], true]);
+  const noPan = await c.call('POST', '/api/applications', details({ pan: undefined }));
+  assert.equal(noPan.status, 400);
+  assert.deepEqual(Object.keys(noPan.body.fields), ['pan']);
+  assert.equal((await c.call('POST', '/api/applications', details())).body.decision, 'approved');
+  assert.ok(s.gateway.store.db.kycChecks.length > checks, 'the identity check ran again');
+});
+
+test('RETURNING: a withdrawn permission is the first thing asked for', async () => {
+  const s = site();
+  const c = s.client();
+  const { mobile: m } = await login(c); await consent(c);
+  await cycle(s, c, m);
+  await c.call('POST', '/api/consents/revoke', { purpose: 'credit_bureau' });
+  const me = (await c.call('GET', '/api/me')).body;
+  assert.deepEqual([me.next, me.refresh_items, me.missing_consents], ['refresh', ['permissions'], ['credit_bureau']]);
+  assert.equal((await c.call('POST', '/api/applications', details())).body.error, 'consent_required');
+  await consent(c);
+  assert.equal((await c.call('GET', '/api/me')).body.next, 'start');
+});
+
+test('OFFER EXPIRY: a saved offer is valid for 7 days, then it lapses and a new application is allowed', async () => {
+  const s = site();
+  const c = s.client();
+  const { mobile: m } = await login(c); await consent(c);
+  const id = (await c.call('POST', '/api/applications', details())).body.application_id;
+  let me = (await c.call('GET', '/api/me')).body;
+  assert.equal(me.next, 'offer');
+  assert.match(me.offer_expires, /^\d{4}-\d{2}-\d{2}$/);
+  me = await comeBack(s, c, m, 6);
+  assert.equal(me.next, 'offer', '6 days: still valid');
+  me = await comeBack(s, c, m, 2);
+  assert.equal(me.next, 'start', '8 days: lapsed');
+  assert.equal((await s.gateway.store.getApplication(id)).status, 'expired');
+  assert.equal((await c.call('POST', `/api/applications/${id}/accept`)).status, 409, 'a lapsed offer cannot be accepted');
+  assert.equal((await c.call('POST', '/api/applications', details())).body.decision, 'approved', 'and a new application is allowed');
+});
+
+test('NO OFFER: each reason is a safe word, never a score', async () => {
+  const s = site({ REAPPLY_AFTER_DAYS: '30' });
+  const review = s.client(); await login(review, mobile(3)); await consent(review);
+  await review.call('POST', '/api/applications', details({ purpose: 'other' }));
+  const declined = s.client(); await login(declined, mobile(8)); await consent(declined);
+  await declined.call('POST', '/api/applications', details());
+  const blocked = s.client(); const { mobile: bm } = await login(blocked, mobile(3)); await consent(blocked);
+  await cycle(s, blocked, bm);
+  const bc = s.gateway.store.db.loans[s.gateway.store.db.loans.length - 1].customer_id;
+  await s.gateway.store.insertCustomerLimit({ customer_id: bc, limit_amount: 0, cycle_number: 2, reason: 'late_40d', created_by: 'test' });
+  const reasons = [];
+  for (const c of [review, declined, blocked]) {
+    const me = (await c.call('GET', '/api/me')).body;
+    reasons.push([me.next, me.reason]);
+    assert.doesNotMatch(JSON.stringify(me), /late_40d|grade|\bscore\b|points|policy/i);
+  }
+  assert.deepEqual(reasons, [['review', 'under_review'], ['declined', 'reapply_later'], ['blocked', 'not_available']]);
+});
+
+// ------------------------------------------------------------------ the wheel
+test('WHEEL: no spin before the third repaid loan; the third earns one; it is drawn on the server and applied to the next fee', async () => {
+  const s = site();
+  const c = s.client();
+  const { mobile: m } = await login(c); await consent(c);
+  await loyal(s, c, m, 2);
+  let me = (await c.call('GET', '/api/me')).body;
+  assert.deepEqual([me.spins, me.reward], [0, null], 'two repaid loans earn nothing');
+  assert.equal((await c.call('POST', '/api/wheel/spin')).body.error, 'no_spin');
+  await cycle(s, c, m, { body: { amount: 10000, use_saved: true, purpose: 'bills' }, gapDays: 2 });
+  me = (await c.call('GET', '/api/me')).body;
+  assert.equal(me.spins, 1, 'the third repaid loan earns a spin');
+
+  const wheel = (await c.call('GET', '/api/wheel')).body;
+  assert.equal(wheel.slices.length, 10);
+  assert.deepEqual(wheel.odds.map((o) => [o.waiver, o.slices]), [[10, 4], [20, 3], [30, 1], [40, 1], [50, 1]]);
+  const spin = await c.call('POST', '/api/wheel/spin');
+  assert.equal(spin.status, 200);
+  const w = spin.body.waiver_pct;
+  assert.ok([10, 20, 30, 40, 50].includes(w));
+  assert.equal(wheel.slices[spin.body.slice], w, 'the slice that came up is the waiver given');
+  assert.equal((await c.call('POST', '/api/wheel/spin')).body.error, 'no_spin', 'one spin per repaid loan');
+  me = (await c.call('GET', '/api/me')).body;
+  assert.deepEqual([me.spins, me.reward.waiver_pct], [0, w]);
+
+  // the customer's own quote shows the lower fee; a signed-out visitor still sees the full price
+  const q = await s.web.handle({ method: 'GET', path: '/api/quote', query: { amount: '10000' }, headers: { cookie: c.cookie } });
+  const fee = JSON.parse(q.body).fee;
+  assert.equal(fee, Math.round(800 * (100 - w)) / 100);
+  assert.equal(JSON.parse((await s.get('/api/quote', { query: { amount: '10000' } })).body).fee, 800);
+
+  // the next loan carries it: offer, agreement, schedule and the amount to repay
+  const a = await c.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills' });
+  assert.equal(a.body.decision, 'approved');
+  const o = a.body.offer;
+  assert.deepEqual([o.waiverPct, o.fee, o.feeBeforeWaiver, o.repayment], [w, fee, 800, 10000 + fee]);
+  assert.ok(o.aprSimplePct < 97.33);
+  const id = a.body.application_id;
+  assert.equal((await c.call('GET', '/api/me')).body.offer.fee, fee, 'resuming shows the same lower fee');
+  await c.call('POST', `/api/applications/${id}/accept`); await c.call('POST', `/api/applications/${id}/sign`, { code: '246810' });
+  assert.equal((await c.call('GET', '/api/me')).body.reward.waiver_pct, w, 'not used up until the money is paid');
+  await c.call('POST', `/api/applications/${id}/disburse`, { account });
+  const loan = (await c.call('GET', '/api/me')).body.loan;
+  assert.equal(loan.outstanding, 10000 + fee, 'the loan owes the lower fee');
+  const loanRow = s.gateway.store.db.loans.find((l) => l.application_id === id);
+  assert.equal(Number(loanRow.fee_amount), fee);
+  const booked = s.gateway.store.db.ledger.filter((e) => e.loan_id === loanRow.id && e.entry_type === 'fee').reduce((a2, e) => a2 + Number(e.amount), 0);
+  assert.equal(Math.round(booked * 100) / 100, fee, 'the ledger books the lower fee too');
+  assert.equal((await c.call('GET', '/api/me')).body.reward, null, 'used once the money is paid');
+  await c.call('POST', '/api/loan/pay');
+  await comeBack(s, c, m, 2);
+  const next = await c.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills' });
+  assert.deepEqual([next.body.offer.waiverPct, next.body.offer.fee], [0, 800], 'the next loan is at the full fee');
+  assert.equal((await c.call('GET', '/api/me')).body.spins, 1, 'and the fourth repaid loan earned the next spin');
+});
+
+test('WHEEL: a lapsed offer gives the waiver back, and one customer can never use or see another customer\'s', async () => {
+  const s = site();
+  const a = s.client(); const b = s.client();
+  const { mobile: am } = await login(a, mobile(3)); await consent(a);
+  await loyal(s, a, am, 3);
+  const w = (await a.call('POST', '/api/wheel/spin')).body.waiver_pct;
+  const first = await a.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills' });
+  assert.equal(first.body.offer.waiverPct, w);
+  await comeBack(s, a, am, 8); // the offer lapses
+  const second = await a.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills' });
+  assert.equal(second.body.offer.waiverPct, w, 'the waiver was not lost with the lapsed offer');
+
+  await login(b, mobile(4)); await consent(b);
+  assert.equal((await b.call('POST', '/api/wheel/spin')).body.error, 'no_spin');
+  const bq = JSON.parse((await s.web.handle({ method: 'GET', path: '/api/quote', query: { amount: '10000' }, headers: { cookie: b.cookie } })).body);
+  assert.equal(bq.fee, 800, 'another customer pays the full fee');
+  assert.equal((await b.call('GET', '/api/wheel')).body.reward, null);
+});
+
+test('WHEEL: the browser cannot choose the result or the waiver', async () => {
+  const s = site();
+  const c = s.client();
+  const { mobile: m } = await login(c); await consent(c);
+  await loyal(s, c, m, 3);
+  const spin = await c.call('POST', '/api/wheel/spin', { slice: 9, waiver_pct: 50 });
+  assert.ok(spin.body.slice >= 0 && spin.body.slice < 10, 'sent values are ignored');
+  const a = await c.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills', waiver_pct: 100, fee_waiver_pct: 100 });
+  assert.equal(a.body.offer.waiverPct, spin.body.waiver_pct, 'the waiver comes from the database, not the request');
 });

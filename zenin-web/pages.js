@@ -149,7 +149,7 @@ const sections = {
 
 <section class="yellowband"><div class="wrap">
   <h2>Read the bill first.</h2>
-  <p class="cta-row" style="justify-content:center"><a class="btn" href="/app">Check your offer</a></p>
+  <p class="cta-row center"><a class="btn" href="/app">Check your offer</a></p>
 </div></section>`,
     };
   },
@@ -362,7 +362,7 @@ export function renderAppShell(cfg) {
 <link rel="stylesheet" href="/css/site.css">
 </head>
 <body class="appbody" data-mode="${demo ? 'demo' : 'live'}">
-<div id="root"><noscript><p style="padding:24px">This app needs JavaScript. Our <a href="/">website</a> works without it.</p></noscript></div>
+<div id="root"><noscript><p class="pad">This app needs JavaScript. Our <a href="/">website</a> works without it.</p></noscript></div>
 <script type="module" src="/js/app.js"></script>
 </body>
 </html>`;
