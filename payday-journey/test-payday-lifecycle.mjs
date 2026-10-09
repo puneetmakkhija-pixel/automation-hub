@@ -63,11 +63,11 @@ test('limits: the ladder moves one rung, holds, drops, and blocks', () => {
   assert.deepEqual([n({ daysLate: 10 }).limit, n({ daysLate: 10 }).action], [8000, 'reduce']);
   assert.deepEqual([n({ daysLate: 31 }).limit, n({ daysLate: 31 }).action], [0, 'block']);
   assert.equal(n({ writtenOff: true }).limit, 0);
-  assert.equal(nextLimit({ currentLimit: 25000, daysLate: 0 }).action, 'hold');           // top of ladder
+  assert.equal(nextLimit({ currentLimit: 50000, daysLate: 0 }).action, 'hold');           // top of ladder
   assert.equal(nextLimit({ currentLimit: 5000, daysLate: 10 }).limit, 5000);              // nothing lower
   assert.equal(nextLimit({ currentLimit: 12000, daysLate: 0 }).limit, 15000);             // off-ladder limit
   assert.equal(nextLimit({ currentLimit: 20000, daysLate: 0, productMax: 20000 }).limit, 20000, 'never above the product maximum');
-  assert.deepEqual(LADDER, [5000, 8000, 10000, 15000, 20000, 25000]);
+  assert.deepEqual(LADDER, [5000, 8000, 10000, 15000, 20000, 25000, 30000, 40000, 50000]);
 });
 
 test('createApplication: product, amount and eligibility guards', async () => {

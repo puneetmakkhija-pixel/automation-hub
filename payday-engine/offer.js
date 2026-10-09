@@ -13,6 +13,15 @@ export function repaymentFor(product, amount) {
   return round2(amount + feeFor(product, amount));
 }
 
+// A fee waiver gives back a share of the fee: 50 means the customer pays half of it. It scales the fee value of a COPY of
+// the product, so the fee, the repayment and both APR figures all follow from the one number. The product is never changed.
+export function withFeeWaiver(product, waiverPct) {
+  const w = Number(waiverPct) || 0;
+  if (w === 0) return product;
+  if (!(w > 0 && w <= 100)) throw new RangeError(`fee waiver must be from 0 to 100, got ${waiverPct}`);
+  return { ...product, fee_value: round2(Number(product.fee_value) * ((100 - w) / 100)) };
+}
+
 // Annual percentage rate for a single-repayment loan: pay out `amount`, repay amount + fee after `days`.
 // Two common readings are returned because which one the key fact statement must show is a compliance
 // decision, not a code one:

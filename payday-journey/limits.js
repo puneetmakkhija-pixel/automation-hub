@@ -7,7 +7,7 @@
 // grade-based cap on every application, so the limit can only ever LOWER an offer, never raise it.
 import { daysBetween, toDate } from './dates.js';
 
-export const LADDER = [5000, 8000, 10000, 15000, 20000, 25000];
+export const LADDER = [5000, 8000, 10000, 15000, 20000, 25000, 30000, 40000, 50000];
 export const GRACE_DAYS = 3;
 export const BLOCK_AFTER_DAYS = 30;
 

@@ -45,7 +45,7 @@ jobs:
       # cancels data-jobs and hides whether that one was also broken.
       fail-fast: false
       matrix:
-        package: [ivr-router, data-jobs, payday-engine, payday-journey, payday-api]
+        package: [ivr-router, data-jobs, payday-engine, payday-journey, payday-api, zenin-web]
 
     steps:
       - uses: actions/checkout@v4

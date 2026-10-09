@@ -152,7 +152,7 @@ test('partner delivery: signed, timestamped, and marked delivered', async () => 
   await emitPartnerEvent({ store: w.store, applicationId: w.app.id, type: 'loan.disbursed', data: { amount: 10000 } });
   const calls = [];
   const fetchImpl = async (url, init) => { calls.push({ url, init }); return { status: 200 }; };
-  const now = new Date('2026-10-09T10:00:00Z');
+  const now = new Date(Date.now() + 60_000); // after the queue time, whatever the real date is
   const out = await deliverPartnerEvents({ store: w.store, env: { ACME_CALLBACK_SECRET: 's3cret' }, fetchImpl, now });
   assert.deepEqual([out.due, out.delivered, out.retrying, out.failed], [1, 1, 0, 0]);
   const { url, init } = calls[0];
@@ -172,7 +172,7 @@ test('partner delivery: failures back off, then give up; a missing secret or ina
   const w = await partnerWorld();
   await emitPartnerEvent({ store: w.store, applicationId: w.app.id, type: 'loan.closed' });
   const env = { ACME_CALLBACK_SECRET: 's3cret' };
-  let now = new Date('2026-10-09T10:00:00Z');
+  let now = new Date(Date.now() + 60_000); // after the queue time, whatever the real date is
   const down = async () => ({ status: 503 });
   let out = await deliverPartnerEvents({ store: w.store, env, fetchImpl: down, now });
   assert.deepEqual([out.retrying, out.failed], [1, 0]);

@@ -389,3 +389,34 @@ test('partner application limit: a partner key gets 3 applications per customer 
   assert.equal((await apply(C.call, c3)).status, 200);
   assert.equal((await apply(C.call, c3)).status, 429);
 });
+
+test('loyalty wheel: needs 3 repaid loans, is audited, belongs to its own partner, and lowers the fee on the next application', async () => {
+  const w = await world();
+  const A = await newPartner(w, 'Acme');
+  const B = await newPartner(w, 'Beta');
+  const c = await A.call('POST', '/v1/customers', { mobile: mobile() });
+  const id = c.body.customer_id;
+  await grant(A.call, id);
+  assert.deepEqual((await A.call('GET', `/v1/customers/${id}/rewards`)).body.spins_available, 0);
+  assert.equal((await A.call('POST', `/v1/customers/${id}/wheel/spin`)).status, 409, 'not enough repaid loans');
+  for (let i = 0; i < 3; i += 1) await w.store.insertLoan({ application_id: `old${i}`, customer_id: id, product_id: product.id, cycle_number: i + 1, principal: 10000, fee_amount: 800, due_date: '2026-09-01', status: 'closed', disbursed_at: '2026-08-01T00:00:00Z' });
+
+  assert.equal((await B.call('GET', `/v1/customers/${id}/rewards`)).status, 404, 'another partner cannot see it');
+  assert.equal((await B.call('POST', `/v1/customers/${id}/wheel/spin`)).status, 404, 'or spin it');
+  const state = (await A.call('GET', `/v1/customers/${id}/rewards`)).body;
+  assert.deepEqual([state.spins_available, state.wheel.slices.length, state.reward], [1, 10, null]);
+
+  const spin = await A.call('POST', `/v1/customers/${id}/wheel/spin`, { slice: 9, waiver_pct: 50 });
+  assert.equal(spin.status, 200);
+  assert.equal(state.wheel.slices[spin.body.slice], spin.body.waiver_pct);
+  assert.equal((await A.call('POST', `/v1/customers/${id}/wheel/spin`)).status, 409, 'one spin each');
+  const audit = (await w.admin('GET', '/v1/audit')).body.entries.map((e) => e.action);
+  assert.ok(audit.includes('reward.spin') && audit.includes('reward.spin.result'));
+
+  const a = await apply(A.call, id);
+  const pct = spin.body.waiver_pct;
+  assert.equal(a.body.offer.feeAmount, Math.round(800 * (100 - pct)) / 100, 'the offer carries the lower fee');
+  assert.equal((await A.call('GET', `/v1/applications/${a.body.application_id}`)).body.fee_waiver_pct, pct);
+  assert.equal((await w.store.listRewards(id))[0].application_id, a.body.application_id);
+  assert.equal((await w.store.listRewards(id))[0].used_at, null, 'used only when the money is paid');
+});

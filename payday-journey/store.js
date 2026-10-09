@@ -22,7 +22,7 @@ export function memoryStore(seed = {}) {
     colending: [...(seed.colending || [])],
     lenders: seed.lenders || [{ id: 'lender-own-book', name: 'OWN_BOOK', lender_type: 'own_book' }],
     kycChecks: [], enrichment: [], scorecards: [], applicationPatches: [],
-    partners: [], apiClients: [], audit: [], consents: [], policies: [], partnerEvents: [],
+    partners: [], apiClients: [], audit: [], consents: [], policies: [], partnerEvents: [], rewards: [],
   };
   const find = (list, pred) => clone(list.find(pred) ?? null);
   const patch = (list, pred, p) => {
@@ -84,6 +84,27 @@ export function memoryStore(seed = {}) {
     async getLoanByApplication(appId) { return find(t.loans, (l) => l.application_id === appId); },
     async patchLoan(id, p) { return patch(t.loans, (l) => l.id === id, p); },
     async countApplicationsSince(customerId, sinceIso) { return t.applications.filter((a) => a.customer_id === customerId && a.created_at >= sinceIso).length; },
+    // ---- loyalty rewards (see rewards.js)
+    async countClosedLoans(customerId) { return t.loans.filter((l) => l.customer_id === customerId && l.status === 'closed' && l.disbursed_at).length; },
+    async countRewards(customerId) { return t.rewards.filter((r) => r.customer_id === customerId).length; },
+    async insertReward(row) {
+      if (t.rewards.some((r) => r.customer_id === row.customer_id && r.spin_no === row.spin_no)) throw dup('customer_reward (customer_id, spin_no)');
+      const r = withId({ used_at: null, application_id: null, ...row });
+      t.rewards.push(r);
+      return clone(r);
+    },
+    async getUsableReward(customerId, nowIso) {
+      const rows = t.rewards.filter((r) => r.customer_id === customerId && !r.used_at && r.expires_at > nowIso).sort((a, b) => a.expires_at.localeCompare(b.expires_at));
+      return clone(rows[0] ?? null);
+    },
+    async attachReward(id, applicationId) { return patch(t.rewards, (r) => r.id === id, { application_id: applicationId }); },
+    async markRewardUsed(applicationId, atIso) {
+      const r = t.rewards.find((x) => x.application_id === applicationId && !x.used_at);
+      if (r) r.used_at = atIso;
+      return clone(r ?? null);
+    },
+    async listRewards(customerId) { return clone(t.rewards.filter((r) => r.customer_id === customerId)); },
+
     async countLoans(customerId) { return t.loans.filter((l) => l.customer_id === customerId && l.disbursed_at).length; },
     async hasOpenLoan(customerId) { return t.loans.some((l) => l.customer_id === customerId && OPEN.includes(l.status)); },
     async listOpenLoans() { return clone(t.loans.filter((l) => OPEN.includes(l.status) && l.disbursed_at)); },
@@ -280,6 +301,31 @@ export function supabaseStore(client) {
       if (error) throw new Error(`payday.application count: ${error.message}`);
       return count ?? 0;
     },
+    // ---- loyalty rewards (see rewards.js)
+    async countClosedLoans(customerId) {
+      const { count, error } = await from('loan').select('id', { count: 'exact', head: true })
+        .eq('customer_id', customerId).eq('status', 'closed').not('disbursed_at', 'is', null);
+      if (error) throw new Error(`payday.loan count: ${error.message}`);
+      return count ?? 0;
+    },
+    async countRewards(customerId) {
+      const { count, error } = await from('customer_reward').select('id', { count: 'exact', head: true }).eq('customer_id', customerId);
+      if (error) throw new Error(`payday.customer_reward count: ${error.message}`);
+      return count ?? 0;
+    },
+    insertReward: (row) => insertOne('customer_reward', row),
+    async getUsableReward(customerId, nowIso) {
+      const rows = await run(from('customer_reward').select('*').eq('customer_id', customerId).is('used_at', null)
+        .gt('expires_at', nowIso).order('expires_at').limit(1), 'customer_reward select');
+      return rows[0] ?? null;
+    },
+    attachReward: (id, applicationId) => patchBy('customer_reward', 'id', id, { application_id: applicationId }),
+    async markRewardUsed(applicationId, atIso) {
+      const rows = await run(from('customer_reward').update({ used_at: atIso }).eq('application_id', applicationId).is('used_at', null).select(), 'customer_reward update');
+      return rows[0] ?? null;
+    },
+    listRewards: (customerId) => run(from('customer_reward').select('*').eq('customer_id', customerId).order('spin_no'), 'customer_reward select'),
+
     async countLoans(customerId) {
       const { count, error } = await from('loan').select('id', { count: 'exact', head: true })
         .eq('customer_id', customerId).not('disbursed_at', 'is', null);

@@ -1,0 +1,1113 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zenin Credit app prototype</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=DM+Mono:wght@400;500&family=Hind:wght@400;500;600&display=swap">
+<style>/* Zenin Credit, "The Receipt": the cost is itemised, so the product is drawn as a bill. Deep teal ground with a dot grid,
+   thermal-paper tapes with torn edges, mono figures, one signal yellow for the action and one stamp red.
+   A committed single look (no dark variant): the paper and the teal are the identity.
+   Hind carries Devanagari, so Hindi keeps the same body face. */
+:root{
+  --teal:#0e3b36; --teal-dot:#15514a; --teal-deep:#0a2d29;
+  --paper:#fafaf5; --ink:#16241f; --ink-soft:#5a6a64; --rule:rgb(22 36 31 / .35);
+  --yellow:#ffd23f; --yellow-hover:#ffdf6e; --stamp:#c8352b; --ok:#1d6b43; --bad:#a3322b; --warn-soft:#ffe9a8; --warn:#5c4300;
+  --on-teal:#fafaf5; --on-teal-soft:#d7e6e2;
+  --display:'Anton','Impact',system-ui,sans-serif; --mono:'DM Mono',ui-monospace,'SFMono-Regular',Menlo,monospace; --body:'Hind',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --r:4px; --gutter:16px; color-scheme:light;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;color:var(--on-teal);font:17px/1.6 var(--body);background-color:var(--teal);background-image:radial-gradient(var(--teal-dot) 1.6px,transparent 1.6px);background-size:24px 24px}
+img,svg{max-width:100%}
+h1,h2,h3{font-family:var(--display);font-weight:400;text-transform:uppercase;line-height:1.02;margin:0 0 .5em;letter-spacing:.01em;text-wrap:balance}
+h1{font-size:clamp(2.6rem,8vw,5.6rem)}
+h2{font-size:clamp(1.9rem,4vw,3rem);margin-top:1.4em}
+h2:first-child{margin-top:0}
+h3{font-size:1.5rem}
+p{margin:0 0 1em;max-width:68ch}
+a{color:var(--yellow)}
+ul,ol{padding-left:1.2em;margin:0 0 1em}
+li{margin:.25em 0}
+.wrap{max-width:1180px;margin-inline:auto;padding-inline:24px}
+.narrow{max-width:800px}
+.muted{color:var(--on-teal-soft)}
+.fine{font-size:.85rem;color:var(--on-teal-soft)}
+.lead{font-size:1.2rem;color:var(--on-teal-soft)}
+.center{text-align:center}.center p{margin-inline:auto}
+:focus-visible{outline:3px solid var(--yellow);outline-offset:2px;border-radius:2px}
+.skip{position:absolute;left:-999px;top:0;background:var(--yellow);color:var(--teal);padding:8px 12px;z-index:50}
+.skip:focus{left:8px;top:8px}
+.hl{color:var(--yellow)}
+
+/* ---- the tape: thermal paper with torn top and bottom edges */
+.tape{position:relative;background:var(--paper);color:var(--ink);padding:clamp(20px,3.4vw,34px);box-shadow:0 26px 46px rgb(0 0 0 / .32)}
+.tape::before,.tape::after{content:"";position:absolute;left:0;right:0;height:12px;background-size:16px 12px}
+.tape::before{top:-11px;background-image:linear-gradient(-45deg,transparent 8px,var(--paper) 0),linear-gradient(45deg,transparent 8px,var(--paper) 0);background-position:left bottom}
+.tape::after{bottom:-11px;background-image:linear-gradient(135deg,transparent 8px,var(--paper) 0),linear-gradient(225deg,transparent 8px,var(--paper) 0)}
+.tape a{color:var(--teal)}
+.tape h1,.tape h2,.tape h3{color:var(--ink)}
+.tape p{color:#2d3d37}
+.tape .muted,.tape .fine,.tape .lead{color:var(--ink-soft)}
+.dash{border:0;border-top:2px dashed var(--ink);margin:14px 0;opacity:.9}
+.mono{font-family:var(--mono)}
+.stamp{display:inline-block;border:4px solid var(--stamp);color:var(--stamp);font-family:var(--display);text-transform:uppercase;letter-spacing:.08em;font-size:1.6rem;line-height:1;padding:4px 14px;border-radius:6px;transform:rotate(-8deg);background:transparent}
+
+/* ---- buttons: yellow on teal, teal on paper */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:.5em;font:500 .98rem var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:.95em 1.5em;border-radius:var(--r);border:2px solid var(--yellow);background:var(--yellow);color:var(--teal);text-decoration:none;cursor:pointer;min-height:50px;line-height:1.2}
+.btn:hover{background:var(--yellow-hover);border-color:var(--yellow-hover)}
+.btn.ghost{background:transparent;color:var(--on-teal);border-color:var(--on-teal)}
+.btn.ghost:hover{background:rgb(255 255 255 / .08)}
+.btn.small{padding:.55em 1em;min-height:42px;font-size:.88rem}
+.btn.block{display:flex;width:100%}
+.btn[disabled]{background:#3b5c57;border-color:#3b5c57;color:#9db9b2;cursor:not-allowed}
+h1[tabindex="-1"]:focus,h1[tabindex="-1"]:focus-visible{outline:none}
+.tape .btn{background:var(--teal);border-color:var(--teal);color:var(--paper)}
+.tape .btn:hover{background:var(--teal-deep);border-color:var(--teal-deep)}
+.tape .btn.ghost{background:transparent;color:var(--teal);border-color:var(--teal)}
+.cta-row{display:flex;flex-wrap:wrap;gap:12px;margin:1.2em 0}
+
+/* ---- site chrome */
+.demo-bar{background:var(--yellow);color:var(--teal);text-align:center;padding:8px var(--gutter);font:500 .8rem var(--mono);letter-spacing:.04em;text-transform:uppercase}
+.top{position:sticky;top:0;background:var(--teal);border-bottom:1px solid var(--teal-dot);z-index:20}
+.top .row{display:flex;align-items:center;gap:20px;min-height:68px}
+.brand{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:var(--on-teal);font:400 1.7rem var(--display);text-transform:uppercase;letter-spacing:.06em}
+.brand span{color:var(--on-teal)}.brand b{font-weight:400;color:var(--yellow)}
+.mark{color:var(--yellow)}
+.nav{display:none;gap:24px;margin-left:auto}
+.nav a{color:var(--on-teal);text-decoration:none;font:400 .85rem var(--mono);text-transform:uppercase;letter-spacing:.05em;padding:6px 0;border-bottom:2px solid transparent}
+.nav a:hover,.nav a[aria-current=page]{border-color:var(--yellow)}
+.top .btn.small{margin-left:auto}
+.menu{position:relative}
+.menu summary{list-style:none;cursor:pointer;width:44px;height:44px;display:grid;place-items:center;border-radius:var(--r)}
+.menu summary::-webkit-details-marker{display:none}
+.menu summary span,.menu summary span::before,.menu summary span::after{display:block;width:22px;height:2px;background:var(--on-teal);content:"";position:relative}
+.menu summary span::before{top:-7px;position:absolute}.menu summary span::after{top:7px;position:absolute}
+.menu div{position:absolute;right:0;top:48px;background:var(--paper);border-radius:var(--r);padding:8px;display:flex;flex-direction:column;min-width:230px;box-shadow:0 14px 34px rgb(0 0 0 / .4)}
+.menu a{padding:12px;text-decoration:none;color:var(--ink);font:400 .88rem var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.menu a:hover{background:#eeeee6}
+@media (min-width:900px){.nav{display:flex}.top .btn.small{margin-left:0}.menu{display:none}}
+
+.foot{margin-top:72px;padding-block:44px;background:var(--teal-deep);border-top:1px solid var(--teal-dot)}
+.foot .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:24px;margin-bottom:22px}
+.foot h2{font:400 .8rem var(--mono);text-transform:uppercase;letter-spacing:.1em;color:#9db9b2;margin:0 0 8px}
+.foot a{display:block;color:var(--on-teal-soft);text-decoration:none;padding:3px 0;font:400 .85rem var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.foot a:hover{color:var(--yellow)}
+.foot .brand{display:inline-flex;margin-bottom:6px;font-size:1.5rem}
+.foot p{max-width:none}
+.foot .fine{color:#9db9b2}
+
+/* ---- content blocks */
+main section{padding-block:clamp(32px,6vw,72px)}
+.hero{padding-top:clamp(20px,4vw,48px);padding-bottom:clamp(56px,8vw,96px)}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr);gap:clamp(28px,5vw,60px);align-items:center}
+@media (min-width:920px){.grid2{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}}
+.eyebrow{font:500 .85rem var(--mono);text-transform:uppercase;letter-spacing:.1em;color:var(--yellow);margin-bottom:.8em}
+.ticks{list-style:none;padding:0;font-family:var(--mono);font-size:.92rem;text-transform:uppercase;letter-spacing:.03em}
+.ticks li{padding-left:2.8em;position:relative}
+.ticks li::before{content:"[x]";position:absolute;left:0;color:var(--yellow)}
+.tape .ticks li::before{color:var(--teal)}
+.band{background:var(--paper);color:var(--ink)}
+.band h2{color:var(--ink)}
+.band .fine,.band .muted{color:var(--ink-soft)}
+.steps{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;counter-reset:s}
+.steps li{border:2px dashed var(--ink);padding:18px 20px;counter-increment:s;display:flex;flex-direction:column;gap:2px;margin:0;min-width:0}
+.steps li::before{content:counter(s,decimal-leading-zero);font:400 3.4rem/1 var(--display);color:var(--teal)}
+.steps li:last-child{background:var(--yellow)}
+.steps b{font:500 .95rem var(--mono);text-transform:uppercase;letter-spacing:.03em;margin-top:6px}
+.steps span{color:#3d4d47;font-size:.98rem}
+.card{background:var(--paper);color:var(--ink);padding:clamp(18px,3vw,26px)}
+.kv{margin:12px 0}
+.kv>div{display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:2px dotted var(--rule)}
+.kv>div:last-child{border-bottom:0}
+.kv dt{color:var(--ink-soft);font-size:.95rem}
+.kv dd{margin:0;font:400 1rem var(--mono);text-align:right;font-variant-numeric:tabular-nums;color:var(--ink)}
+.kv dd strong{font-weight:500;font-size:1.35rem}
+.calc-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.calc-head label{font:500 .85rem var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.calc-head output{font:400 2.8rem/1 var(--display);font-variant-numeric:tabular-nums;color:var(--ink)}
+.calc input[type=range]{width:100%;accent-color:var(--teal);height:36px}
+.calc-scale{display:flex;justify-content:space-between;font:400 .8rem var(--mono);color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.rc-head{text-align:center;font:500 1.15rem var(--mono);letter-spacing:.16em;text-transform:uppercase}
+.rc-sub{text-align:center;font:400 .78rem var(--mono);letter-spacing:.06em;color:var(--ink-soft);text-transform:uppercase}
+.calc .stamp{position:absolute;right:18px;top:14px;font-size:1.1rem;padding:2px 10px;opacity:.9}
+.tbl{width:100%;border-collapse:collapse;margin:1em 0;font-size:.98rem}
+.tbl th,.tbl td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:2px dotted var(--rule)}
+.tbl th{width:34%;font:500 .82rem var(--mono);text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft)}
+.qa{border-bottom:2px dotted var(--rule)}
+.qa summary{cursor:pointer;padding:16px 0;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
+.qa summary::after{content:"+";font:500 1.5rem/1 var(--mono);color:var(--teal)}
+.qa[open] summary::after{content:"\2212"}
+.qa summary::-webkit-details-marker{display:none}
+.qa p{color:var(--ink-soft)}
+.draft{background:var(--warn-soft);color:var(--warn);border-radius:var(--r);padding:10px 14px;font-size:.92rem;margin-top:20px}
+.promises{font:400 .98rem/2 var(--mono);text-transform:uppercase;letter-spacing:.02em}
+.promises .t{font-weight:500;letter-spacing:.1em;margin-bottom:6px}
+.promises div+div{padding-left:0}
+.yellowband{background:var(--yellow);color:var(--teal);text-align:center}
+.yellowband h2{color:var(--teal);font-size:clamp(2.6rem,7vw,5.2rem);margin:0 auto .4em}
+.yellowband .btn{background:var(--teal);border-color:var(--teal);color:var(--paper)}
+.yellowband .btn:hover{background:var(--teal-deep)}
+
+/* ================================================================ app */
+.appbody{background-color:var(--teal);background-image:radial-gradient(var(--teal-dot) 1.4px,transparent 1.4px);background-size:22px 22px}
+#root{min-height:100dvh;display:flex;justify-content:center}
+.shell{width:100%;max-width:480px;min-height:100dvh;display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0);color:var(--on-teal)}
+.appbar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px var(--gutter);position:sticky;top:0;z-index:5;background:var(--teal)}
+.appbar .brand{font-size:1.35rem}
+.appbar .tools{display:flex;gap:6px;align-items:center}
+.chip{font:500 .8rem var(--mono);padding:6px 12px;border-radius:var(--r);border:1.5px solid var(--on-teal);background:transparent;color:var(--on-teal);cursor:pointer;min-height:36px;text-transform:uppercase}
+.chip[aria-pressed=true]{background:var(--yellow);color:var(--teal);border-color:var(--yellow)}
+.demo-strip{background:var(--yellow);color:var(--teal);font:500 .72rem var(--mono);text-transform:uppercase;letter-spacing:.04em;padding:6px var(--gutter);text-align:center}
+.stepline{font:500 .75rem var(--mono);letter-spacing:.08em;color:var(--yellow);padding:12px var(--gutter) 4px;text-transform:uppercase}
+.screen{flex:1;padding:14px var(--gutter) 28px;display:flex;flex-direction:column}
+.screen .tape{flex:1;display:flex;flex-direction:column;gap:14px;margin-block:10px}
+.screen h1{font-size:2.3rem;margin:0}
+.screen p{margin:0;color:#2d3d37}
+.screen .muted{color:var(--ink-soft)}
+.footbar{position:sticky;bottom:0;background:var(--teal);padding:12px var(--gutter) calc(14px + env(safe-area-inset-bottom,0));display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--teal-dot)}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font:500 .8rem var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.field .hint{font-size:.85rem;color:var(--ink-soft)}
+.field .err{font-size:.88rem;color:var(--bad)}
+input[type=text],input[type=tel],input[type=number],select{width:100%;font:inherit;font-size:1.05rem;padding:12px 14px;min-height:52px;border:2px solid var(--ink);border-radius:var(--r);background:#fff;color:var(--ink)}
+input[aria-invalid=true],select[aria-invalid=true]{border-color:var(--bad)}
+input.code{font-family:var(--mono);letter-spacing:.4em;font-size:1.5rem;text-align:center}
+.check{display:flex;gap:12px;align-items:flex-start;padding:14px;border:2px dashed var(--ink);border-radius:var(--r);background:transparent;cursor:pointer;color:var(--ink)}
+.check input{width:22px;height:22px;margin-top:2px;accent-color:var(--teal);flex:none}
+.check small{display:block;color:var(--ink-soft)}
+.panel{border:2px dashed var(--ink);padding:14px;background:transparent}
+.money-card{display:flex;flex-direction:column;gap:2px;border-top:2px dashed var(--ink);border-bottom:2px dashed var(--ink);padding:12px 0}
+.money-card .label{font:400 .78rem var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft)}
+.money-card .big{font:500 2.4rem/1.1 var(--mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+.amount-pick{display:flex;flex-direction:column;gap:8px}
+.amount-pick output{font:400 3.6rem/1 var(--display);font-variant-numeric:tabular-nums}
+.amount-pick input[type=range]{width:100%;accent-color:var(--teal);height:40px}
+.badge{display:inline-block;font:500 .75rem var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:4px 10px;border-radius:3px}
+.badge.ok{background:#dff0e6;color:var(--ok)}.badge.bad{background:#f6dedb;color:var(--bad)}.badge.info{background:#e6ece9;color:var(--teal)}.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.tick{width:64px;height:64px;border-radius:50%;border:4px solid var(--ok);color:var(--ok);display:grid;place-items:center;font-size:30px;transform:rotate(-8deg)}
+.offer-stamp{align-self:flex-end;margin-top:-4px}
+.checking{display:flex;flex-direction:column;gap:8px}
+.checking div{display:flex;gap:12px;align-items:center;padding:12px;border:2px dashed var(--ink);font:400 .9rem var(--mono);text-transform:uppercase;letter-spacing:.02em}
+.checking .dot{width:20px;height:20px;border-radius:50%;border:2.5px solid var(--rule);flex:none;display:grid;place-items:center;font-size:12px}
+.checking .run .dot{border-color:var(--teal);border-top-color:transparent;animation:spin .8s linear infinite}
+.checking .done .dot{background:var(--ok);border-color:var(--ok);color:#fff}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.checking .run .dot{animation:none}*{scroll-behavior:auto!important}}
+.sheet{position:fixed;inset:0;background:rgb(0 0 0 / .55);display:flex;align-items:flex-end;justify-content:center;z-index:30}
+.sheet>div{background:var(--paper);color:var(--ink);width:100%;max-width:480px;border-radius:10px 10px 0 0;padding:20px var(--gutter) calc(20px + env(safe-area-inset-bottom,0));display:flex;flex-direction:column;gap:12px;max-height:85dvh;overflow:auto}
+.sheet h2{color:var(--ink);font-size:1.9rem;margin:0}
+.sheet .btn{background:transparent;color:var(--teal);border-color:var(--teal)}
+.sheet .btn:not(.ghost){background:var(--teal);color:var(--paper)}
+.sheet .muted{color:var(--ink-soft)}
+.list{display:flex;flex-direction:column;gap:8px}
+.list .item{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border:2px dashed var(--ink);align-items:center}
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--paper);color:var(--ink);padding:10px 16px;border-radius:var(--r);font:500 .85rem var(--mono);z-index:40;max-width:90vw;box-shadow:0 10px 30px rgb(0 0 0 / .4)}
+.linkbtn{background:none;border:0;color:var(--teal);font:inherit;text-decoration:underline;cursor:pointer;padding:6px 0;text-align:left}
+.shell a{color:var(--yellow)}
+.tape a{color:var(--teal)}
+
+/* returning customers: reward banner and the wheel */
+.reward-banner{border:2px dashed var(--yellow);background:rgb(255 210 63 / .28);color:var(--ink);padding:10px 14px;margin:12px 0;font-family:var(--mono);font-size:14px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.reward-banner.spin{border-style:solid;background:var(--yellow);color:var(--ink)}
+.reward-banner.spin .linkbtn{color:var(--ink);font-weight:600;text-decoration:underline}
+.wheel-wrap{display:flex;justify-content:center;margin:12px 0}
+.wheel{width:min(300px,78vw);height:auto;filter:drop-shadow(0 10px 20px rgb(0 0 0 / .35))}
+.won{text-align:center;margin:8px 0}
+.won .stamp{display:inline-block;transform:rotate(-6deg);margin:6px 0 10px}
+@media (prefers-reduced-motion:reduce){#rotor{transition:none!important}}
+#rotor{transform-origin:0 0}
+#pan,#acct_ifsc{text-transform:uppercase}
+.cta-row.center{justify-content:center}
+noscript .pad{padding:24px}
+
+body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{font-size:11px}#protobar span{display:none}body{padding-top:40px}}
+#protobar{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#16241f;color:#fafaf5;padding:6px 12px;font:12px/1.3 'DM Mono',monospace;border-bottom:2px solid #ffd23f}
+#protobar b{background:#ffd23f;color:#16241f;padding:2px 6px;border-radius:3px}
+#protobar select,#protobar button{font:inherit;padding:3px 6px;border-radius:3px;border:1px solid #fafaf5;background:#0e3b36;color:#fafaf5}
+#protobar span{opacity:.75}</style></head>
+<body class="appbody" data-mode="demo"><div id="root"></div>
+<script>// Browser-only stand-in for the Zenin BFF API, so the app can be tried from one file with no server.
+// It mirrors the shapes the real server returns (zenin-web/app.js). Nothing here is real: no money, no data.
+(() => {
+  const DAY = 86_400_000;
+  const iso = (d) => new Date(Date.now() + d * DAY).toISOString().slice(0, 10);
+  const stamp = (d) => new Date(Date.now() + d * DAY).toISOString();
+  const SIGN_CODE = '246810';
+  const JOB = { monthly_salary: 48000, employer_type: 'listed_large', months_with_employer: 26, residence: 'rented_long' };
+  const SCENARIOS = {
+    new: 'New customer: first loan',
+    welcome: 'Returning: pre-approved',
+    offer: 'Returning: saved offer (3 days left)',
+    refresh_permissions: 'Needs refresh: permission withdrawn',
+    refresh_identity: 'Needs refresh: PAN older than 1 year',
+    refresh_job: 'Needs refresh: job details older than 90 days',
+    refresh_all: 'Needs refresh: all three',
+    review: 'No offer: under review',
+    declined: 'No offer: declined, try later',
+    blocked: 'No offer: not available',
+    kyc_pending: 'No offer: identity check pending',
+    loan: 'Open loan, due in 12 days',
+    wheel2: 'Loyalty: 2 loans repaid (no spin yet)',
+    wheel3: 'Loyalty: 3 loans repaid, 1 spin waiting',
+    reward: 'Loyalty: 30% fee waiver in hand',
+  };
+  const hash = () => (location.hash.match(/s=(\w+)/) || [])[1];
+  const scenario = SCENARIOS[hash()] ? hash() : 'new';
+  const sc = scenario;
+
+  const st = {
+    signedIn: sc !== 'new', next: 'start', repaid: 0, spins: 0, reward: null, refresh: [], missing: [], profile: null,
+    offer: null, offerExpires: null, declinedUntil: null, loan: null, application: null, consents: ['kyc', 'credit_bureau', 'terms'], history: [], cap: 10000,
+  };
+  if (sc === 'new') { st.consents = []; st.missing = ['kyc', 'credit_bureau', 'terms']; }
+  const repeat = () => { st.repaid = Math.max(st.repaid, 1); st.cap = 15000; st.profile = { ...JOB }; };
+  const hist = (n) => { st.history = Array.from({ length: n }, (_, i) => ({ loan_id: 'L' + i, status: 'closed', amount: 10000, disbursed_at: stamp(-30 * (n - i) - 5), closed_at: stamp(-30 * (n - i) + 24) })); };
+  if (sc === 'welcome') { repeat(); hist(1); }
+  if (sc === 'offer') { repeat(); hist(1); st.next = 'offer'; st.offer = 10000; st.offerExpires = iso(3); st.application = { id: 'A1', status: 'offered' }; }
+  if (sc.startsWith('refresh')) {
+    repeat(); hist(1); st.next = 'refresh';
+    if (sc === 'refresh_permissions' || sc === 'refresh_all') { st.refresh.push('permissions'); st.missing = ['credit_bureau']; st.consents = ['kyc', 'terms']; }
+    if (sc === 'refresh_identity' || sc === 'refresh_all') st.refresh.push('identity');
+    if (sc === 'refresh_job' || sc === 'refresh_all') st.refresh.push('job');
+  }
+  if (sc === 'review') { repeat(); hist(1); st.next = 'review'; st.application = { id: 'A2', status: 'scored', reference: 'A2B7C9D1' }; }
+  if (sc === 'declined') { repeat(); hist(1); st.next = 'declined'; st.declinedUntil = iso(24); st.application = { id: 'A3', status: 'rejected', reference: 'F3E1A0C4' }; }
+  if (sc === 'blocked') { repeat(); hist(1); st.next = 'blocked'; }
+  if (sc === 'kyc_pending') { st.next = 'kyc_pending'; st.application = { id: 'A4', status: 'kyc_pending', reference: 'K9D2E5B7' }; }
+  if (sc === 'loan') { repeat(); hist(1); st.next = 'loan'; st.loan = { loan_id: 'L9', status: 'active', principal: 10000, due_date: iso(12), outstanding: 10800, days_overdue: 0, apr_pct: 97.3 }; }
+  if (sc === 'wheel2') { repeat(); st.repaid = 2; st.cap = 20000; hist(2); }
+  if (sc === 'wheel3') { repeat(); st.repaid = 3; st.cap = 25000; st.spins = 1; hist(3); }
+  if (sc === 'reward') { repeat(); st.repaid = 3; st.cap = 25000; hist(3); st.reward = { waiver_pct: 30, expires_at: stamp(27) }; }
+
+  const WHEEL = [10,20,10,30,10,20,40,10,20,50];
+  const ODDS = [10, 20, 30, 40, 50].map((w) => ({ waiver: w, slices: WHEEL.filter((x) => x === w).length }));
+  const waiver = () => (st.reward ? st.reward.waiver_pct : 0);
+  const round2 = (n) => Math.round(n * 100) / 100;
+  function terms(amount, w = 0) {
+    const fullFee = amount * 0.08; const fee = round2(fullFee * (1 - w / 100));
+    return {
+      amount, fee, repayment: amount + fee, tenureDays: 30, aprSimplePct: round2((fee / amount) * (365 / 30) * 100),
+      aprEffectivePct: round2(((1 + fee / amount) ** (365 / 30) - 1) * 100), lateChargePctPerDay: 1, waiverPct: w, feeBeforeWaiver: w ? fullFee : null,
+    };
+  }
+  function me() {
+    const o = {
+      mode: 'demo', mobile_masked: 'XXXXXX1234', consents: st.consents, missing_consents: st.missing, next: st.next, cap: st.cap, min_amount: 5000,
+      is_repeat: st.repaid > 0, refresh_items: st.refresh, need_pan: st.repaid === 0 || st.refresh.includes('identity'), declined_until: st.declinedUntil,
+      history: st.history, preapproved: st.repaid > 0 && st.next === 'start', spins: st.spins, reward: st.reward,
+      reason: { review: 'under_review', declined: 'reapply_later', blocked: 'not_available' }[st.next] ?? null,
+    };
+    if (st.profile && ['start', 'refresh'].includes(st.next)) o.profile = { ...st.profile };
+    if (st.application) o.application = st.application;
+    if (st.offer) { o.offer = terms(st.offer, st.offerWaiver || 0); if (st.next === 'offer') o.offer_expires = st.offerExpires; }
+    if (st.loan && st.next === 'loan') o.loan = st.loan;
+    return o;
+  }
+  const res = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  const err = (status, error, message, extra = {}) => res(status, { error, message, ...extra });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  async function handle(method, path, query, body) {
+    if (method === 'GET' && path === '/config') {
+      return res(200, { mode: 'demo', brand: 'Zenin Credit', product: { min: 5000, max: 50000, tenure_days: 30, late_charge_pct_per_day: 1 }, first_loan_max: 10000,
+        wheel: { slices: WHEEL, odds: ODDS, valid_days: 30, repaid_needed: 3 }, demo: { otp: '123456', sign_code: SIGN_CODE, hint: '' } });
+    }
+    if (method === 'GET' && path === '/quote') {
+      const a = Number(query.get('amount'));
+      if (!(a >= 5000 && a <= 50000) || a % 500) return err(400, 'bad_amount', 'Choose an amount from 5000 to 50000 in steps of 500.');
+      return res(200, terms(a, st.signedIn ? waiver() : 0));
+    }
+    if (method === 'POST' && path === '/otp/send') return res(200, { sent: true });
+    if (method === 'POST' && path === '/otp/verify') {
+      if (body.code !== '123456') return err(400, 'bad_code', 'That code is not right.');
+      st.signedIn = true; return res(200, me());
+    }
+    if (!st.signedIn) return err(401, 'signed_out', 'Please sign in again.');
+    if (method === 'GET' && path === '/me') return res(200, me());
+    if (method === 'POST' && path === '/logout') { st.signedIn = false; return res(200, {}); }
+    if (method === 'POST' && path === '/consents') {
+      st.consents = ['kyc', 'credit_bureau', 'terms']; st.missing = [];
+      st.refresh = st.refresh.filter((k) => k !== 'permissions');
+      if (!st.refresh.length && st.next === 'refresh') st.next = 'start';
+      return res(200, {});
+    }
+    if (method === 'POST' && path === '/consents/revoke') { st.consents = st.consents.filter((c) => c !== body.purpose); return res(200, { revoked: body.purpose }); }
+    if (method === 'GET' && path === '/history') return res(200, { history: st.history });
+    if (method === 'GET' && path === '/wheel') return res(200, { spins: st.spins, reward: st.reward, repaid_loans: st.repaid, loans_needed: Math.max(0, 3 - st.repaid), slices: WHEEL, odds: ODDS });
+    if (method === 'POST' && path === '/wheel/spin') {
+      if (st.spins < 1) return err(409, 'no_spin', 'There is no spin waiting for you.');
+      const slice = Math.floor(Math.random() * WHEEL.length);
+      st.spins -= 1; st.reward = { waiver_pct: WHEEL[slice], expires_at: stamp(30) };
+      return res(200, { slice, waiver_pct: WHEEL[slice], expires_at: st.reward.expires_at });
+    }
+    if (method === 'POST' && path === '/applications') {
+      const a = Number(body.amount);
+      if (!(a >= 5000 && a <= st.cap) || a % 500) return err(400, 'bad_amount', `You can ask for 5000 to ${st.cap} in steps of 500.`);
+      const fields = {};
+      if (body.use_saved) { if (!st.profile) return err(409, 'details_needed', 'Please confirm your details first.'); if (!body.purpose) fields.purpose = 'Choose what the money is for.'; }
+      else {
+        if (!(Number(body.monthly_salary) >= 8000)) fields.monthly_salary = 'Enter your monthly take-home salary in rupees.';
+        if (!body.employer_type) fields.employer_type = 'Choose your employer type.';
+        if (body.months_with_employer === '' || body.months_with_employer === undefined) fields.months_with_employer = 'Enter the number of months you have worked there.';
+        if (!body.residence) fields.residence = 'Choose where you live.';
+        if (!body.purpose) fields.purpose = 'Choose what the money is for.';
+        if (st.repaid === 0 || st.refresh.includes('identity')) if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(String(body.pan || ''))) fields.pan = 'Enter your PAN, for example ABCDE1234F.';
+      }
+      if (Object.keys(fields).length) return err(400, 'invalid', 'Please check the highlighted fields.', { fields });
+      if (!body.use_saved) st.profile = { monthly_salary: Number(body.monthly_salary), employer_type: body.employer_type, months_with_employer: Number(body.months_with_employer), residence: body.residence };
+      st.refresh = []; st.application = { id: 'A' + Date.now(), status: 'offered' };
+      if (body.purpose === 'other') { st.next = 'review'; st.application.reference = 'R7T2Q9X1'; return res(200, { decision: 'review', application_id: st.application.id, reference: st.application.reference }); }
+      st.next = 'offer'; st.offer = a; st.offerWaiver = waiver(); st.offerExpires = iso(7);
+      return res(200, { decision: 'approved', application_id: st.application.id, offer: terms(a, st.offerWaiver) });
+    }
+    let m = /^\/applications\/([\w-]+)\/(accept|sign|disburse)$/.exec(path);
+    if (method === 'POST' && m) {
+      if (m[2] === 'accept') { st.next = 'sign'; return res(200, { status: 'agreement_sent' }); }
+      if (m[2] === 'sign') { if (String(body.code) !== SIGN_CODE) return err(400, 'bad_code', 'That code is not right.'); st.next = 'bank'; return res(200, { status: 'signed' }); }
+      const t = terms(st.offer, st.offerWaiver || 0);
+      if (st.offerWaiver) st.reward = null;
+      st.loan = { loan_id: 'L' + Date.now(), status: 'active', principal: st.offer, due_date: iso(30), outstanding: t.repayment, days_overdue: 0, apr_pct: t.aprSimplePct };
+      st.next = 'loan'; st.offerWaiver = 0;
+      return res(200, { status: 'paid', due_date: st.loan.due_date });
+    }
+    if (method === 'POST' && path === '/loan/pay') {
+      st.history.push({ loan_id: st.loan.loan_id, status: 'closed', amount: st.loan.principal, disbursed_at: stamp(-30), closed_at: stamp(0) });
+      st.repaid += 1; st.loan = null; st.offer = null; st.application = null; st.next = 'start';
+      st.cap = Math.min(50000, 10000 + 5000 * st.repaid);
+      if (st.repaid >= 3) st.spins += 1;
+      if (!st.profile) st.profile = { ...JOB };
+      return res(200, { status: 'paid' });
+    }
+    return err(404, 'not_found', 'Not found.');
+  }
+
+  window.fetch = async (url, opts = {}) => {
+    const u = new URL(String(url), 'http://x');
+    if (!u.pathname.startsWith('/api/')) return err(404, 'not_found', 'Not found.');
+    let body = {}; try { body = opts.body ? JSON.parse(opts.body) : {}; } catch { /* none */ }
+    await wait(120);
+    return handle((opts.method || 'GET').toUpperCase(), u.pathname.slice(4), u.searchParams, body);
+  };
+
+  // scenario bar
+  document.addEventListener('DOMContentLoaded', () => {
+    const bar = document.createElement('div');
+    bar.id = 'protobar';
+    bar.innerHTML = '<b>PROTOTYPE</b><label>Scenario <select id="protosel">' + Object.entries(SCENARIOS).map(([k, v]) => `<option value="${k}"${k === scenario ? ' selected' : ''}>${v}</option>`).join('') + '</select></label><button id="protorst" type="button">Restart</button><span>Sign-in code 123456 · agreement code ' + SIGN_CODE + ' · nothing here is real</span>';
+    document.body.prepend(bar);
+    document.getElementById('protosel').addEventListener('change', (e) => { location.hash = 's=' + e.target.value; location.reload(); });
+    document.getElementById('protorst').addEventListener('click', () => location.reload());
+  });
+})();
+</script>
+<script>// App text in English and Hindi. Hindi wording is a first draft and must be reviewed by a native speaker and by the
+// lender's compliance team before real customers see it, especially the permission, key-fact and decline texts.
+const STRINGS = {
+  en: {
+    welcomeSub: 'You can borrow up to {cap}.', yourDetails: 'Your details', stillCorrect: 'Still correct? Change them if not.', seeBill: 'See my bill', changeDetails: 'Change my details',
+    sumSalary: 'Monthly salary', sumEmployer: 'Employer', sumMonths: 'Months at this job', sumHome: 'Home', monthsUnit: '{n} months',
+    refreshTitle: 'A quick check first', refreshSub: 'We only ask for what is out of date.', updateContinue: 'Update and continue',
+    ri_permissions: 'Give your permission again', ri_permissions_d: 'You withdrew a permission we need to prepare your offer.',
+    ri_identity: 'Confirm your PAN again', ri_identity_d: 'Your identity check is over a year old.',
+    ri_job: 'Update your job details', ri_job_d: 'Last updated over 90 days ago. We have filled in what we know.',
+    offerValid: 'Valid until {date}', feeWaived: 'Fee ({pct}% waived)', waiverApplied: 'Your {pct}% fee waiver is applied.',
+    spinBannerTitle: 'You have a spin waiting', spinBannerBtn: 'Spin the wheel', rewardBanner: '{pct}% off your fee on your next loan. Valid until {date}.', earnedSpin: 'You earned a spin!',
+    wheelTitle: 'Spin the wheel', wheelSub: 'You have repaid {n} loans. Your reward: a waiver on the fee of your next loan.',
+    wheelOdds: 'Ten equal slices, and every slice wins: 10% on 4 slices, 20% on 3, 30% on 1, 40% on 1, 50% on 1. One spin for each loan you repay from the third on.',
+    spinBtn: 'Spin', spinning: 'Spinning', wonTitle: 'You won {pct}% off your fee', wonSub: 'On your next loan. Valid until {date}.',
+    wonExample: 'On {amount} your fee would be {fee} instead of {before}.', useIt: 'Use it on my next loan', wheelNone: 'No spin waiting. Repay on time to earn more.',
+    step: 'Step {n} of {total}', brand: 'Zenin Credit', signOut: 'Sign out', menu: 'Menu', help: 'Help', language: 'Language', back: 'Back', cont: 'Continue',
+    tryAgain: 'Try again', loading: 'Loading', offline: 'No connection. Please check your internet and try again.', install: 'Install app',
+    permissions: 'Your permissions', history: 'Your loans', privacy: 'Privacy notice', terms: 'Terms of use', website: 'Website', close: 'Close',
+    demoStrip: 'Demo: no real money or data. Do not enter real details.', demoTip: 'Demo tip: numbers ending 0 to 6 are approved; 7, 8 and 9 are declined. Choosing "Other personal use" as the purpose sends an approved file to review. Code: {otp}.',
+    loginTitle: 'Enter your mobile number', loginSub: 'We will send a 6-digit code to confirm it is you.', mobileLabel: 'Mobile number', mobileHint: '10-digit Indian mobile number', sendCode: 'Send code',
+    otpTitle: 'Enter the code', otpSub: 'We sent a 6-digit code to {mobile}.', codeLabel: '6-digit code', verify: 'Verify and continue', resend: 'Send a new code', changeNumber: 'Change number', codeSent: 'Code sent',
+    welcomeBack: 'Welcome back', amountTitle: 'How much do you need?', amountSub: 'You can ask for up to {cap} right now.', youReceive: 'You receive', fee: 'Fee', youRepay: 'You repay after {days} days',
+    aprSimple: 'Yearly cost, simple', aprEff: 'Yearly cost, compounded', amountNote: 'You will see your final offer before you accept. Saying no costs nothing.',
+    consentTitle: 'Your permission', consentSub: 'We ask for each one separately. You can say no, but we cannot offer a loan without them.',
+    c_kyc: 'Check my identity', c_kyc_d: 'We verify your PAN and identity with an approved partner.',
+    c_credit_bureau: 'Read my credit report', c_credit_bureau_d: 'We ask a credit bureau for your report to decide on your loan.',
+    c_terms: 'I have read the privacy notice and terms', c_terms_d: 'You can read them first using the links below.', agreeContinue: 'I agree, continue',
+    detailsTitle: 'About you and your job', detailsSub: 'We use this and your credit report to decide.',
+    salaryLabel: 'Monthly take-home salary (rupees)', employerLabel: 'Employer type', monthsLabel: 'Months with this employer', residenceLabel: 'Where do you live?', purposeLabel: 'What is the money for?',
+    panLabel: 'PAN', panHint: 'For example ABCDE1234F. We keep only a scrambled copy and the last 4 characters.', choose: 'Choose', getOffer: 'See my offer',
+    emp_govt_psu: 'Government or public sector', emp_listed_large: 'Large listed company', emp_mnc: 'Multinational company', emp_sme_registered: 'Registered small business', emp_startup: 'Startup', emp_unknown: 'Not sure', emp_informal: 'Unregistered business',
+    res_owned: 'Own house', res_family: 'With family', res_rented_long: 'Rented, a year or more', res_rented_short: 'Rented, under a year', res_none: 'Other',
+    pur_medical: 'Medical or emergency', pur_bills: 'Rent or bills', pur_education: 'Education', pur_travel: 'Travel', pur_family: 'Family need', pur_other: 'Other personal use',
+    checkingTitle: 'Checking your details', checkingSub: 'This takes a few seconds.', ck1: 'Confirming your identity', ck2: 'Reading your credit report', ck3: 'Preparing your offer', keepOpen: 'Please keep this screen open.',
+    offerTitle: 'Your offer', approved: 'Approved', offerSub: 'Check the details. You can still say no.', borrow: 'You borrow', dueRule: 'Due {days} days after the money is sent', lateCharge: 'Late charge', lateChargeVal: '{pct}% of the overdue amount per day',
+    acceptOffer: 'Accept offer', notNow: 'Not now', savedTitle: 'Your offer is saved', savedSub: 'It stays here until you accept it. Come back any time.', applyAgain: 'Apply again',
+    reviewTitle: 'We need a little more time', reviewSub: 'A member of our team is looking at your application. We will message you here and by SMS. You do not need to do anything.', reference: 'Reference', refresh: 'Check again',
+    declinedTitle: 'We cannot offer a loan right now', declinedSub: 'This decision is based on your credit report and the details you gave. It does not stop you from applying again later.', tryAfter: 'You can apply again after {date}.', declinedHelp: 'You can ask us about this decision and for a copy of the report we used.', contactUs: 'Contact us',
+    kycPendingTitle: 'Waiting for your identity check', kycPendingSub: 'We will update this page as soon as it finishes.',
+    blockedTitle: 'A new loan is not available', blockedSub: 'A new loan is not available for this account right now. Please contact us.',
+    signTitle: 'Review and sign', signSub: 'Read the key facts. Sign with the code sent to your mobile.', agreeBox: 'I have read the agreement and key facts, and I agree.', signCodeLabel: 'Signing code', signBtn: 'Sign agreement', demoSign: 'Demo signing code: {code}',
+    bankTitle: 'Where should we send the money?', bankSub: 'The account must be in your own name.', nameLabel: 'Name on account', accLabel: 'Account number', ifscLabel: 'IFSC', sendMoney: 'Send {amount} to my account', notStored: 'We do not store your account number on this site.',
+    processingTitle: 'Your payment is being processed', processingSub: 'This can take a few minutes. Check this page again shortly.',
+    paidTitle: '{amount} is on its way', paidSub: 'Sent to your bank account. Repay by {date}.', seeLoan: 'See my loan',
+    loanTitle: 'Your loan', amountDue: 'Amount due', dueOn: 'Due on {date}', overdueBy: '{n} days overdue. A late charge applies.', borrowed: 'Borrowed', status: 'Status', st_active: 'On track', st_overdue: 'Overdue', repayNow: 'Repay now', daysLeft: '{n} days left',
+    payTitle: 'Repay {amount}', paySub: 'You pay the full amount now. Any fee or late charge is included.', payNow: 'Pay {amount}', payDemo: 'Demo: this simulates a payment.',
+    repaidTitle: 'Loan repaid. Thank you.', repaidSub: 'Paying on time can raise your limit for next time.', borrowAgain: 'Borrow again', done: 'Done',
+    histTitle: 'Your loans', noLoans: 'No loans yet.', st_closed: 'Repaid', st_written_off: 'Closed',
+    permTitle: 'Your permissions', permSub: 'You can withdraw a permission at any time. Withdrawing may mean we cannot offer you a new loan.', withdraw: 'Withdraw', none: 'No permissions on record.',
+    p_kyc: 'Check my identity', p_credit_bureau: 'Read my credit report', p_terms: 'Privacy notice and terms', p_communication: 'Messages from us', p_data_sharing: 'Share data with partners', p_bank_data: 'Read my bank statement',
+    e_signed_out: 'Please sign in again.', e_generic: 'Something went wrong. Please try again.', e_check: 'Please check the highlighted fields.',
+  },
+  hi: {
+    welcomeSub: 'आप {cap} तक उधार ले सकते हैं।', yourDetails: 'आपकी जानकारी', stillCorrect: 'क्या यह अब भी सही है? नहीं तो बदल दें।', seeBill: 'मेरा बिल देखें', changeDetails: 'मेरी जानकारी बदलें',
+    sumSalary: 'मासिक सैलरी', sumEmployer: 'नियोक्ता', sumMonths: 'इस नौकरी में महीने', sumHome: 'घर', monthsUnit: '{n} महीने',
+    refreshTitle: 'पहले एक छोटी जाँच', refreshSub: 'हम केवल वही पूछते हैं जो पुराना हो चुका है।', updateContinue: 'अपडेट करें और आगे बढ़ें',
+    ri_permissions: 'फिर से अनुमति दें', ri_permissions_d: 'आपने एक ऐसी अनुमति वापस ले ली जो आपका ऑफ़र बनाने के लिए चाहिए।',
+    ri_identity: 'अपना पैन फिर से पुष्टि करें', ri_identity_d: 'आपकी पहचान जाँच एक साल से ज़्यादा पुरानी है।',
+    ri_job: 'अपनी नौकरी की जानकारी अपडेट करें', ri_job_d: 'आख़िरी बार 90 दिन से ज़्यादा पहले अपडेट हुई थी। जो हमें पता है, हमने भर दिया है।',
+    offerValid: '{date} तक मान्य', feeWaived: 'शुल्क ({pct}% माफ़)', waiverApplied: 'आपकी {pct}% शुल्क माफ़ी लागू है।',
+    spinBannerTitle: 'आपका एक स्पिन इंतज़ार कर रहा है', spinBannerBtn: 'पहिया घुमाएँ', rewardBanner: 'अगले लोन के शुल्क पर {pct}% की छूट। {date} तक मान्य।', earnedSpin: 'आपने एक स्पिन कमाया!',
+    wheelTitle: 'पहिया घुमाएँ', wheelSub: 'आपने {n} लोन चुकाए हैं। आपका इनाम: अगले लोन के शुल्क में छूट।',
+    wheelOdds: 'दस बराबर हिस्से, और हर हिस्सा जीत है: 4 हिस्सों पर 10%, 3 पर 20%, 1 पर 30%, 1 पर 40%, 1 पर 50%। तीसरे लोन से हर चुकाए गए लोन पर एक स्पिन।',
+    spinBtn: 'घुमाएँ', spinning: 'घूम रहा है', wonTitle: 'आपने शुल्क पर {pct}% की छूट जीती', wonSub: 'अगले लोन पर। {date} तक मान्य।',
+    wonExample: '{amount} पर आपका शुल्क {before} की जगह {fee} होगा।', useIt: 'अगले लोन पर इस्तेमाल करें', wheelNone: 'कोई स्पिन नहीं है। समय पर चुकाकर और कमाएँ।',
+    step: 'चरण {n} / {total}', brand: 'ज़ेनिन क्रेडिट', signOut: 'साइन आउट', menu: 'मेन्यू', help: 'मदद', language: 'भाषा', back: 'वापस', cont: 'आगे बढ़ें',
+    tryAgain: 'फिर कोशिश करें', loading: 'लोड हो रहा है', offline: 'इंटरनेट नहीं है। कृपया जाँचकर फिर कोशिश करें।', install: 'ऐप इंस्टॉल करें',
+    permissions: 'आपकी अनुमतियाँ', history: 'आपके लोन', privacy: 'गोपनीयता सूचना', terms: 'उपयोग की शर्तें', website: 'वेबसाइट', close: 'बंद करें',
+    demoStrip: 'डेमो: कोई असली पैसा या डेटा नहीं। असली जानकारी न डालें।', demoTip: 'डेमो सुझाव: 0 से 6 पर खत्म होने वाले नंबर मंज़ूर होते हैं; 7, 8 और 9 अस्वीकार होते हैं। उद्देश्य में "अन्य निजी उपयोग" चुनने पर मंज़ूर फ़ाइल समीक्षा में जाती है। कोड: {otp}।',
+    loginTitle: 'अपना मोबाइल नंबर डालें', loginSub: 'यह आप ही हैं, यह पक्का करने के लिए हम 6 अंकों का कोड भेजेंगे।', mobileLabel: 'मोबाइल नंबर', mobileHint: '10 अंकों का भारतीय मोबाइल नंबर', sendCode: 'कोड भेजें',
+    otpTitle: 'कोड डालें', otpSub: 'हमने {mobile} पर 6 अंकों का कोड भेजा है।', codeLabel: '6 अंकों का कोड', verify: 'सत्यापित करें और आगे बढ़ें', resend: 'नया कोड भेजें', changeNumber: 'नंबर बदलें', codeSent: 'कोड भेज दिया गया',
+    welcomeBack: 'वापसी पर स्वागत है', amountTitle: 'आपको कितने पैसे चाहिए?', amountSub: 'अभी आप {cap} तक माँग सकते हैं।', youReceive: 'आपको मिलेंगे', fee: 'शुल्क', youRepay: '{days} दिन बाद आप चुकाएँगे',
+    aprSimple: 'सालाना लागत, साधारण', aprEff: 'सालाना लागत, चक्रवृद्धि', amountNote: 'स्वीकार करने से पहले आपको अंतिम ऑफ़र दिखेगा। मना करने पर कोई शुल्क नहीं लगता।',
+    consentTitle: 'आपकी अनुमति', consentSub: 'हम हर चीज़ की अलग से अनुमति माँगते हैं। आप मना कर सकते हैं, पर उनके बिना हम लोन नहीं दे सकते।',
+    c_kyc: 'मेरी पहचान जाँचें', c_kyc_d: 'हम मान्यता प्राप्त साझेदार से आपका पैन और पहचान सत्यापित करते हैं।',
+    c_credit_bureau: 'मेरी क्रेडिट रिपोर्ट देखें', c_credit_bureau_d: 'लोन का फ़ैसला करने के लिए हम क्रेडिट ब्यूरो से आपकी रिपोर्ट माँगते हैं।',
+    c_terms: 'मैंने गोपनीयता सूचना और शर्तें पढ़ ली हैं', c_terms_d: 'नीचे दिए लिंक से पहले इन्हें पढ़ सकते हैं।', agreeContinue: 'मैं सहमत हूँ, आगे बढ़ें',
+    detailsTitle: 'आपके और आपकी नौकरी के बारे में', detailsSub: 'फ़ैसले के लिए हम इसे और आपकी क्रेडिट रिपोर्ट को देखते हैं।',
+    salaryLabel: 'हाथ में आने वाली मासिक सैलरी (रुपये)', employerLabel: 'नियोक्ता का प्रकार', monthsLabel: 'इस नियोक्ता के साथ कितने महीने', residenceLabel: 'आप कहाँ रहते हैं?', purposeLabel: 'पैसे किसलिए चाहिए?',
+    panLabel: 'पैन', panHint: 'जैसे ABCDE1234F। हम केवल इसकी गुप्त प्रति और अंतिम 4 अक्षर रखते हैं।', choose: 'चुनें', getOffer: 'मेरा ऑफ़र देखें',
+    emp_govt_psu: 'सरकारी या सार्वजनिक क्षेत्र', emp_listed_large: 'बड़ी सूचीबद्ध कंपनी', emp_mnc: 'बहुराष्ट्रीय कंपनी', emp_sme_registered: 'पंजीकृत छोटा व्यवसाय', emp_startup: 'स्टार्टअप', emp_unknown: 'पता नहीं', emp_informal: 'अपंजीकृत व्यवसाय',
+    res_owned: 'अपना घर', res_family: 'परिवार के साथ', res_rented_long: 'किराये पर, एक साल या ज़्यादा', res_rented_short: 'किराये पर, एक साल से कम', res_none: 'अन्य',
+    pur_medical: 'इलाज या आपात स्थिति', pur_bills: 'किराया या बिल', pur_education: 'पढ़ाई', pur_travel: 'यात्रा', pur_family: 'परिवार की ज़रूरत', pur_other: 'अन्य निजी उपयोग',
+    checkingTitle: 'आपकी जानकारी जाँची जा रही है', checkingSub: 'इसमें कुछ सेकंड लगते हैं।', ck1: 'आपकी पहचान की पुष्टि', ck2: 'आपकी क्रेडिट रिपोर्ट देखना', ck3: 'आपका ऑफ़र तैयार करना', keepOpen: 'कृपया यह स्क्रीन खुली रखें।',
+    offerTitle: 'आपका ऑफ़र', approved: 'मंज़ूर', offerSub: 'ब्योरा जाँच लें। आप अब भी मना कर सकते हैं।', borrow: 'आप उधार लेते हैं', dueRule: 'पैसे मिलने के {days} दिन बाद चुकाना है', lateCharge: 'देरी का शुल्क', lateChargeVal: 'बकाया राशि का {pct}% प्रति दिन',
+    acceptOffer: 'ऑफ़र स्वीकार करें', notNow: 'अभी नहीं', savedTitle: 'आपका ऑफ़र सहेजा गया है', savedSub: 'स्वीकार करने तक यह यहीं रहेगा। कभी भी लौटें।', applyAgain: 'फिर आवेदन करें',
+    reviewTitle: 'हमें थोड़ा और समय चाहिए', reviewSub: 'हमारी टीम का एक सदस्य आपका आवेदन देख रहा है। हम आपको यहाँ और एसएमएस से बताएँगे। आपको कुछ करने की ज़रूरत नहीं है।', reference: 'संदर्भ', refresh: 'फिर जाँचें',
+    declinedTitle: 'अभी हम लोन नहीं दे सकते', declinedSub: 'यह फ़ैसला आपकी क्रेडिट रिपोर्ट और आपकी दी गई जानकारी पर आधारित है। इससे आप बाद में फिर आवेदन कर सकते हैं।', tryAfter: 'आप {date} के बाद फिर आवेदन कर सकते हैं।', declinedHelp: 'आप हमसे इस फ़ैसले के बारे में पूछ सकते हैं और इस्तेमाल की गई रिपोर्ट की प्रति माँग सकते हैं।', contactUs: 'हमसे संपर्क करें',
+    kycPendingTitle: 'आपकी पहचान जाँच का इंतज़ार है', kycPendingSub: 'पूरा होते ही हम यह पेज अपडेट कर देंगे।',
+    blockedTitle: 'नया लोन उपलब्ध नहीं है', blockedSub: 'अभी इस खाते के लिए नया लोन उपलब्ध नहीं है। कृपया हमसे संपर्क करें।',
+    signTitle: 'देखें और हस्ताक्षर करें', signSub: 'मुख्य तथ्य पढ़ें। अपने मोबाइल पर आए कोड से हस्ताक्षर करें।', agreeBox: 'मैंने अनुबंध और मुख्य तथ्य पढ़ लिए हैं और मैं सहमत हूँ।', signCodeLabel: 'हस्ताक्षर कोड', signBtn: 'अनुबंध पर हस्ताक्षर करें', demoSign: 'डेमो हस्ताक्षर कोड: {code}',
+    bankTitle: 'पैसे कहाँ भेजें?', bankSub: 'खाता आपके अपने नाम पर होना चाहिए।', nameLabel: 'खाते पर नाम', accLabel: 'खाता नंबर', ifscLabel: 'आईएफ़एससी', sendMoney: '{amount} मेरे खाते में भेजें', notStored: 'हम इस साइट पर आपका खाता नंबर नहीं रखते।',
+    processingTitle: 'आपका भुगतान प्रोसेस हो रहा है', processingSub: 'इसमें कुछ मिनट लग सकते हैं। थोड़ी देर में यह पेज फिर देखें।',
+    paidTitle: '{amount} आपके खाते में आ रहे हैं', paidSub: 'आपके बैंक खाते में भेजे गए। {date} तक चुकाएँ।', seeLoan: 'मेरा लोन देखें',
+    loanTitle: 'आपका लोन', amountDue: 'देय राशि', dueOn: 'देय तिथि {date}', overdueBy: '{n} दिन की देरी। देरी का शुल्क लगता है।', borrowed: 'उधार ली गई राशि', status: 'स्थिति', st_active: 'ठीक चल रहा है', st_overdue: 'देरी', repayNow: 'अभी चुकाएँ', daysLeft: '{n} दिन बाकी',
+    payTitle: '{amount} चुकाएँ', paySub: 'आप अभी पूरी राशि चुकाते हैं। शुल्क या देरी का शुल्क इसमें शामिल है।', payNow: '{amount} चुकाएँ', payDemo: 'डेमो: यह भुगतान का नमूना है।',
+    repaidTitle: 'लोन चुका दिया गया। धन्यवाद।', repaidSub: 'समय पर चुकाने से अगली बार आपकी सीमा बढ़ सकती है।', borrowAgain: 'फिर उधार लें', done: 'हो गया',
+    histTitle: 'आपके लोन', noLoans: 'अभी कोई लोन नहीं।', st_closed: 'चुकाया गया', st_written_off: 'बंद',
+    permTitle: 'आपकी अनुमतियाँ', permSub: 'आप कभी भी अनुमति वापस ले सकते हैं। इससे हम आपको नया लोन नहीं दे पाएँगे।', withdraw: 'वापस लें', none: 'कोई अनुमति दर्ज नहीं है।',
+    p_kyc: 'मेरी पहचान जाँचें', p_credit_bureau: 'मेरी क्रेडिट रिपोर्ट देखें', p_terms: 'गोपनीयता सूचना और शर्तें', p_communication: 'हमारी ओर से संदेश', p_data_sharing: 'साझेदारों के साथ डेटा साझा करें', p_bank_data: 'मेरा बैंक स्टेटमेंट देखें',
+    e_signed_out: 'कृपया फिर से साइन इन करें।', e_generic: 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।', e_check: 'कृपया चिह्नित फ़ील्ड जाँचें।',
+  },
+};
+
+// The customer app. One screen at a time, driven by what the server says the customer's next step is (GET /api/me),
+// so a customer who closes the app or switches phone resumes exactly where they were. No keys or loan data live in
+// the browser: only a signed session cookie, and the page state below.
+
+
+const root = document.getElementById('root');
+const S = {
+  lang: 'en', cfg: null, me: null, screen: 'boot', form: {}, errors: {}, formError: '', busy: false, toast: '', sheet: null,
+  checkStep: 0, quote: null, installEvt: null, otpHint: '',
+};
+
+// ---------------------------------------------------------------- helpers
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* storage unavailable: fine */ } },
+};
+const t = (k, v = {}) => String((STRINGS[S.lang] && STRINGS[S.lang][k]) ?? STRINGS.en[k] ?? k).replace(/\{(\w+)\}/g, (_, n) => (v[n] ?? ''));
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const inr = (n) => `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(Number(n))}`;
+const pct = (n) => `${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 1 }).format(Number(n))}%`;
+const locale = () => (S.lang === 'hi' ? 'hi-IN' : 'en-IN');
+const dateFmt = (iso) => new Date(`${String(iso).slice(0, 10)}T00:00:00`).toLocaleDateString(locale(), { day: 'numeric', month: 'short', year: 'numeric' });
+const daysUntil = (iso) => Math.round((new Date(`${String(iso).slice(0, 10)}T00:00:00`) - new Date(new Date().toDateString())) / 86_400_000);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+class ApiError extends Error { constructor(status, data) { super(data?.message || 'error'); this.status = status; this.data = data || {}; } }
+
+async function api(path, { method = 'GET', body } = {}) {
+  let res;
+  try {
+    res = await fetch(`/api${path}`, {
+      method, credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'x-zenin': '1' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    showToast(t('offline'));
+    throw new ApiError(0, { message: t('offline') });
+  }
+  let data = {};
+  try { data = await res.json(); } catch { /* empty body */ }
+  if (res.status === 401 && path !== '/otp/verify') { S.me = null; S.form = {}; go('login'); throw new ApiError(401, data); }
+  if (!res.ok) throw new ApiError(res.status, data);
+  return data;
+}
+
+function showToast(msg) {
+  S.toast = msg;
+  render();
+  setTimeout(() => { if (S.toast === msg) { S.toast = ''; render(); } }, 3500);
+}
+
+// ---------------------------------------------------------------- navigation
+const FLOW = ['amount', 'consent', 'details', 'checking', 'offer', 'sign', 'bank', 'paid'];
+function go(screen) {
+  S.screen = screen; S.errors = {}; S.formError = ''; S.sheet = null;
+  render();
+  if (screen === 'amount') loadQuote();
+  const h = root.querySelector('h1');
+  if (h) { h.setAttribute('tabindex', '-1'); h.focus({ preventScroll: false }); }
+}
+
+function route(me) {
+  S.me = me;
+  const map = { start: 'amount', refresh: 'refresh', offer: 'offer', sign: 'sign', bank: 'bank', loan: 'loan', review: 'review', declined: 'declined', kyc_pending: 'kyc_pending', blocked: 'blocked' };
+  if (S.form.amount === undefined) S.form.amount = Math.min(10000, me.cap);
+  S.form.amount = Math.min(Math.max(S.form.amount, me.min_amount), me.cap);
+  // a returning customer sees what we already know, so nothing is typed twice
+  if (me.profile && !S.form.prefilled) {
+    Object.assign(S.form, {
+      monthly_salary: String(me.profile.monthly_salary ?? ''), employer_type: me.profile.employer_type ?? '',
+      months_with_employer: me.profile.months_with_employer === null ? '' : String(me.profile.months_with_employer), residence: me.profile.residence ?? '', prefilled: true,
+    });
+  }
+  const target = me.next === 'start' && me.preapproved ? 'welcome' : (map[me.next] || 'amount');
+  go(target);
+  if (target === 'welcome') loadQuote();
+}
+
+async function refreshMe() { S.me = await api('/me'); return S.me; }
+
+// ---------------------------------------------------------------- views
+const field = ({ id, label, hint = '', type = 'text', value = '', attrs = '', error = '' }) => `
+  <div class="field"><label for="${id}">${esc(label)}</label>
+  <input id="${id}" name="${id}" type="${type}" value="${esc(value)}" ${attrs} data-bind="${id}" ${error ? 'aria-invalid="true"' : ''} aria-describedby="${id}-m">
+  <div id="${id}-m">${hint ? `<span class="hint">${esc(hint)}</span>` : ''}${error ? `<div class="err" role="alert">${esc(error)}</div>` : ''}</div></div>`;
+
+const select = ({ id, label, options, value, error = '', prefix }) => `
+  <div class="field"><label for="${id}">${esc(label)}</label>
+  <select id="${id}" name="${id}" data-bind="${id}" ${error ? 'aria-invalid="true"' : ''}>
+    <option value="">${esc(t('choose'))}</option>
+    ${options.map((o) => `<option value="${o}" ${value === o ? 'selected' : ''}>${esc(t(prefix + o))}</option>`).join('')}
+  </select>${error ? `<div class="err" role="alert">${esc(error)}</div>` : ''}</div>`;
+
+const kv = (rows) => `<dl class="kv panel">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
+const btn = (label, act, cls = '', extra = '') => `<button class="btn block ${cls}" type="button" data-act="${act}" ${extra} ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
+const ghost = (label, act) => `<button class="btn block ghost" type="button" data-act="${act}" ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
+const termsRows = (o) => [
+  [t('youReceive'), inr(o.amount)],
+  o.waiverPct ? [t('feeWaived', { pct: o.waiverPct }), `<s>${inr(o.feeBeforeWaiver)}</s> ${inr(o.fee)}`] : [t('fee'), inr(o.fee)],
+  [t('youRepay', { days: o.tenureDays }), `<strong>${inr(o.repayment)}</strong>`],
+  [t('aprSimple'), pct(o.aprSimplePct)], [t('aprEff'), pct(o.aprEffectivePct)],
+];
+const rewardBanner = () => (S.me?.reward ? `<div class="reward-banner">${esc(t('rewardBanner', { pct: S.me.reward.waiver_pct, date: dateFmt(S.me.reward.expires_at) }))}</div>` : '');
+const spinBanner = () => (S.me?.spins > 0 ? `<div class="reward-banner spin"><b>${esc(t('spinBannerTitle'))}</b><button class="linkbtn" type="button" data-act="open-wheel">${esc(t('spinBannerBtn'))}</button></div>` : '');
+
+// the wheel: ten equal slices drawn from the list the server sends; slice 0 is at the top and the pointer is fixed
+const WHEEL_FILL = { 10: ['#fafaf5', '#16241f'], 20: ['#ffd23f', '#16241f'], 30: ['#9fd8cf', '#16241f'], 40: ['#15514a', '#fafaf5'], 50: ['#c8352b', '#fafaf5'] };
+function wheelSvg(slices, angle) {
+  const pt = (deg, r) => [r * Math.sin((deg * Math.PI) / 180), -r * Math.cos((deg * Math.PI) / 180)];
+  const parts = slices.map((w, i) => {
+    const [x0, y0] = pt(i * 36 - 18, 100); const [x1, y1] = pt(i * 36 + 18, 100); const [bg, fg] = WHEEL_FILL[w] || WHEEL_FILL[10];
+    return `<path d="M0 0 L${x0.toFixed(2)} ${y0.toFixed(2)} A100 100 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z" fill="${bg}" stroke="#16241f" stroke-width="1.5"/>`
+      + `<text transform="rotate(${i * 36}) translate(0 -70)" text-anchor="middle" dominant-baseline="middle" font-family="DM Mono, monospace" font-weight="500" font-size="15" fill="${fg}">${w}%</text>`;
+  }).join('');
+  return `<svg viewBox="-112 -112 224 224" class="wheel" role="img" aria-label="${esc(t('wheelTitle'))}"><g id="rotor" transform="rotate(${angle})">${parts}</g><circle r="11" fill="#16241f"/><path d="M-10 -113 L10 -113 L0 -90 Z" fill="#c8352b" stroke="#16241f" stroke-width="2"/></svg>`;
+}
+
+const SCREENS = {
+  boot: () => ({ body: `<p class="muted">${esc(t('loading'))}</p>` }),
+
+  login: () => ({
+    body: `<h1>${esc(t('loginTitle'))}</h1><p class="muted">${esc(t('loginSub'))}</p>
+      ${field({ id: 'mobile', label: t('mobileLabel'), hint: t('mobileHint'), type: 'tel', value: S.form.mobile || '', attrs: 'inputmode="numeric" autocomplete="tel-national" maxlength="14"', error: S.errors.mobile })}
+      ${S.cfg?.demo ? `<p class="fine">${esc(t('demoTip', { otp: S.cfg.demo.otp }))}</p>` : ''}
+      ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+    foot: btn(t('sendCode'), 'send-code'),
+  }),
+
+  otp: () => ({
+    body: `<h1>${esc(t('otpTitle'))}</h1><p class="muted">${esc(t('otpSub', { mobile: `+91 ${S.form.mobile}` }))}</p>
+      ${field({ id: 'code', label: t('codeLabel'), type: 'text', value: S.form.code || '', attrs: 'inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="code"', error: S.errors.code })}
+      ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}
+      <button class="linkbtn" type="button" data-act="send-code">${esc(t('resend'))}</button>
+      <button class="linkbtn" type="button" data-act="change-number">${esc(t('changeNumber'))}</button>`,
+    foot: btn(t('verify'), 'verify'),
+  }),
+
+  amount: () => {
+    const me = S.me; const q = S.quote;
+    return {
+      body: `<h1>${esc(me.is_repeat ? t('welcomeBack') + '. ' + t('amountTitle') : t('amountTitle'))}</h1><p class="muted">${esc(t('amountSub', { cap: inr(me.cap) }))}</p>
+        ${rewardBanner()}${spinBanner()}
+        <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
+        <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
+        <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
+        <p class="fine">${esc(t('amountNote'))}</p>`,
+      foot: btn(t('cont'), 'amount-next'),
+    };
+  },
+
+  welcome: () => {
+    const me = S.me; const q = S.quote; const f = S.form; const pr = me.profile;
+    return {
+      body: `<h1>${esc(t('welcomeBack'))}</h1><p class="muted">${esc(t('welcomeSub', { cap: inr(me.cap) }))}</p>
+        ${rewardBanner()}${spinBanner()}
+        <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
+        <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
+        <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
+        <div class="panel"><b>${esc(t('yourDetails'))}</b>
+          ${kv([[t('sumSalary'), inr(pr.monthly_salary)], [t('sumEmployer'), esc(t('emp_' + pr.employer_type))], [t('sumMonths'), esc(t('monthsUnit', { n: pr.months_with_employer }))], [t('sumHome'), esc(t('res_' + pr.residence))]])}
+          <p class="fine">${esc(t('stillCorrect'))}</p></div>
+        ${select({ id: 'purpose', label: t('purposeLabel'), options: ['medical', 'bills', 'education', 'travel', 'family', 'other'], value: f.purpose, error: S.errors.purpose, prefix: 'pur_' })}
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('seeBill'), 'welcome-apply') + ghost(t('changeDetails'), 'change-details'),
+    };
+  },
+
+  refresh: () => {
+    const items = S.me.refresh_items;
+    return {
+      body: `<h1>${esc(t('refreshTitle'))}</h1><p class="muted">${esc(t('refreshSub'))}</p>
+        <div class="list">${items.map((k) => `<div class="item"><span><b>${esc(t('ri_' + k))}</b><br><small class="muted">${esc(t('ri_' + k + '_d'))}</small></span></div>`).join('')}</div>`,
+      foot: btn(t('updateContinue'), 'refresh-go'),
+    };
+  },
+
+  wheel: () => {
+    const w = S.wheel; const info = S.wheelInfo; const r = w.result;
+    return {
+      body: `<h1>${esc(t('wheelTitle'))}</h1>
+        ${r ? '' : `<p class="muted">${esc(t('wheelSub', { n: info?.repaid_loans ?? 3 }))}</p>`}
+        <div class="wheel-wrap">${wheelSvg(info ? info.slices : [], w.angle)}</div>
+        ${r ? `<div class="won"><span class="stamp">${esc(t('wonTitle', { pct: r.waiver_pct }))}</span>
+            <p>${esc(t('wonSub', { date: dateFmt(r.expires_at) }))}</p>
+            ${w.quote ? `<p class="fine">${esc(t('wonExample', { amount: inr(w.quote.amount), fee: inr(w.quote.fee), before: inr(w.quote.feeBeforeWaiver) }))}</p>` : ''}</div>`
+          : `<p class="fine">${esc(t('wheelOdds'))}</p>${(info?.spins ?? 0) < 1 ? `<p class="muted">${esc(t('wheelNone'))}</p>` : ''}`}
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: r ? btn(t('useIt'), 'use-reward', 'money')
+        : btn(w.busy ? t('spinning') : t('spinBtn'), 'spin', 'money', (info?.spins ?? 0) < 1 || w.busy ? 'disabled' : '') + ghost(t('back'), 'use-reward'),
+    };
+  },
+
+  consent: () => {
+    const req = ['kyc', 'credit_bureau', 'terms'];
+    const c = S.form.consents || {};
+    return {
+      body: `<h1>${esc(t('consentTitle'))}</h1><p class="muted">${esc(t('consentSub'))}</p>
+        ${req.map((p) => `<label class="check"><input type="checkbox" data-consent="${p}" ${c[p] ? 'checked' : ''}><span><strong>${esc(t('c_' + p))}</strong><small>${esc(t('c_' + p + '_d'))}</small></span></label>`).join('')}
+        <p class="fine"><a href="/privacy" target="_blank" rel="noopener">${esc(t('privacy'))}</a> · <a href="/terms" target="_blank" rel="noopener">${esc(t('terms'))}</a></p>
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('agreeContinue'), 'consent-next', '', req.every((p) => c[p]) ? '' : 'disabled'),
+    };
+  },
+
+  details: () => {
+    const f = S.form; const e = S.errors;
+    return {
+      body: `<h1>${esc(t('detailsTitle'))}</h1><p class="muted">${esc(t('detailsSub'))}</p>
+        ${field({ id: 'monthly_salary', label: t('salaryLabel'), value: f.monthly_salary || '', attrs: 'inputmode="numeric" autocomplete="off"', error: e.monthly_salary })}
+        ${select({ id: 'employer_type', label: t('employerLabel'), options: ['govt_psu', 'listed_large', 'mnc', 'sme_registered', 'startup', 'unknown', 'informal'], value: f.employer_type, error: e.employer_type, prefix: 'emp_' })}
+        ${field({ id: 'months_with_employer', label: t('monthsLabel'), value: f.months_with_employer || '', attrs: 'inputmode="numeric" autocomplete="off"', error: e.months_with_employer })}
+        ${select({ id: 'residence', label: t('residenceLabel'), options: ['owned', 'family', 'rented_long', 'rented_short', 'none'], value: f.residence, error: e.residence, prefix: 'res_' })}
+        ${select({ id: 'purpose', label: t('purposeLabel'), options: ['medical', 'bills', 'education', 'travel', 'family', 'other'], value: f.purpose, error: e.purpose, prefix: 'pur_' })}
+        ${S.me.need_pan === false ? '' : field({ id: 'pan', label: t('panLabel'), hint: t('panHint'), value: f.pan || '', attrs: 'autocomplete="off" autocapitalize="characters" maxlength="10"', error: e.pan })}
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('getOffer'), 'apply'),
+    };
+  },
+
+  checking: () => {
+    const steps = [t('ck1'), t('ck2'), t('ck3')];
+    return {
+      body: `<h1>${esc(t('checkingTitle'))}</h1><p class="muted">${esc(t('checkingSub'))}</p>
+        <div class="checking" aria-live="polite">${steps.map((s, i) => `<div class="${i < S.checkStep ? 'done' : i === S.checkStep ? 'run' : ''}"><span class="dot">${i < S.checkStep ? '✓' : ''}</span>${esc(s)}</div>`).join('')}</div>
+        <p class="fine">${esc(t('keepOpen'))}</p>`,
+    };
+  },
+
+  offer: () => {
+    const o = S.me.offer;
+    return {
+      body: `<span class="stamp offer-stamp">${esc(t('approved'))}</span><h1>${esc(t('offerTitle'))}</h1><p class="muted">${esc(t('offerSub'))}</p>
+        <div class="money-card"><span class="label">${esc(t('borrow'))}</span><span class="big">${inr(o.amount)}</span></div>
+        ${kv([...termsRows(o), [t('lateCharge'), esc(t('lateChargeVal', { pct: o.lateChargePctPerDay }))]])}
+        ${o.waiverPct ? `<p class="fine"><b>${esc(t('waiverApplied', { pct: o.waiverPct }))}</b></p>` : ''}
+        <p class="fine">${esc(t('dueRule', { days: o.tenureDays }))}${S.me.offer_expires ? ` · ${esc(t('offerValid', { date: dateFmt(S.me.offer_expires) }))}` : ''}</p>`,
+      foot: btn(t('acceptOffer'), 'accept', 'money') + ghost(t('notNow'), 'not-now'),
+    };
+  },
+
+  saved: () => ({
+    body: `<h1>${esc(t('savedTitle'))}</h1><p class="muted">${esc(t('savedSub'))}</p>`,
+    foot: ghost(t('signOut'), 'logout'),
+  }),
+
+  review: () => ({
+    body: `<span class="badge info">${esc(t('reference'))}: ${esc(S.me.application?.reference || '')}</span><h1>${esc(t('reviewTitle'))}</h1><p class="muted">${esc(t('reviewSub'))}</p>`,
+    foot: ghost(t('refresh'), 'refresh') + ghost(t('signOut'), 'logout'),
+  }),
+
+  declined: () => ({
+    body: `<h1>${esc(t('declinedTitle'))}</h1><p class="muted">${esc(t('declinedSub'))}</p>
+      ${S.me.declined_until ? `<p>${esc(t('tryAfter', { date: dateFmt(S.me.declined_until) }))}</p>` : ''}
+      <div class="panel"><p class="fine">${esc(t('declinedHelp'))}</p><a href="/contact" target="_blank" rel="noopener">${esc(t('contactUs'))}</a></div>`,
+    foot: (S.me.next === 'start' ? btn(t('applyAgain'), 'apply-again') : '') + ghost(t('signOut'), 'logout'),
+  }),
+
+  kyc_pending: () => ({
+    body: `<h1>${esc(t('kycPendingTitle'))}</h1><p class="muted">${esc(t('kycPendingSub'))}</p>`,
+    foot: ghost(t('refresh'), 'refresh') + ghost(t('signOut'), 'logout'),
+  }),
+
+  blocked: () => ({
+    body: `<h1>${esc(t('blockedTitle'))}</h1><p class="muted">${esc(t('blockedSub'))}</p><a href="/contact" target="_blank" rel="noopener">${esc(t('contactUs'))}</a>`,
+    foot: ghost(t('signOut'), 'logout'),
+  }),
+
+  sign: () => {
+    const o = S.me.offer; const f = S.form;
+    return {
+      body: `<h1>${esc(t('signTitle'))}</h1><p class="muted">${esc(t('signSub'))}</p>
+        ${kv([...termsRows(o), [t('lateCharge'), esc(t('lateChargeVal', { pct: o.lateChargePctPerDay }))]])}
+        <label class="check"><input type="checkbox" data-signagree ${f.signAgree ? 'checked' : ''}><span>${esc(t('agreeBox'))}</span></label>
+        ${field({ id: 'signCode', label: t('signCodeLabel'), value: f.signCode || '', attrs: 'inputmode="numeric" autocomplete="one-time-code" maxlength="6" class="code"', error: S.errors.signCode })}
+        ${S.cfg?.demo ? `<p class="fine">${esc(t('demoSign', { code: S.cfg.demo.sign_code }))}</p>` : ''}
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('signBtn'), 'sign', '', f.signAgree ? '' : 'disabled'),
+    };
+  },
+
+  bank: () => {
+    const f = S.form; const e = S.errors; const o = S.me.offer;
+    return {
+      body: `<h1>${esc(t('bankTitle'))}</h1><p class="muted">${esc(t('bankSub'))}</p>
+        ${field({ id: 'acct_name', label: t('nameLabel'), value: f.acct_name || '', attrs: 'autocomplete="name"', error: e.name })}
+        ${field({ id: 'acct_number', label: t('accLabel'), value: f.acct_number || '', attrs: 'inputmode="numeric" autocomplete="off"', error: e.number })}
+        ${field({ id: 'acct_ifsc', label: t('ifscLabel'), value: f.acct_ifsc || '', attrs: 'autocomplete="off" autocapitalize="characters" maxlength="11"', error: e.ifsc })}
+        <p class="fine">${esc(t('notStored'))}</p>
+        ${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('sendMoney', { amount: inr(o.amount) }), 'disburse', 'money'),
+    };
+  },
+
+  processing: () => ({
+    body: `<h1>${esc(t('processingTitle'))}</h1><p class="muted">${esc(t('processingSub'))}</p>`,
+    foot: btn(t('refresh'), 'refresh'),
+  }),
+
+  paid: () => ({
+    body: `<div class="tick" aria-hidden="true">✓</div><h1>${esc(t('paidTitle', { amount: inr(S.paid?.amount) }))}</h1><p class="muted">${esc(t('paidSub', { date: S.paid?.due ? dateFmt(S.paid.due) : '' }))}</p>`,
+    foot: btn(t('seeLoan'), 'see-loan'),
+  }),
+
+  loan: () => {
+    const l = S.me.loan; const left = daysUntil(l.due_date);
+    return {
+      body: `<h1>${esc(t('loanTitle'))}</h1>
+        <div class="money-card"><span class="label">${esc(t('amountDue'))}</span><span class="big">${inr(l.outstanding)}</span><span class="label">${esc(t('dueOn', { date: dateFmt(l.due_date) }))}</span></div>
+        ${kv([[t('borrowed'), inr(l.principal)], [t('status'), `<span class="badge ${l.status === 'overdue' ? 'bad' : 'ok'}">${esc(t(l.status === 'overdue' ? 'st_overdue' : 'st_active'))}</span>`], [left >= 0 ? t('daysLeft', { n: left }) : t('overdueBy', { n: l.days_overdue }), '']])}`,
+      foot: btn(t('repayNow'), 'repay', 'money'),
+    };
+  },
+
+  pay: () => {
+    const l = S.me.loan;
+    return {
+      body: `<h1>${esc(t('payTitle', { amount: inr(l.outstanding) }))}</h1><p class="muted">${esc(t('paySub'))}</p>
+        ${S.cfg?.mode === 'demo' ? `<p class="fine">${esc(t('payDemo'))}</p>` : ''}${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
+      foot: btn(t('payNow', { amount: inr(l.outstanding) }), 'pay-now', 'money') + ghost(t('back'), 'see-loan'),
+    };
+  },
+
+  repaid: () => ({
+    body: `<div class="tick" aria-hidden="true">✓</div><h1>${esc(t('repaidTitle'))}</h1><p class="muted">${esc(t('repaidSub'))}</p>
+      ${S.me?.spins > 0 ? `<div class="reward-banner spin"><b>${esc(t('earnedSpin'))}</b><button class="linkbtn" type="button" data-act="open-wheel">${esc(t('spinBannerBtn'))}</button></div>` : ''}`,
+    foot: btn(t('borrowAgain'), 'borrow-again') + ghost(t('done'), 'logout'),
+  }),
+};
+
+// ---------------------------------------------------------------- shell
+function sheetHtml() {
+  if (!S.sheet) return '';
+  let inner = '';
+  if (S.sheet === 'menu') {
+    inner = `<button class="btn block ghost" data-act="open-history">${esc(t('history'))}</button>
+      <button class="btn block ghost" data-act="open-perms">${esc(t('permissions'))}</button>
+      ${S.installEvt ? `<button class="btn block ghost" data-act="install">${esc(t('install'))}</button>` : ''}
+      <a class="btn block ghost" href="/privacy" target="_blank" rel="noopener">${esc(t('privacy'))}</a>
+      <a class="btn block ghost" href="/contact" target="_blank" rel="noopener">${esc(t('help'))}</a>
+      <button class="btn block" data-act="logout">${esc(t('signOut'))}</button>`;
+  } else if (S.sheet === 'history') {
+    const h = S.me?.history || [];
+    inner = `<h2>${esc(t('histTitle'))}</h2>${h.length ? `<div class="list">${h.map((x) => `<div class="item"><span>${inr(x.amount)} · ${esc(x.disbursed_at ? dateFmt(x.disbursed_at) : '')}</span><span class="badge info">${esc(t('st_' + x.status))}</span></div>`).join('')}</div>` : `<p class="muted">${esc(t('noLoans'))}</p>`}
+      <button class="btn block ghost" data-act="close-sheet">${esc(t('close'))}</button>`;
+  } else if (S.sheet === 'perms') {
+    const c = S.me?.consents || [];
+    inner = `<h2>${esc(t('permTitle'))}</h2><p class="muted">${esc(t('permSub'))}</p>
+      ${c.length ? `<div class="list">${c.map((p) => `<div class="item"><span>${esc(t('p_' + p))}</span><button class="linkbtn" data-act="withdraw" data-purpose="${esc(p)}">${esc(t('withdraw'))}</button></div>`).join('')}</div>` : `<p class="muted">${esc(t('none'))}</p>`}
+      <button class="btn block ghost" data-act="close-sheet">${esc(t('close'))}</button>`;
+  }
+  return `<div class="sheet" data-act="close-sheet-bg"><div role="dialog" aria-modal="true">${inner}</div></div>`;
+}
+
+function render() {
+  const view = (SCREENS[S.screen] || SCREENS.boot)();
+  const idx = FLOW.indexOf(S.screen);
+  const signedIn = !!S.me;
+  document.documentElement.lang = S.lang;
+  root.innerHTML = `<div class="shell">
+    <header class="appbar"><a class="brand" href="/app"><svg class="mark" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="58 12" transform="rotate(-70 16 16)"/></svg><span>${esc(t('brand'))}</span></a>
+      <div class="tools"><button class="chip" data-act="lang" data-lang="en" aria-pressed="${S.lang === 'en'}">EN</button><button class="chip" data-act="lang" data-lang="hi" aria-pressed="${S.lang === 'hi'}" lang="hi">हिं</button>
+      ${signedIn ? `<button class="chip" data-act="open-menu" aria-label="${esc(t('menu'))}">☰</button>` : ''}</div></header>
+    ${S.cfg?.mode === 'demo' ? `<div class="demo-strip" role="note">${esc(t('demoStrip'))}</div>` : ''}
+    ${idx >= 0 ? `<div class="stepline">${esc(t('step', { n: idx + 1, total: FLOW.length }))}</div>` : ''}
+    <main class="screen" id="screen"><div class="tape">${view.body}</div></main>
+    ${view.foot ? `<div class="footbar">${view.foot}</div>` : ''}
+    ${S.toast ? `<div class="toast" role="status">${esc(S.toast)}</div>` : ''}
+    ${sheetHtml()}
+  </div>`;
+}
+
+// ---------------------------------------------------------------- actions
+const digits = (s) => String(s ?? '').replace(/\D/g, '');
+
+async function guarded(fn) {
+  if (S.busy) return;
+  S.busy = true; S.formError = ''; render();
+  try { await fn(); } catch (e) {
+    if (e instanceof ApiError && e.status !== 401 && e.status !== 0) {
+      S.errors = e.data.fields || {};
+      S.formError = e.data.fields ? t('e_check') : (e.data.message || t('e_generic'));
+    }
+  } finally { S.busy = false; render(); }
+}
+
+function openSheet(name) {
+  S.sheet = name; render();
+  const first = root.querySelector('.sheet button, .sheet a');
+  if (first) first.focus();
+}
+
+async function runApplication(body, back) {
+  if (S.busy) return;
+  S.busy = true; S.errors = {}; S.formError = '';
+  go('checking');
+  S.checkStep = 0; render();
+  const timer = setInterval(() => { if (S.screen === 'checking' && S.checkStep < 2) { S.checkStep += 1; render(); } }, 700);
+  try {
+    const [r] = await Promise.all([api('/applications', { method: 'POST', body }), sleep(2200)]);
+    S.checkStep = 3; render(); await sleep(250);
+    await refreshMe();
+    route(S.me);
+    if (r.decision === 'review' || r.decision === 'declined' || r.decision === 'kyc_pending') go(r.decision);
+  } catch (e) {
+    go(back);
+    if (e instanceof ApiError && e.status !== 401 && e.status !== 0) {
+      S.errors = e.data.fields || {};
+      S.formError = e.data.fields ? t('e_check') : (e.data.message || t('e_generic'));
+    }
+  } finally { clearInterval(timer); S.busy = false; render(); }
+}
+
+const ACTIONS = {
+  lang(el) { S.lang = el.dataset.lang; store.set('zenin_lang', S.lang); render(); },
+  'open-menu'() { openSheet('menu'); },
+  'open-history'() { openSheet('history'); },
+  'open-perms'() { openSheet('perms'); },
+  'close-sheet'() { S.sheet = null; render(); },
+  async install() { const e = S.installEvt; S.installEvt = null; S.sheet = null; render(); if (e) { e.prompt(); await e.userChoice; } },
+  logout() { return guarded(async () => { try { await api('/logout', { method: 'POST' }); } catch { /* already signed out */ } S.me = null; S.form = {}; go('login'); }); },
+
+  'send-code'() {
+    return guarded(async () => {
+      const m = digits(S.form.mobile).replace(/^91(?=\d{10}$)/, '');
+      if (!/^[6-9]\d{9}$/.test(m)) { S.errors = { mobile: t('mobileHint') }; return; }
+      S.form.mobile = m;
+      await api('/otp/send', { method: 'POST', body: { mobile: m } });
+      S.form.code = '';
+      go('otp'); showToast(t('codeSent'));
+    });
+  },
+  'change-number'() { S.form.code = ''; go('login'); },
+  verify() {
+    return guarded(async () => {
+      const code = digits(S.form.code);
+      if (code.length !== 6) { S.errors = { code: t('codeLabel') }; return; }
+      const me = await api('/otp/verify', { method: 'POST', body: { mobile: S.form.mobile, code } });
+      S.form.code = '';
+      route(me);
+    });
+  },
+
+  'amount-next'() { go(S.me.missing_consents.length ? 'consent' : 'details'); },
+  'consent-next'() {
+    return guarded(async () => {
+      await api('/consents', { method: 'POST', body: { purposes: ['kyc', 'credit_bureau', 'terms'] } });
+      await refreshMe();
+      const left = (S.me.refresh_items || []).filter((k) => k !== 'permissions');
+      if (S.me.is_repeat && !left.length) route(S.me); else go('details');
+    });
+  },
+  apply() {
+    const f = S.form;
+    const body = { amount: f.amount, monthly_salary: digits(f.monthly_salary), employer_type: f.employer_type, months_with_employer: digits(f.months_with_employer), residence: f.residence, purpose: f.purpose };
+    if (S.me.need_pan !== false) body.pan = String(f.pan || '').toUpperCase();
+    return runApplication(body, 'details');
+  },
+  'welcome-apply'() {
+    if (!S.form.purpose) { S.errors = { purpose: t('choose') }; S.formError = t('e_check'); render(); return; }
+    return runApplication({ amount: S.form.amount, use_saved: true, purpose: S.form.purpose }, 'welcome');
+  },
+  'change-details'() { go('details'); },
+  'refresh-go'() {
+    const items = S.me.refresh_items || [];
+    go(items.includes('permissions') ? 'consent' : 'details');
+  },
+  async 'open-wheel'() {
+    return guarded(async () => {
+      S.wheelInfo = await api('/wheel');
+      S.wheel = { angle: 0, busy: false, result: null, quote: null };
+      go('wheel');
+    });
+  },
+  async spin() {
+    const w = S.wheel;
+    if (!w || w.busy) return;
+    w.busy = true; S.formError = ''; render();
+    try {
+      const r = await api('/wheel/spin', { method: 'POST' });
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const target = 360 * 6 - r.slice * 36;
+      const rotor = document.getElementById('rotor');
+      if (rotor && !reduce) {
+        rotor.style.transition = 'transform 4.2s cubic-bezier(.12,.6,.1,1)';
+        rotor.getBoundingClientRect();
+        rotor.style.transform = `rotate(${target}deg)`;
+        await sleep(4300);
+      }
+      w.angle = reduce ? 0 : target;
+      w.result = r;
+      await refreshMe();
+      S.wheelInfo = { ...S.wheelInfo, spins: S.me.spins ?? 0 };
+      try { const q = await fetch('/api/quote?amount=10000', { credentials: 'same-origin' }); if (q.ok) w.quote = await q.json(); } catch { /* example is optional */ }
+    } catch (e) {
+      if (e instanceof ApiError && e.status !== 401 && e.status !== 0) S.formError = e.data.message || t('e_generic');
+    } finally { w.busy = false; render(); }
+  },
+  'use-reward'() { return guarded(async () => { route(await refreshMe()); }); },
+
+  accept() { return guarded(async () => { await api(`/applications/${S.me.application.id}/accept`, { method: 'POST' }); await refreshMe(); go('sign'); }); },
+  'not-now'() { go('saved'); },
+  'apply-again'() { go('amount'); },
+  refresh() { return guarded(async () => { route(await refreshMe()); }); },
+  sign() {
+    return guarded(async () => {
+      await api(`/applications/${S.me.application.id}/sign`, { method: 'POST', body: { code: digits(S.form.signCode) } });
+      await refreshMe();
+      go('bank');
+    });
+  },
+  disburse() {
+    return guarded(async () => {
+      const f = S.form;
+      const amount = S.me.offer.amount;
+      const r = await api(`/applications/${S.me.application.id}/disburse`, { method: 'POST', body: { account: { name: f.acct_name, number: f.acct_number, ifsc: String(f.acct_ifsc || '').toUpperCase() } } });
+      S.form.acct_number = ''; S.form.acct_name = ''; S.form.acct_ifsc = '';
+      if (r.status === 'paid') { S.paid = { amount, due: r.due_date }; await refreshMe(); go('paid'); } else go('processing');
+    });
+  },
+  'see-loan'() { return guarded(async () => { route(await refreshMe()); }); },
+  repay() { go('pay'); },
+  'pay-now'() {
+    return guarded(async () => {
+      const r = await api('/loan/pay', { method: 'POST' });
+      if (r.status === 'link') { window.location.assign(r.payment_url); return; }
+      await refreshMe();
+      go('repaid');
+    });
+  },
+  'borrow-again'() { return guarded(async () => { route(await refreshMe()); }); },
+  withdraw(el) {
+    return guarded(async () => { await api('/consents/revoke', { method: 'POST', body: { purpose: el.dataset.purpose } }); await refreshMe(); S.sheet = 'perms'; });
+  },
+};
+
+root.addEventListener('click', (e) => {
+  const bg = e.target.closest('[data-act="close-sheet-bg"]');
+  if (bg && e.target === bg) { ACTIONS['close-sheet'](); return; }
+  const el = e.target.closest('[data-act]');
+  if (!el || el.dataset.act === 'close-sheet-bg') return;
+  const fn = ACTIONS[el.dataset.act];
+  if (fn) { e.preventDefault(); fn(el); }
+});
+
+root.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el.matches('[data-amount]')) {
+    S.form.amount = Number(el.value);
+    document.getElementById('amount-out').textContent = inr(S.form.amount);
+    clearTimeout(S.qt); S.qt = setTimeout(loadQuote, 120);
+    return;
+  }
+  if (el.matches('[data-bind]')) {
+    let v = el.value;
+    if (el.id === 'code' || el.id === 'signCode') v = digits(v).slice(0, 6);
+    if (el.id === 'mobile') v = v.replace(/[^\d+\s-]/g, '');
+    if (el.id === 'pan' || el.id === 'acct_ifsc') v = v.toUpperCase();
+    if (v !== el.value) el.value = v;
+    S.form[el.id] = v;
+    if (S.errors[el.id]) { delete S.errors[el.id]; const m = document.getElementById(`${el.id}-m`); if (m) m.querySelector('.err')?.remove(); el.removeAttribute('aria-invalid'); }
+  }
+});
+root.addEventListener('change', (e) => {
+  const el = e.target;
+  if (el.matches('[data-consent]')) { S.form.consents = { ...(S.form.consents || {}), [el.dataset.consent]: el.checked }; render(); }
+  if (el.matches('[data-signagree]')) { S.form.signAgree = el.checked; render(); }
+  if (el.matches('select[data-bind]')) S.form[el.id] = el.value;
+});
+root.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.matches('input[data-bind]')) {
+    const primary = root.querySelector('.footbar .btn:not(.ghost)');
+    if (primary && !primary.disabled) { e.preventDefault(); primary.click(); }
+  }
+});
+// Escape closes the menu from anywhere: after a re-render focus sits on the page, not inside the app root
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && S.sheet) ACTIONS['close-sheet'](); });
+
+async function loadQuote() {
+  try {
+    const q = await fetch(`/api/quote?amount=${S.form.amount}`, { credentials: 'same-origin' });
+    if (!q.ok) return;
+    S.quote = await q.json();
+    const box = document.getElementById('quote');
+    if (box && (S.screen === 'amount' || S.screen === 'welcome')) box.innerHTML = kv(termsRows(S.quote));
+  } catch { /* offline: keep the last quote */ }
+}
+
+
+// ---------------------------------------------------------------- start
+(async function boot() {
+  S.lang = store.get('zenin_lang') === 'hi' ? 'hi' : 'en';
+  render();
+  try {
+    S.cfg = await (await fetch('/api/config')).json();
+    S.form.amount = Math.min(10000, S.cfg.first_loan_max);
+    try {
+      const r = await fetch('/api/me', { credentials: 'same-origin' });
+      if (r.ok) { route(await r.json()); await loadQuote(); return; }
+    } catch { /* not signed in */ }
+    go('login');
+  } catch {
+    showToast(t('offline'));
+  }
+})();
+</script>
+</body></html>

@@ -1,0 +1,15 @@
+{
+  "name": "zenin-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Customer website and app (PWA) for Zenin Credit. A small server that serves the site and the app and talks to the payday engine through a gateway.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
