@@ -1,5 +1,6 @@
 -- 010_payday_rbi_limit_cooling_off.sql
--- RBI (Digital Lending) Directions, 2025. DRAFT: not applied to any database yet. Run after 003-009.
+-- RBI (Digital Lending) Directions, 2025. Applied to the smecircle Supabase project (ymdkcaedwnnhszhzirli) on 2026-10-15 as migration
+-- "payday_rbi_limit_cooling_off". Run after 003-009. Safe to re-run: every statement is idempotent.
 --  1. A credit limit must not rise unless the borrower asks. customer_limit.limit_amount stays the limit OFFERED;
 --     eligible_amount holds what the repayment ladder says the customer qualifies for (null = same as limit_amount).
 --  2. Cooling-off: the borrower may exit by repaying the principal and the fee for the days held. The product sets the

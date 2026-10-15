@@ -78,8 +78,8 @@ Note: a written-off loan keeps its scheduled amount (still legally owed) while i
 
 The schema is empty: add a `loan_product` row (and `lender` / `colending_arrangement` rows if co-lending) before the first application.
 
-## Migration 010 (RBI limit and cooling-off): draft
-`database/migrations/010_payday_rbi_limit_cooling_off.sql` adds `customer_limit.eligible_amount`, `loan.cooling_off_exit_at` and `loan_product.cooling_off_days`. It is additive. **Apply it before deploying code that reads these columns**, or limit updates at loan close and cooling-off requests fail against the live database.
+## Migration 010 (RBI limit and cooling-off): applied
+`database/migrations/010_payday_rbi_limit_cooling_off.sql` adds `customer_limit.eligible_amount`, `loan.cooling_off_exit_at` and `loan_product.cooling_off_days`. It is additive and was applied to the live project on 2026-10-15. Apply it before deploying code that reads these columns, or limit updates at loan close and cooling-off requests fail.
 
 ## Go-live checklist
 1. Migrations are applied (see above). Expose the `payday` schema, then add a `loan_product` row and, if co-lending, `lender` and `colending_arrangement` rows.
