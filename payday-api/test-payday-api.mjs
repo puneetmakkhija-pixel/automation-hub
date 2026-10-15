@@ -162,7 +162,13 @@ test('FULL JOURNEY: apply, agreement, signed webhook, disburse, repay, eligible,
   assert.equal((await w.call('POST', `/v1/loans/${loanId}/collect`, {})).status, 409, 'no collection link for a closed loan');
 
   const el = await w.call('GET', `/v1/customers/${customerId}/eligibility`, undefined, { query: { product: 'PAYDAY_30' } });
-  assert.deepEqual([el.body.eligible, el.body.is_repeat, el.body.limit, el.body.cycle_number], [true, true, 15000, 2]);
+  assert.deepEqual([el.body.eligible, el.body.is_repeat, el.body.limit, el.body.eligible_limit, el.body.can_request_increase, el.body.cycle_number], [true, true, 10000, 15000, true, 2], 'eligible for more, but the limit offered has not moved');
+  const lim = await w.call('GET', `/v1/customers/${customerId}/limit`, undefined, { query: { product: 'PAYDAY_30' } });
+  assert.deepEqual([lim.status, lim.body.limit, lim.body.can_request_increase], [200, 10000, true]);
+  assert.equal((await w.call('POST', `/v1/customers/${customerId}/limit-increase`, { product_code: 'PAYDAY_30', amount: 20000 })).status, 409, 'cannot ask for more than eligible');
+  const up = await w.call('POST', `/v1/customers/${customerId}/limit-increase`, { product_code: 'PAYDAY_30' });
+  assert.deepEqual([up.status, up.body.limit], [200, 15000]);
+  assert.equal((await w.call('POST', `/v1/customers/${customerId}/limit-increase`, { product_code: 'PAYDAY_30' })).status, 409, 'nothing further to claim');
 
   const again = await w.call('POST', '/v1/applications', { customer_id: customerId, product_code: 'PAYDAY_30', requested_amount: 20000, intake });
   assert.deepEqual([again.body.is_repeat, again.body.offer.amount, again.body.offer.cappedBy], [true, 15000, 'customer_limit']);
@@ -255,4 +261,43 @@ test('reconcile job and the daily job report on payouts and integrity', async ()
   const noStatus = setup({ overrides: { payout: { name: 'p', disburse: async () => ({ status: 'pending' }) } } });
   assert.equal((await noStatus.call('POST', '/v1/jobs/reconcile-payouts', {})).status, 409, 'a vendor without a status check is a clear 409, not a crash');
   assert.equal((await noStatus.call('POST', '/v1/jobs/reconcile-payouts', {}, { key: null })).status, 401);
+});
+
+test('RBI: lender profile, key facts statement, and the cooling-off exit', async () => {
+  const lenderEnv = {
+    ...ENV, LENDER_NAME: 'Example Finance Ltd', LENDER_REGISTRATION: 'N-00.00000', REGISTERED_ADDRESS: '1 Road, City', SUPPORT_EMAIL: 'help@example.test', SUPPORT_PHONE: '1800',
+    GRIEVANCE_OFFICER_NAME: 'A Officer', GRIEVANCE_OFFICER_EMAIL: 'g@example.test', GRIEVANCE_OFFICER_PHONE: '1801',
+  };
+  const w = setup({ env: lenderEnv });
+  const prof = await w.call('GET', '/v1/lender');
+  assert.deepEqual([prof.status, prof.body.complete, prof.body.name, prof.body.lending_service_provider.name], [200, true, 'Example Finance Ltd', 'BuddyLoan']);
+  assert.equal((await setup().call('GET', '/v1/lender')).body.complete, false, 'unset lender details are reported, not invented');
+
+  const { customerId, app } = await onboard(w, 3);
+  const appId = app.body.application_id;
+  const kfs = await w.call('GET', `/v1/applications/${appId}/kfs`);
+  assert.deepEqual([kfs.status, kfs.body.complete, kfs.body.part1.sanctioned_amount, kfs.body.part1.total_to_repay, kfs.body.part1.apr_pct, kfs.body.part2.grievance_officer.name],
+    [200, true, 10000, 10800, 155.07, 'A Officer']);
+  assert.match(kfs.body.sha256, /^[0-9a-f]{64}$/);
+  const logged = (await w.store.listAudit?.({}) ?? w.store.db?.audit ?? []).filter((r) => r.action === 'kfs.issued');
+  assert.equal(logged.length, 1, 'every statement handed out is in the audit log');
+  assert.equal(logged[0].details.sha256, kfs.body.sha256);
+
+  await w.call('POST', `/v1/applications/${appId}/agreement`);
+  const raw = JSON.stringify({ event_id: 'ev-sign-rbi', type: 'esign.signed', data: { application_ref: appId } });
+  await w.call('POST', '/v1/webhooks/acme', raw, { key: null, headers: { 'x-acme-signature': createHmac('sha256', 's3cret').update(raw).digest('hex') } });
+  const d = await w.call('POST', `/v1/applications/${appId}/disburse`, { account });
+  assert.equal(d.status, 200);
+  const loanId = d.body.loan_id;
+
+  const view = await w.call('GET', `/v1/loans/${loanId}`);
+  assert.deepEqual([view.body.cooling_off.open, view.body.cooling_off.days_held, view.body.cooling_off.amount_due], [true, 1, 10026.67]);
+  const ask = await w.call('POST', `/v1/loans/${loanId}/cooling-off`);
+  assert.deepEqual([ask.status, ask.body.requested, ask.body.amount_due], [200, true, 10026.67]);
+  const pay = await w.call('POST', `/v1/loans/${loanId}/payments`, { amount: 10026.67, mode: 'upi', utr: 'API-COOL' });
+  assert.deepEqual([pay.status, pay.body.closed], [200, true]);
+  assert.equal((await w.call('GET', `/v1/loans/${loanId}`)).body.status, 'closed');
+  assert.equal((await w.call('POST', `/v1/loans/${loanId}/cooling-off`)).status, 409, 'nothing to exit once the loan is closed');
+  assert.equal((await w.call('POST', '/v1/loans/nope/cooling-off')).status, 404);
+  void customerId;
 });

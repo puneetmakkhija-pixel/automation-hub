@@ -110,7 +110,9 @@ try {
   const dbDup = await client.schema('payday').from('payment').insert({ loan_id: A.loanId, amount: 1, mode: 'upi', utr: `E2E-UTR-${RUN}`, status: 'success' });
   check('A: the database itself refuses a duplicate payment UTR', dbDup.error?.code === '23505', JSON.stringify(dbDup.error));
   const el = await call('GET', `/v1/customers/${A.customerId}/eligibility`, undefined, { product: CODE });
-  check('A: eligible for a repeat loan, limit stepped up to 15000, cycle 2', el.body.eligible && el.body.is_repeat && el.body.limit === 15000 && el.body.cycle_number === 2, JSON.stringify(el.body));
+  check('A: eligible for a repeat loan at cycle 2; qualifies for 15000 but the limit offered has not moved', el.body.eligible && el.body.is_repeat && el.body.limit === 10000 && el.body.eligible_limit === 15000 && el.body.can_request_increase === true && el.body.cycle_number === 2, JSON.stringify(el.body));
+  const inc = await call('POST', `/v1/customers/${A.customerId}/limit-increase`, { product_code: CODE });
+  check('A: the limit rises to 15000 only when the customer asks', inc.status === 200 && inc.body.limit === 15000, JSON.stringify(inc));
   const kycBefore = (await must(db('kyc_check').select('id').eq('customer_id', A.customerId), 'kyc count')).length;
   const rep = await call('POST', '/v1/applications', { customer_id: A.customerId, product_code: CODE, requested_amount: 20000, intake });
   check('A: repeat application capped at the 15000 limit', rep.body.is_repeat === true && rep.body.offer?.amount === 15000 && rep.body.offer?.cappedBy === 'customer_limit', JSON.stringify(rep.body));

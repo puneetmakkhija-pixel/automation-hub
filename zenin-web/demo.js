@@ -71,7 +71,7 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
       } : null;
       return {
         kycStatus: c.kyc_status, consents, applications, loans, profile,
-        limit: limitRow ? { amount: Number(limitRow.limit_amount), cycle: limitRow.cycle_number } : null,
+        limit: limitRow ? { amount: Number(limitRow.limit_amount), eligible: Number(limitRow.eligible_amount ?? limitRow.limit_amount), cycle: limitRow.cycle_number } : null,
         panLast4: c.pan_last4 ?? null,
         firstApplicationAt: applications.length ? applications[applications.length - 1].created_at : null,
       };
@@ -94,6 +94,11 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
     // Identity is out of date: mark it unverified so the next application runs the identity check again.
     async expireKyc(customerId) { return store.patchCustomer(customerId, { kyc_status: 'pending' }); },
     async saveProfile(customerId, { monthly_salary: salary }) { return store.patchCustomer(customerId, { monthly_salary: salary }); },
+
+    // The limit offered rises only when the customer asks (RBI Digital Lending Directions, 2025).
+    async requestLimitIncrease(customerId, amount) {
+      return call('POST', `/v1/customers/${customerId}/limit-increase`, { product_code: DEMO_PRODUCT.code, ...(amount === undefined ? {} : { amount }) });
+    },
 
     async rewards(customerId) { return (await call('GET', `/v1/customers/${customerId}/rewards`)).body; },
     async spin(customerId) { return call('POST', `/v1/customers/${customerId}/wheel/spin`, {}); },

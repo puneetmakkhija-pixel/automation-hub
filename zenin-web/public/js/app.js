@@ -102,6 +102,7 @@ const termsRows = (o) => [
   [t('aprSimple'), pct(o.aprSimplePct)], [t('aprEff'), pct(o.aprEffectivePct)],
 ];
 const rewardBanner = () => (S.me?.reward ? `<div class="reward-banner">${esc(t('rewardBanner', { pct: S.me.reward.waiver_pct, date: dateFmt(S.me.reward.expires_at) }))}</div>` : '');
+const limitBanner = () => (S.me?.can_request_increase ? `<div class="reward-banner"><span>${esc(t('askLimit', { amount: inr(S.me.eligible_limit) }))}</span><button class="linkbtn" type="button" data-act="ask-limit">${esc(t('askLimitBtn'))}</button></div>` : '');
 const spinBanner = () => (S.me?.spins > 0 ? `<div class="reward-banner spin"><b>${esc(t('spinBannerTitle'))}</b><button class="linkbtn" type="button" data-act="open-wheel">${esc(t('spinBannerBtn'))}</button></div>` : '');
 
 // the wheel: ten equal slices drawn from the list the server sends; slice 0 is at the top and the pointer is fixed
@@ -140,7 +141,7 @@ const SCREENS = {
     const me = S.me; const q = S.quote;
     return {
       body: `<h1>${esc(me.is_repeat ? t('welcomeBack') + '. ' + t('amountTitle') : t('amountTitle'))}</h1><p class="muted">${esc(t('amountSub', { cap: inr(me.cap) }))}</p>
-        ${rewardBanner()}${spinBanner()}
+        ${rewardBanner()}${spinBanner()}${limitBanner()}
         <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
         <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
         <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
@@ -153,7 +154,7 @@ const SCREENS = {
     const me = S.me; const q = S.quote; const f = S.form; const pr = me.profile;
     return {
       body: `<h1>${esc(t('welcomeBack'))}</h1><p class="muted">${esc(t('welcomeSub', { cap: inr(me.cap) }))}</p>
-        ${rewardBanner()}${spinBanner()}
+        ${rewardBanner()}${spinBanner()}${limitBanner()}
         <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
         <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
         <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
@@ -413,6 +414,13 @@ async function runApplication(body, back) {
 
 const ACTIONS = {
   lang(el) { S.lang = el.dataset.lang; store.set('zenin_lang', S.lang); render(); },
+  'ask-limit'() {
+    return guarded(async () => {
+      const r = await api('/limit/increase', { method: 'POST' });
+      route(await refreshMe());
+      showToast(t('limitRaised', { amount: inr(r.limit) }));
+    });
+  },
   'open-menu'() { openSheet('menu'); },
   'open-history'() { openSheet('history'); },
   'open-perms'() { openSheet('perms'); },

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createRegistry, memoryStore, runUnderwriting, createApplication, ApplicationError, sendAgreement, recordAgreementSigned,
   disburseLoan, completeDisbursement, reconcilePendingPayouts, auditOpenLoans, BusinessRuleError, recordPayment, rollover, writeOff, runDailyServicing, getLoanSummary, breakdown, agingBucket,
-  nextLimit, repeatEligibility, dueDateFor, nextSalaryDate, splitAmount, daysBetween, istToday, LADDER,
+  nextLimit, repeatEligibility, requestLimitIncrease, coolingOffQuote, requestCoolingOffExit, lenderProfile, buildKfs, dueDateFor, nextSalaryDate, splitAmount, daysBetween, istToday, LADDER,
 } from './index.js';
 
 const product = {
@@ -200,7 +200,7 @@ test('disbursement: a second payout reporting success is refused, not booked as 
   assert.equal(w.store.db.ledger.filter((e) => e.entry_type === 'disbursal').length, 2, 'ledger written once');
 });
 
-test('servicing: on-time payment closes the loan and steps the limit up the ladder', async () => {
+test('servicing: on-time payment closes the loan; the ladder finds a higher limit but does not offer it until the customer asks', async () => {
   const w = await world();
   const o = await signedOffer(w);
   const today = istToday();
@@ -210,10 +210,30 @@ test('servicing: on-time payment closes the loan and steps the limit up the ladd
   assert.equal((await w.store.getLoan(loan.id)).status, 'closed');
   assert.equal(await w.store.getLedgerBalance(loan.id), 0);
   const lim = await w.store.getCurrentLimit(o.customer.id);
-  assert.deepEqual([lim.limit_amount, lim.cycle_number, lim.reason], [15000, 2, 'on_time_repay']);
+  assert.deepEqual([lim.limit_amount, lim.eligible_amount, lim.cycle_number, lim.reason], [10000, 15000, 2, 'on_time_repay_eligible_for_increase']);
 
   const e = await repeatEligibility({ store: w.store, customer: o.customer, product });
-  assert.deepEqual([e.eligible, e.isRepeat, e.limit, e.cycleNumber], [true, true, 15000, 2]);
+  assert.deepEqual([e.eligible, e.isRepeat, e.limit, e.eligibleLimit, e.canRequestIncrease, e.cycleNumber], [true, true, 10000, 15000, true, 2]);
+
+  // only the customer's own request raises the limit
+  await assert.rejects(requestLimitIncrease({ store: w.store, customer: o.customer, product, requestedAmount: 20000 }), /the most available right now is 15000/);
+  await assert.rejects(requestLimitIncrease({ store: w.store, customer: o.customer, product, requestedAmount: 10000 }), /above the current limit/);
+  const up = await requestLimitIncrease({ store: w.store, customer: o.customer, product });
+  assert.deepEqual([up.limit_amount, up.reason, up.created_by], [15000, 'borrower_requested_increase', 'customer']);
+  const after = await repeatEligibility({ store: w.store, customer: o.customer, product });
+  assert.deepEqual([after.limit, after.canRequestIncrease], [15000, false]);
+  await assert.rejects(requestLimitIncrease({ store: w.store, customer: o.customer, product }), /not available right now/);
+});
+
+test('limits: a late repayment reduces the limit at once and leaves nothing to claim', async () => {
+  const w = await world();
+  const o = await signedOffer(w);
+  const { loan } = await disburse(w, o, { asOf: '2026-01-01' });
+  // paid 5 days late: beyond the 3-day grace, so the ladder steps down from 10000
+  await recordPayment({ store: w.store, loan, product, amount: 10800 + 500, mode: 'upi', utr: 'U-LATE5', paidAt: '2026-02-05T06:00:00Z' });
+  const lim = await w.store.getCurrentLimit(o.customer.id);
+  assert.deepEqual([lim.limit_amount, lim.eligible_amount], [8000, null]);
+  assert.equal((await repeatEligibility({ store: w.store, customer: o.customer, product })).canRequestIncrease, false);
 });
 
 test('servicing: repeat loan is capped by the limit, flagged repeat, and reuses KYC', async () => {
@@ -223,6 +243,7 @@ test('servicing: repeat loan is capped by the limit, flagged repeat, and reuses 
   await recordPayment({ store: w.store, loan, product, amount: 10800, mode: 'upi', utr: 'U-R1' });
 
   const customer = await w.store.patchCustomer(o.customer.id, { kyc_status: 'verified' });
+  await requestLimitIncrease({ store: w.store, customer, product }); // the customer asks for the higher limit
   const { application, customerLimit, isRepeat } = await createApplication({ store: w.store, customer, product, requestedAmount: 20000 });
   assert.equal(isRepeat, true);
   assert.equal(customerLimit, 15000);
@@ -390,4 +411,57 @@ test('audit: schedule and ledger agree on a healthy loan; a stray ledger entry i
   const dirty = await runDailyServicing({ store: w.store, asOf: '2026-01-15' });
   assert.equal(dirty.integrityIssues.length, 1);
   assert.deepEqual([dirty.integrityIssues[0].loan_id, dirty.integrityIssues[0].difference], [loan.id, 100]);
+});
+
+test('cooling-off: asking costs nothing; paying inside the window cuts the fee to the days held; after the window it is refused', async () => {
+  const w = await world();
+  const o = await signedOffer(w);
+  const { loan } = await disburse(w, o, { asOf: istToday() });
+  const q = await coolingOffQuote({ store: w.store, loan, product });
+  // the same day: one day is the least that is charged, so 1/30 of the 800 fee
+  assert.deepEqual([q.open, q.days_held, q.fee, q.fee_reversed, q.amount_due], [true, 1, 26.67, 773.33, 10026.67]);
+  const asked = await requestCoolingOffExit({ store: w.store, loan, product });
+  assert.equal(asked.requested, true);
+  assert.equal(await w.store.getLedgerBalance(loan.id), 10800, 'asking changes nothing in the ledger');
+
+  const r = await recordPayment({ store: w.store, loan, product, amount: 10026.67, mode: 'upi', utr: 'U-COOL', paidAt: new Date().toISOString() });
+  assert.deepEqual([r.closed, r.outstanding], [true, 0]);
+  assert.equal(await w.store.getLedgerBalance(loan.id), 0);
+  assert.equal(w.store.db.ledger.filter((e) => e.entry_type === 'fee_reversal').reduce((a, e) => a + e.amount, 0).toFixed(2), '773.33');
+  const lim = await w.store.getCurrentLimit(o.customer.id);
+  assert.deepEqual([lim.limit_amount, lim.eligible_amount, lim.reason], [10000, null, 'cooling_off_exit'], 'using the exit does not move the limit');
+});
+
+test('cooling-off: asking and then paying the full amount after the window gets no reduction', async () => {
+  const w = await world();
+  const o = await signedOffer(w);
+  const { loan } = await disburse(w, o, { asOf: '2026-01-01' });
+  const old = { ...loan, disbursed_at: '2026-01-01T06:00:00Z' };
+  await w.store.patchLoan(loan.id, { disbursed_at: old.disbursed_at, cooling_off_exit_at: '2026-01-01T07:00:00Z' });
+  const q = await coolingOffQuote({ store: w.store, loan, product, asOf: '2026-01-10' });
+  assert.equal(q.open, false, 'the window is one day');
+  await assert.rejects(requestCoolingOffExit({ store: w.store, loan, product, asOf: '2026-01-10' }), BusinessRuleError);
+  const r = await recordPayment({ store: w.store, loan, product, amount: 10800, mode: 'upi', utr: 'U-NOCOOL', paidAt: '2026-01-10T06:00:00Z' });
+  assert.deepEqual([r.closed, r.applied], [true, 10800]);
+  assert.equal(w.store.db.ledger.filter((e) => e.entry_type === 'fee_reversal').length, 0);
+});
+
+test('KFS: figures match the offer, a waiver shows before and after, missing lender details are reported, the fingerprint is stable', async () => {
+  const w = await world();
+  const o = await signedOffer(w);
+  const app = await w.store.getApplication(o.application.id);
+  const bare = lenderProfile({});
+  assert.deepEqual([bare.complete, bare.missing.length, bare.lending_service_provider.name], [false, 8, 'BuddyLoan']);
+  const full = lenderProfile({
+    LENDER_NAME: 'Example Finance Ltd', LENDER_REGISTRATION: 'N-00.00000', REGISTERED_ADDRESS: '1 Road, City', SUPPORT_EMAIL: 'help@example.test', SUPPORT_PHONE: '1800',
+    GRIEVANCE_OFFICER_NAME: 'A Officer', GRIEVANCE_OFFICER_EMAIL: 'g@example.test', GRIEVANCE_OFFICER_PHONE: '1801', LSP_NAME: 'BuddyLoan',
+  });
+  assert.equal(full.complete, true);
+  const k = buildKfs({ lender: full, product, application: app, generatedAt: '2026-01-01T00:00:00Z' });
+  assert.deepEqual([k.part1.sanctioned_amount, k.part1.total_to_repay, k.part1.apr_pct, k.part1.apr_simple_pct], [10000, 10800, 155.07, 97.33]);
+  assert.deepEqual([k.part1.fees_payable_to_lender[0].amount, k.part2.cooling_off.days, k.part2.grievance_officer.name, k.complete], [800, 1, 'A Officer', true]);
+  assert.equal(buildKfs({ lender: full, product, application: app, generatedAt: '2027-01-01T00:00:00Z' }).sha256, k.sha256, 'the fingerprint ignores the time stamp');
+  const waived = buildKfs({ lender: bare, product, application: { ...app, fee_waiver_pct: 25 } });
+  assert.deepEqual([waived.part1.fees_payable_to_lender[0].amount, waived.part1.fees_payable_to_lender[0].before_waiver, waived.part1.total_to_repay, waived.complete], [600, 800, 10600, false]);
+  assert.notEqual(waived.sha256, k.sha256);
 });
