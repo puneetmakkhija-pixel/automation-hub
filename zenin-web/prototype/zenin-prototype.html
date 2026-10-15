@@ -256,12 +256,12 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
 
   const st = {
     signedIn: sc !== 'new', next: 'start', repaid: 0, spins: 0, reward: null, refresh: [], missing: [], profile: null,
-    offer: null, offerExpires: null, declinedUntil: null, loan: null, application: null, consents: ['kyc', 'credit_bureau', 'terms'], history: [], cap: 10000,
+    eligible: 0, offer: null, offerExpires: null, declinedUntil: null, loan: null, application: null, consents: ['kyc', 'credit_bureau', 'terms'], history: [], cap: 10000,
   };
   if (sc === 'new') { st.consents = []; st.missing = ['kyc', 'credit_bureau', 'terms']; }
   const repeat = () => { st.repaid = Math.max(st.repaid, 1); st.cap = 15000; st.profile = { ...JOB }; };
   const hist = (n) => { st.history = Array.from({ length: n }, (_, i) => ({ loan_id: 'L' + i, status: 'closed', amount: 10000, disbursed_at: stamp(-30 * (n - i) - 5), closed_at: stamp(-30 * (n - i) + 24) })); };
-  if (sc === 'welcome') { repeat(); hist(1); }
+  if (sc === 'welcome') { repeat(); hist(1); st.eligible = 20000; }
   if (sc === 'offer') { repeat(); hist(1); st.next = 'offer'; st.offer = 10000; st.offerExpires = iso(3); st.application = { id: 'A1', status: 'offered' }; }
   if (sc.startsWith('refresh')) {
     repeat(); hist(1); st.next = 'refresh';
@@ -293,6 +293,7 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     const o = {
       mode: 'demo', mobile_masked: 'XXXXXX1234', consents: st.consents, missing_consents: st.missing, next: st.next, cap: st.cap, min_amount: 5000,
       is_repeat: st.repaid > 0, refresh_items: st.refresh, need_pan: st.repaid === 0 || st.refresh.includes('identity'), declined_until: st.declinedUntil,
+      eligible_limit: Math.max(st.cap, st.eligible), can_request_increase: st.next === 'start' && st.eligible > st.cap,
       history: st.history, preapproved: st.repaid > 0 && st.next === 'start', spins: st.spins, reward: st.reward,
       reason: { review: 'under_review', declined: 'reapply_later', blocked: 'not_available' }[st.next] ?? null,
     };
@@ -332,6 +333,10 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     }
     if (method === 'POST' && path === '/consents/revoke') { st.consents = st.consents.filter((c) => c !== body.purpose); return res(200, { revoked: body.purpose }); }
     if (method === 'GET' && path === '/history') return res(200, { history: st.history });
+    if (method === 'POST' && path === '/limit/increase') {
+      if (!(st.eligible > st.cap)) return err(409, 'no_increase', 'A higher limit is not available right now.');
+      st.cap = st.eligible; return res(200, { limit: st.cap });
+    }
     if (method === 'GET' && path === '/wheel') return res(200, { spins: st.spins, reward: st.reward, repaid_loans: st.repaid, loans_needed: Math.max(0, 3 - st.repaid), slices: WHEEL, odds: ODDS });
     if (method === 'POST' && path === '/wheel/spin') {
       if (st.spins < 1) return err(409, 'no_spin', 'There is no spin waiting for you.');
@@ -372,7 +377,7 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     if (method === 'POST' && path === '/loan/pay') {
       st.history.push({ loan_id: st.loan.loan_id, status: 'closed', amount: st.loan.principal, disbursed_at: stamp(-30), closed_at: stamp(0) });
       st.repaid += 1; st.loan = null; st.offer = null; st.application = null; st.next = 'start';
-      st.cap = Math.min(50000, 10000 + 5000 * st.repaid);
+      st.eligible = Math.min(50000, st.cap + 5000); // eligible for more, but the limit shown moves only when the customer asks
       if (st.repaid >= 3) st.spins += 1;
       if (!st.profile) st.profile = { ...JOB };
       return res(200, { status: 'paid' });
@@ -403,6 +408,7 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
 // lender's compliance team before real customers see it, especially the permission, key-fact and decline texts.
 const STRINGS = {
   en: {
+    askLimit: 'You qualify for up to {amount}. Ask for the higher limit only if you want it.', askLimitBtn: 'Ask for a higher limit', limitRaised: 'Your limit is now {amount}.',
     welcomeSub: 'You can borrow up to {cap}.', yourDetails: 'Your details', stillCorrect: 'Still correct? Change them if not.', seeBill: 'See my bill', changeDetails: 'Change my details',
     sumSalary: 'Monthly salary', sumEmployer: 'Employer', sumMonths: 'Months at this job', sumHome: 'Home', monthsUnit: '{n} months',
     refreshTitle: 'A quick check first', refreshSub: 'We only ask for what is out of date.', updateContinue: 'Update and continue',
@@ -498,6 +504,7 @@ const STRINGS = {
     payTitle: '{amount} चुकाएँ', paySub: 'आप अभी पूरी राशि चुकाते हैं। शुल्क या देरी का शुल्क इसमें शामिल है।', payNow: '{amount} चुकाएँ', payDemo: 'डेमो: यह भुगतान का नमूना है।',
     repaidTitle: 'लोन चुका दिया गया। धन्यवाद।', repaidSub: 'समय पर चुकाने से अगली बार आपकी सीमा बढ़ सकती है।', borrowAgain: 'फिर उधार लें', done: 'हो गया',
     histTitle: 'आपके लोन', noLoans: 'अभी कोई लोन नहीं।', st_closed: 'चुकाया गया', st_written_off: 'बंद',
+    askLimit: 'आप {amount} तक के पात्र हैं। ऊँची सीमा तभी माँगें जब आपको चाहिए।', askLimitBtn: 'ऊँची सीमा माँगें', limitRaised: 'आपकी सीमा अब {amount} है।',
     permTitle: 'आपकी अनुमतियाँ', permSub: 'आप कभी भी अनुमति वापस ले सकते हैं। इससे हम आपको नया लोन नहीं दे पाएँगे।', withdraw: 'वापस लें', none: 'कोई अनुमति दर्ज नहीं है।',
     p_kyc: 'मेरी पहचान जाँचें', p_credit_bureau: 'मेरी क्रेडिट रिपोर्ट देखें', p_terms: 'गोपनीयता सूचना और शर्तें', p_communication: 'हमारी ओर से संदेश', p_data_sharing: 'साझेदारों के साथ डेटा साझा करें', p_bank_data: 'मेरा बैंक स्टेटमेंट देखें',
     e_signed_out: 'कृपया फिर से साइन इन करें।', e_generic: 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।', e_check: 'कृपया चिह्नित फ़ील्ड जाँचें।',
@@ -608,6 +615,7 @@ const termsRows = (o) => [
   [t('aprSimple'), pct(o.aprSimplePct)], [t('aprEff'), pct(o.aprEffectivePct)],
 ];
 const rewardBanner = () => (S.me?.reward ? `<div class="reward-banner">${esc(t('rewardBanner', { pct: S.me.reward.waiver_pct, date: dateFmt(S.me.reward.expires_at) }))}</div>` : '');
+const limitBanner = () => (S.me?.can_request_increase ? `<div class="reward-banner"><span>${esc(t('askLimit', { amount: inr(S.me.eligible_limit) }))}</span><button class="linkbtn" type="button" data-act="ask-limit">${esc(t('askLimitBtn'))}</button></div>` : '');
 const spinBanner = () => (S.me?.spins > 0 ? `<div class="reward-banner spin"><b>${esc(t('spinBannerTitle'))}</b><button class="linkbtn" type="button" data-act="open-wheel">${esc(t('spinBannerBtn'))}</button></div>` : '');
 
 // the wheel: ten equal slices drawn from the list the server sends; slice 0 is at the top and the pointer is fixed
@@ -646,7 +654,7 @@ const SCREENS = {
     const me = S.me; const q = S.quote;
     return {
       body: `<h1>${esc(me.is_repeat ? t('welcomeBack') + '. ' + t('amountTitle') : t('amountTitle'))}</h1><p class="muted">${esc(t('amountSub', { cap: inr(me.cap) }))}</p>
-        ${rewardBanner()}${spinBanner()}
+        ${rewardBanner()}${spinBanner()}${limitBanner()}
         <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
         <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
         <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
@@ -659,7 +667,7 @@ const SCREENS = {
     const me = S.me; const q = S.quote; const f = S.form; const pr = me.profile;
     return {
       body: `<h1>${esc(t('welcomeBack'))}</h1><p class="muted">${esc(t('welcomeSub', { cap: inr(me.cap) }))}</p>
-        ${rewardBanner()}${spinBanner()}
+        ${rewardBanner()}${spinBanner()}${limitBanner()}
         <div class="amount-pick"><output id="amount-out" for="amount">${inr(S.form.amount)}</output>
         <input id="amount" type="range" min="${me.min_amount}" max="${me.cap}" step="500" value="${S.form.amount}" data-amount aria-label="${esc(t('amountTitle'))}"></div>
         <div id="quote">${q ? kv(termsRows(q)) : ''}</div>
@@ -919,6 +927,13 @@ async function runApplication(body, back) {
 
 const ACTIONS = {
   lang(el) { S.lang = el.dataset.lang; store.set('zenin_lang', S.lang); render(); },
+  'ask-limit'() {
+    return guarded(async () => {
+      const r = await api('/limit/increase', { method: 'POST' });
+      route(await refreshMe());
+      showToast(t('limitRaised', { amount: inr(r.limit) }));
+    });
+  },
   'open-menu'() { openSheet('menu'); },
   'open-history'() { openSheet('history'); },
   'open-perms'() { openSheet('perms'); },

@@ -16,6 +16,11 @@ import { emitPartnerEvent } from './partners.js';
 const OPEN = ['active', 'overdue'];
 const EPS = 0.004;
 
+// Cooling-off (RBI Digital Lending Directions, 2025): after the money is sent the borrower may exit by repaying the
+// principal and the fee for the days the money was held, with no penalty. At least 1 day; a product may set more.
+export const COOLING_OFF_DAYS = 1;
+export const coolingOffDaysOf = (product) => Math.max(1, Number(product?.cooling_off_days ?? COOLING_OFF_DAYS));
+
 const owedOf = (s) => round2(Number(s.principal_due) + Number(s.fee_due) + Number(s.penalty_due) - Number(s.paid_amount));
 export const outstandingOf = (rows) => round2(rows.reduce((a, s) => a + owedOf(s), 0));
 
@@ -73,6 +78,54 @@ export async function accruePenalty({ store, loan, product, asOf = istToday() })
   return { added, overdue };
 }
 
+export function coolingOffWindow({ loan, product, asOf = istToday() }) {
+  if (!loan?.disbursed_at) return null;
+  const starts = toDate(loan.disbursed_at);
+  const ends = addDays(starts, coolingOffDaysOf(product));
+  return { starts, ends, open: OPEN.includes(loan.status) && Number(loan.rollover_count) === 0 && asOf <= ends };
+}
+
+// What an exit costs today: the principal plus the fee for the days held (never less than one day). Read-only.
+export async function coolingOffQuote({ store, loan: loanRef, product, asOf = istToday() }) {
+  const loan = await store.getLoan(loanRef.id);
+  const w = loan && coolingOffWindow({ loan, product, asOf });
+  if (!w || !w.open) return { open: false, ends: w?.ends ?? null };
+  const rows = await store.getSchedule(loan.id);
+  if (rows.length !== 1) return { open: false, ends: w.ends };
+  const tenure = Math.max(1, daysBetween(w.starts, rows[0].due_date));
+  const days = Math.max(1, daysBetween(w.starts, asOf));
+  const fee = round2(Math.min(Number(loan.fee_amount), (Number(loan.fee_amount) * days) / tenure));
+  const paid = Number(rows[0].paid_amount);
+  return {
+    open: true, ends: w.ends, days_held: days, principal: Number(rows[0].principal_due), fee, fee_reversed: round2(Number(loan.fee_amount) - fee),
+    amount_due: round2(Math.max(0, Number(rows[0].principal_due) + fee - paid)), requested: Boolean(loan.cooling_off_exit_at),
+  };
+}
+
+// The borrower says they want to exit. Nothing changes in the ledger yet: the fee is reduced when the payment arrives
+// inside the window (see recordPayment), so asking and then not paying costs nothing and gains nothing.
+export async function requestCoolingOffExit({ store, loan: loanRef, product, asOf = istToday() }) {
+  const loan = await store.getLoan(loanRef.id);
+  if (!loan || !loan.disbursed_at || !OPEN.includes(loan.status)) throw new BusinessRuleError('loan is not open');
+  const q = await coolingOffQuote({ store, loan, product, asOf });
+  if (!q.open) throw new BusinessRuleError(q.ends ? `the cooling-off period ended on ${q.ends}` : 'the cooling-off exit is not available for this loan');
+  if (!loan.cooling_off_exit_at) await store.patchLoan(loan.id, { cooling_off_exit_at: new Date().toISOString() });
+  return { ...q, requested: true };
+}
+
+// Called with a confirmed payment, inside the window, for a loan whose borrower asked to exit: cut the fee to the days
+// held. Safe to run twice: it works from the original fee on the loan and never raises a fee.
+async function applyCoolingOffFee({ store, loan, product, asOf }) {
+  const q = await coolingOffQuote({ store, loan, product, asOf });
+  if (!q.open) return false;
+  const [row] = await store.getSchedule(loan.id);
+  if (Number(row.fee_due) <= q.fee + EPS) return true;
+  const reversal = round2(Number(row.fee_due) - q.fee);
+  await store.patchSchedule(row.id, { fee_due: q.fee });
+  await ledger(store, loan.id, 'fee_reversal', 'credit', reversal, 'loan', loan.id);
+  return true;
+}
+
 // Record a CONFIRMED payment. Idempotent on utr. The payment row is written first, so a duplicate
 // utr is refused by the database before anything else changes.
 export async function recordPayment({ store, loan: loanRef, product, amount, mode, utr = null, paidAt = new Date().toISOString() }) {
@@ -91,6 +144,7 @@ export async function recordPayment({ store, loan: loanRef, product, amount, mod
   }
 
   const payDate = toDate(paidAt);
+  const coolingOff = Boolean(loan.cooling_off_exit_at) && await applyCoolingOffFee({ store, loan, product, asOf: payDate });
   await accruePenalty({ store, loan, product, asOf: payDate });
   const rows = await store.getSchedule(loan.id);
 
@@ -113,8 +167,8 @@ export async function recordPayment({ store, loan: loanRef, product, amount, mod
   let closed = false;
   if (outstanding <= EPS) {
     loan = await store.patchLoan(loan.id, { status: 'closed', closed_at: paidAt });
-    await onLoanClosed({ store, loan, product, closedAt: payDate });
-    await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.closed', data: { loan_id: loan.id } });
+    await onLoanClosed({ store, loan, product, closedAt: payDate, coolingOff });
+    await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.closed', data: { loan_id: loan.id, reason: coolingOff ? 'cooling_off_exit' : 'repaid' } });
     closed = true;
   }
   return { duplicate: false, payment, applied, unapplied: round2(amount - applied), closed, outstanding };

@@ -29,12 +29,12 @@
 
   const st = {
     signedIn: sc !== 'new', next: 'start', repaid: 0, spins: 0, reward: null, refresh: [], missing: [], profile: null,
-    offer: null, offerExpires: null, declinedUntil: null, loan: null, application: null, consents: ['kyc', 'credit_bureau', 'terms'], history: [], cap: 10000,
+    eligible: 0, offer: null, offerExpires: null, declinedUntil: null, loan: null, application: null, consents: ['kyc', 'credit_bureau', 'terms'], history: [], cap: 10000,
   };
   if (sc === 'new') { st.consents = []; st.missing = ['kyc', 'credit_bureau', 'terms']; }
   const repeat = () => { st.repaid = Math.max(st.repaid, 1); st.cap = 15000; st.profile = { ...JOB }; };
   const hist = (n) => { st.history = Array.from({ length: n }, (_, i) => ({ loan_id: 'L' + i, status: 'closed', amount: 10000, disbursed_at: stamp(-30 * (n - i) - 5), closed_at: stamp(-30 * (n - i) + 24) })); };
-  if (sc === 'welcome') { repeat(); hist(1); }
+  if (sc === 'welcome') { repeat(); hist(1); st.eligible = 20000; }
   if (sc === 'offer') { repeat(); hist(1); st.next = 'offer'; st.offer = 10000; st.offerExpires = iso(3); st.application = { id: 'A1', status: 'offered' }; }
   if (sc.startsWith('refresh')) {
     repeat(); hist(1); st.next = 'refresh';
@@ -66,6 +66,7 @@
     const o = {
       mode: 'demo', mobile_masked: 'XXXXXX1234', consents: st.consents, missing_consents: st.missing, next: st.next, cap: st.cap, min_amount: 5000,
       is_repeat: st.repaid > 0, refresh_items: st.refresh, need_pan: st.repaid === 0 || st.refresh.includes('identity'), declined_until: st.declinedUntil,
+      eligible_limit: Math.max(st.cap, st.eligible), can_request_increase: st.next === 'start' && st.eligible > st.cap,
       history: st.history, preapproved: st.repaid > 0 && st.next === 'start', spins: st.spins, reward: st.reward,
       reason: { review: 'under_review', declined: 'reapply_later', blocked: 'not_available' }[st.next] ?? null,
     };
@@ -105,6 +106,10 @@
     }
     if (method === 'POST' && path === '/consents/revoke') { st.consents = st.consents.filter((c) => c !== body.purpose); return res(200, { revoked: body.purpose }); }
     if (method === 'GET' && path === '/history') return res(200, { history: st.history });
+    if (method === 'POST' && path === '/limit/increase') {
+      if (!(st.eligible > st.cap)) return err(409, 'no_increase', 'A higher limit is not available right now.');
+      st.cap = st.eligible; return res(200, { limit: st.cap });
+    }
     if (method === 'GET' && path === '/wheel') return res(200, { spins: st.spins, reward: st.reward, repaid_loans: st.repaid, loans_needed: Math.max(0, 3 - st.repaid), slices: WHEEL, odds: ODDS });
     if (method === 'POST' && path === '/wheel/spin') {
       if (st.spins < 1) return err(409, 'no_spin', 'There is no spin waiting for you.');
@@ -145,7 +150,7 @@
     if (method === 'POST' && path === '/loan/pay') {
       st.history.push({ loan_id: st.loan.loan_id, status: 'closed', amount: st.loan.principal, disbursed_at: stamp(-30), closed_at: stamp(0) });
       st.repaid += 1; st.loan = null; st.offer = null; st.application = null; st.next = 'start';
-      st.cap = Math.min(50000, 10000 + 5000 * st.repaid);
+      st.eligible = Math.min(50000, st.cap + 5000); // eligible for more, but the limit shown moves only when the customer asks
       if (st.repaid >= 3) st.spins += 1;
       if (!st.profile) st.profile = { ...JOB };
       return res(200, { status: 'paid' });

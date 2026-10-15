@@ -286,8 +286,14 @@ test('JOURNEY: sign in, permission, apply, offer, accept, sign, receive money, r
   const pay = await c.call('POST', '/api/loan/pay');
   assert.equal(pay.body.status, 'paid');
   const after = (await c.call('GET', '/api/me')).body;
-  assert.deepEqual([after.next, after.is_repeat, after.cap], ['start', true, 15000], 'repaid on time: the limit rises one step');
+  assert.deepEqual([after.next, after.is_repeat, after.cap, after.eligible_limit, after.can_request_increase], ['start', true, 10000, 15000, true], 'repaid on time: eligible for one step more, but the limit shown does not move');
   assert.equal(after.history[0].status, 'closed');
+  assert.equal((await c.call('POST', '/api/applications', details({ amount: 15000 }))).body.error, 'bad_amount', 'an amount above the limit is refused until the customer asks for more');
+  const ask = await c.call('POST', '/api/limit/increase');
+  assert.deepEqual([ask.status, ask.body.limit], [200, 15000]);
+  const asked = (await c.call('GET', '/api/me')).body;
+  assert.deepEqual([asked.cap, asked.can_request_increase], [15000, false]);
+  assert.equal((await c.call('POST', '/api/limit/increase')).body.error, 'no_increase');
 
   const again = await c.call('POST', '/api/applications', details({ amount: 15000 }));
   assert.deepEqual([again.body.decision, again.body.offer.amount], ['approved', 15000]);
@@ -497,6 +503,7 @@ test('RETURNING: a customer with fresh details is pre-approved: no permissions, 
   const { mobile: m } = await login(c); await consent(c);
   assert.equal((await c.call('POST', '/api/applications', { ...details(), use_saved: true })).body.error, 'details_needed', 'a first-timer has nothing saved');
   await cycle(s, c, m);
+  assert.equal((await c.call('POST', '/api/limit/increase')).status, 200);
   const me = (await c.call('GET', '/api/me')).body;
   assert.deepEqual([me.next, me.preapproved, me.is_repeat, me.need_pan, me.refresh_items, me.cap], ['start', true, true, false, [], 15000]);
   assert.deepEqual(me.profile, { monthly_salary: 48000, employer_type: 'listed_large', months_with_employer: 26, residence: 'rented_long' });

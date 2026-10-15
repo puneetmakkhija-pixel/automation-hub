@@ -127,6 +127,7 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       missing_consents: REQUIRED_CONSENTS.filter((c) => !snap.consents.includes(c)),
       next: blocked && !openLoan ? 'blocked' : next,
       cap: await capFor(snap),
+      eligible_limit: snap.limit ? Math.min(Math.max(snap.limit.eligible ?? snap.limit.amount, snap.limit.amount), Number((await product()).max_amount)) : null,
       min_amount: Number(p.min_amount),
       is_repeat: isRepeat,
       refresh_items: refreshItems,
@@ -142,6 +143,7 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       if (out.next === 'offer') out.offer_expires = addDaysIso(lastApp.created_at, cfg.offerValidDays);
     }
     out.preapproved = isRepeat && out.next === 'start';
+    out.can_request_increase = out.next === 'start' && out.eligible_limit !== null && out.eligible_limit > out.cap;
     const rw = await gateway.rewards(customerId);
     out.spins = rw.spins_available;
     out.reward = rw.reward;
@@ -287,6 +289,14 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
     if (method === 'GET' && sub === '/history') {
       const v = await view(cid, mobile);
       return json(200, { history: v.history });
+    }
+
+    // The customer asks for the higher limit they have earned. It never rises on its own.
+    if (method === 'POST' && sub === '/limit/increase') {
+      const r = await gateway.requestLimitIncrease(cid);
+      if (r.status === 409) return fail(409, 'no_increase', 'A higher limit is not available right now.');
+      if (r.status !== 200) return fail(502, 'try_later', 'Something went wrong on our side. Please try again in a little while.');
+      return json(200, { limit: r.body.limit });
     }
 
     if (method === 'GET' && sub === '/wheel') {

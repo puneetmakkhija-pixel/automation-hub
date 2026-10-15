@@ -2,6 +2,7 @@
 // lender's compliance team before real customers see it, especially the permission, key-fact and decline texts.
 export const STRINGS = {
   en: {
+    askLimit: 'You qualify for up to {amount}. Ask for the higher limit only if you want it.', askLimitBtn: 'Ask for a higher limit', limitRaised: 'Your limit is now {amount}.',
     welcomeSub: 'You can borrow up to {cap}.', yourDetails: 'Your details', stillCorrect: 'Still correct? Change them if not.', seeBill: 'See my bill', changeDetails: 'Change my details',
     sumSalary: 'Monthly salary', sumEmployer: 'Employer', sumMonths: 'Months at this job', sumHome: 'Home', monthsUnit: '{n} months',
     refreshTitle: 'A quick check first', refreshSub: 'We only ask for what is out of date.', updateContinue: 'Update and continue',
@@ -97,6 +98,7 @@ export const STRINGS = {
     payTitle: '{amount} चुकाएँ', paySub: 'आप अभी पूरी राशि चुकाते हैं। शुल्क या देरी का शुल्क इसमें शामिल है।', payNow: '{amount} चुकाएँ', payDemo: 'डेमो: यह भुगतान का नमूना है।',
     repaidTitle: 'लोन चुका दिया गया। धन्यवाद।', repaidSub: 'समय पर चुकाने से अगली बार आपकी सीमा बढ़ सकती है।', borrowAgain: 'फिर उधार लें', done: 'हो गया',
     histTitle: 'आपके लोन', noLoans: 'अभी कोई लोन नहीं।', st_closed: 'चुकाया गया', st_written_off: 'बंद',
+    askLimit: 'आप {amount} तक के पात्र हैं। ऊँची सीमा तभी माँगें जब आपको चाहिए।', askLimitBtn: 'ऊँची सीमा माँगें', limitRaised: 'आपकी सीमा अब {amount} है।',
     permTitle: 'आपकी अनुमतियाँ', permSub: 'आप कभी भी अनुमति वापस ले सकते हैं। इससे हम आपको नया लोन नहीं दे पाएँगे।', withdraw: 'वापस लें', none: 'कोई अनुमति दर्ज नहीं है।',
     p_kyc: 'मेरी पहचान जाँचें', p_credit_bureau: 'मेरी क्रेडिट रिपोर्ट देखें', p_terms: 'गोपनीयता सूचना और शर्तें', p_communication: 'हमारी ओर से संदेश', p_data_sharing: 'साझेदारों के साथ डेटा साझा करें', p_bank_data: 'मेरा बैंक स्टेटमेंट देखें',
     e_signed_out: 'कृपया फिर से साइन इन करें।', e_generic: 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।', e_check: 'कृपया चिह्नित फ़ील्ड जाँचें।',

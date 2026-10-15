@@ -11,9 +11,9 @@ export {
   sendAgreement, recordAgreementSigned, failAgreement, disburseLoan, completeDisbursement, resolveShares, dueDateFor, reconcilePendingPayouts,
 } from './originate.js';
 export {
-  recordPayment, accruePenalty, rollover, writeOff, runDailyServicing, auditOpenLoans, getLoanSummary, breakdown, outstandingOf, agingBucket,
+  recordPayment, coolingOffQuote, requestCoolingOffExit, coolingOffWindow, coolingOffDaysOf, COOLING_OFF_DAYS, accruePenalty, rollover, writeOff, runDailyServicing, auditOpenLoans, getLoanSummary, breakdown, outstandingOf, agingBucket,
 } from './servicing.js';
-export { nextLimit, onLoanClosed, blockCustomer, repeatEligibility, LADDER } from './limits.js';
+export { nextLimit, onLoanClosed, blockCustomer, repeatEligibility, requestLimitIncrease, LADDER } from './limits.js';
 export { createWebhookHandler, verifySignature } from './webhooks.js';
 export { istToday, addDays, daysBetween, nextSalaryDate, splitAmount, round2 } from './dates.js';
 export * as contracts from './contracts.js';
@@ -31,3 +31,4 @@ export {
 export {
   WHEEL, MIN_REPAID_LOANS, REWARD_VALID_DAYS, wheelOdds, spinsAvailable, getRewardState, spinWheel, applyReward, consumeReward,
 } from './rewards.js';
+export { lenderProfile, buildKfs } from './kfs.js';

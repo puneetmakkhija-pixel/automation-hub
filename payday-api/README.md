@@ -13,6 +13,7 @@ The service refuses to start without the Supabase variables, and without some wa
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Database. Service role is required: the `payday` tables have row-level security and no policies. |
 | `PAYDAY_API_KEY` | Bootstrap admin key, sent as `x-api-key`. Optional once an admin client exists; unset it then. Without it, only per-client keys work. |
 | `PAYDAY_PARTNER_APPS_PER_DAY` | Applications a partner key may open per customer in 24 hours (default 3; each triggers paid vendor pulls). Over the limit answers 429 `TOO_MANY_APPLICATIONS`. `0` switches it off. Ops and admin are not limited. |
+| `LENDER_NAME`, `LENDER_REGISTRATION`, `REGISTERED_ADDRESS`, `SUPPORT_EMAIL`, `SUPPORT_PHONE`, `GRIEVANCE_OFFICER_NAME`, `GRIEVANCE_OFFICER_EMAIL`, `GRIEVANCE_OFFICER_PHONE`, `LSP_NAME` | Who the lender (the NBFC) is, served by `GET /v1/lender` and printed in the key facts statement. Unset ones are listed in `missing` and the statement says `complete: false`; nothing is invented. `LSP_NAME` defaults to `BuddyLoan`. |
 | `PAN_PEPPER` | Secret for hashing PAN. Without it, sending a PAN is refused (503). |
 | `VENDOR_KYC`, `VENDOR_BUREAU`, `VENDOR_BANK_STATEMENT`, `VENDOR_ESIGN`, `VENDOR_PAYOUT`, `VENDOR_COLLECT` | Vendor per slot (default `mock`). |
 | each vendor's own variables | e.g. base URL, key, webhook secret. Named in its spec file. |
@@ -35,7 +36,12 @@ All need `x-api-key`, except `/healthz` and webhooks (which are authenticated by
 | `POST /v1/loans/:id/rollover` | Extend a loan, if the product allows. |
 | `POST /v1/loans/:id/write-off` | Write off a loan 90+ days overdue. |
 | `GET /v1/loans/:id` | Status, outstanding, days overdue, aging bucket, schedule, ledger balance. |
-| `GET /v1/customers/:id/eligibility?product=CODE` | Eligible, repeat, limit, cycle. |
+| `GET /v1/customers/:id/eligibility?product=CODE` | Eligible, repeat, limit offered, `eligible_limit`, `can_request_increase`, cycle. Ops and admin. |
+| `GET /v1/customers/:id/limit?product=CODE` | The same limit view, open to partners. |
+| `POST /v1/customers/:id/limit-increase` | `{ product_code, amount? }`. The customer asks for the higher limit they have earned. The limit offered never rises on its own (RBI Digital Lending Directions, 2025). `409` if nothing higher is available. |
+| `GET /v1/lender` | Lender profile: name, registration, address, grievance officer, lending service provider. |
+| `GET /v1/applications/:id/kfs` | Key facts statement data for an application with an offer, with a sha256 fingerprint. Each one issued is written to the audit log. Layout to be confirmed by compliance against the RBI KFS circular of 15 Apr 2024. |
+| `POST /v1/loans/:id/cooling-off` | The borrower asks to exit inside the cooling-off window (default 1 day, product `cooling_off_days`). Returns what to pay: principal plus the fee for the days held. Nothing changes until that payment arrives inside the window, which cuts the fee and closes the loan. `GET /v1/loans/:id` shows `cooling_off`. |
 | `POST /v1/jobs/daily-servicing` | Penalty accrual and overdue marking, then an integrity audit (`integrityIssues` lists any loan whose schedule and ledger disagree). Run daily. |
 | `POST /v1/jobs/reconcile-payouts` | `{ older_than_minutes? }`. Settles payouts stuck pending by asking the payout vendor. Run every ~10 minutes. `409` if the vendor has no status check. |
 | `POST /v1/webhooks/:provider` | Vendor callbacks (e-sign, payout, payment). HMAC signature required. |
@@ -71,6 +77,9 @@ Run it again with `SUPABASE_URL=... SUPABASE_KEY=<service role key> node payday-
 Note: a written-off loan keeps its scheduled amount (still legally owed) while its ledger balance is zero, so `outstanding` and `ledger_balance` differ after a write-off by design.
 
 The schema is empty: add a `loan_product` row (and `lender` / `colending_arrangement` rows if co-lending) before the first application.
+
+## Migration 010 (RBI limit and cooling-off): draft
+`database/migrations/010_payday_rbi_limit_cooling_off.sql` adds `customer_limit.eligible_amount`, `loan.cooling_off_exit_at` and `loan_product.cooling_off_days`. It is additive. **Apply it before deploying code that reads these columns**, or limit updates at loan close and cooling-off requests fail against the live database.
 
 ## Go-live checklist
 1. Migrations are applied (see above). Expose the `payday` schema, then add a `loan_product` row and, if co-lending, `lender` and `colending_arrangement` rows.

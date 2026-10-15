@@ -16,6 +16,7 @@ import {
   recordConsents, revokeConsent, REQUIRED_CONSENTS, createApiClient, authenticate, createPartner, audit,
   createPolicyDraft, updatePolicyDraft, activatePolicy, loadActivePolicy, simulatePolicy, ROLES,
   WHEEL, wheelOdds, getRewardState, spinWheel, applyReward,
+  requestLimitIncrease, coolingOffQuote, requestCoolingOffExit, lenderProfile, buildKfs,
   BusinessRuleError, NotConfiguredError, VendorHttpError, ValidationError,
 } from '../payday-journey/index.js';
 
@@ -136,8 +137,28 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       const customer = await need(() => store.getCustomer(params[0]), 'customer');
       const product = await need(() => store.getProductByCode(query.product), 'product');
       const e = await repeatEligibility({ store, customer, product });
-      return json(200, { eligible: e.eligible, is_repeat: e.isRepeat ?? null, limit: e.limit ?? null, cycle_number: e.cycleNumber ?? null, reason: e.reason ?? null });
+      return json(200, { eligible: e.eligible, is_repeat: e.isRepeat ?? null, limit: e.limit ?? null, eligible_limit: e.eligibleLimit ?? null, can_request_increase: e.canRequestIncrease ?? false, cycle_number: e.cycleNumber ?? null, reason: e.reason ?? null });
     }],
+
+    // The limit offered to a customer rises only when the customer asks (RBI Digital Lending Directions, 2025).
+    ['GET', /^\/v1\/customers\/([^/]+)\/limit$/, ALL, async ({ actor, params, query }) => {
+      const customer = await ownedCustomer(actor, params[0]);
+      const product = await need(() => store.getProductByCode(query.product), 'product');
+      const e = await repeatEligibility({ store, customer, product });
+      return json(200, { eligible: e.eligible, limit: e.limit ?? null, eligible_limit: e.eligibleLimit ?? null, can_request_increase: e.canRequestIncrease ?? false, reason: e.reason ?? null });
+    }],
+    ['POST', /^\/v1\/customers\/([^/]+)\/limit-increase$/, ALL, async ({ actor, params, body }) => {
+      const customer = await ownedCustomer(actor, params[0]);
+      const product = await need(() => store.getProductByCode(body.product_code), 'product');
+      if (body.amount !== undefined && !Number.isInteger(Number(body.amount))) return bad('amount must be a whole number');
+      await note(actor, 'limit.increase.request', 'customer', customer.id, { amount: body.amount ?? null });
+      const row = await requestLimitIncrease({ store, customer, product, requestedAmount: body.amount ?? null });
+      await note(actor, 'limit.increase.granted', 'customer', customer.id, { limit: Number(row.limit_amount) });
+      return json(200, { limit: Number(row.limit_amount), eligible_limit: Number(row.eligible_amount ?? row.limit_amount) });
+    }],
+
+    // Who the lender is, for the app, the website and the key facts statement.
+    ['GET', /^\/v1\/lender$/, ALL, async () => json(200, lenderProfile(env))],
 
     // ------------------------------------------------------------ applications
     ['POST', /^\/v1\/applications$/, ALL, async ({ actor, body }) => {
@@ -251,12 +272,32 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       return json(200, { written_off: r.writtenOff });
     }],
 
+    // The key facts statement for an application that has an offer. Each one handed out is logged with its fingerprint.
+    ['GET', /^\/v1\/applications\/([^/]+)\/kfs$/, ALL, async ({ actor, params }) => {
+      const application = await ownedApplication(actor, params[0]);
+      if (!application.approved_amount) return json(409, { error: 'there is no offer yet', code: 'NO_OFFER' });
+      const product = await need(() => store.getProduct(application.product_id), 'product');
+      const kfs = buildKfs({ lender: lenderProfile(env), product, application });
+      await note(actor, 'kfs.issued', 'application', application.id, { sha256: kfs.sha256, complete: kfs.complete });
+      return json(200, kfs);
+    }],
+
+    // Cooling-off: the borrower exits by repaying the principal and the fee for the days held. This records the request and
+    // returns what to pay; the fee is cut when that payment arrives inside the window.
+    ['POST', /^\/v1\/loans\/([^/]+)\/cooling-off$/, ALL, async ({ actor, params }) => {
+      const loan = await ownedLoan(actor, params[0]);
+      const product = await store.getProduct(loan.product_id);
+      await note(actor, 'loan.cooling-off.request', 'loan', loan.id, {});
+      return json(200, await requestCoolingOffExit({ store, loan, product }));
+    }],
+
     ['GET', /^\/v1\/loans\/([^/]+)$/, ALL, async ({ actor, params }) => {
       await ownedLoan(actor, params[0]);
       const s = await getLoanSummary({ store, loanId: params[0] });
       const view = {
         loan_id: s.loan.id, status: s.loan.status, principal: s.loan.principal, due_date: s.loan.due_date, apr_pct: s.loan.apr_pct ?? null,
         outstanding: s.outstanding, days_overdue: s.daysOverdue,
+        cooling_off: await coolingOffQuote({ store, loan: s.loan, product: await store.getProduct(s.loan.product_id) }),
         schedule: s.schedule.map((r) => ({ installment_no: r.installment_no, due_date: r.due_date, principal_due: r.principal_due, fee_due: r.fee_due, penalty_due: r.penalty_due, paid_amount: r.paid_amount, status: r.status })),
       };
       if (actor.role === 'partner') return json(200, view);
