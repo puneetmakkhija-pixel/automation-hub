@@ -1,5 +1,6 @@
 -- 011_payday_idempotency_keys.sql
--- Idempotency keys for partner POST calls. DRAFT: not applied to any database yet. Run after 003-010.
+-- Idempotency keys for partner POST calls. Applied to the smecircle Supabase project (ymdkcaedwnnhszhzirli) on 2026-10-16 as migration
+-- "payday_idempotency_keys". Run after 003-010. Safe to re-run: every statement is idempotent.
 -- A partner may send an Idempotency-Key header on calls that create something (an application, a payment link, a limit
 -- increase). The first call claims the key and its answer is stored; a retry with the same key and the same request gets
 -- the stored answer instead of doing the work twice. The same key with a different request is refused.

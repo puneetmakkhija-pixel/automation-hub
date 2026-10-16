@@ -84,8 +84,8 @@ The schema is empty: add a `loan_product` row (and `lender` / `colending_arrange
 - `Idempotency-Key` header on `POST /v1/applications`, `/v1/loans/:id/collect` and `/v1/customers/:id/limit-increase` (migration 011).
 - `PAYDAY_SANDBOX=1` makes this a sandbox: `POST /v1/sandbox/applications/:id/sign` and `POST /v1/sandbox/loans/:id/pay` stand in for the e-sign and payment vendors, and a partner key may start payout. Never set it next to real vendors.
 
-## Migration 011 (idempotency keys): draft
-`database/migrations/011_payday_idempotency_keys.sql` adds `payday.idempotency_key`. Additive. **Apply it before deploying**, or a call that sends an `Idempotency-Key` fails against the live database. Old rows can be deleted after a day.
+## Migration 011 (idempotency keys): applied
+`database/migrations/011_payday_idempotency_keys.sql` adds `payday.idempotency_key`. Additive, applied to the live project on 2026-10-16. Apply it before deploying code that reads it, or a call that sends an `Idempotency-Key` fails. Old rows can be deleted after a day.
 
 ## Migration 010 (RBI limit and cooling-off): applied
 `database/migrations/010_payday_rbi_limit_cooling_off.sql` adds `customer_limit.eligible_amount`, `loan.cooling_off_exit_at` and `loan_product.cooling_off_days`. It is additive and was applied to the live project on 2026-10-15. Apply it before deploying code that reads these columns, or limit updates at loan close and cooling-off requests fail.
