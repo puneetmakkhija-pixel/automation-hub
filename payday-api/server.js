@@ -6,6 +6,7 @@ import http from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { createApp } from './app.js';
 import { createRegistry, supabaseStore } from '../payday-journey/index.js';
+import { createSandbox } from './sandbox.js';
 
 const MAX_BODY = 1_000_000; // 1 MB
 
@@ -56,6 +57,14 @@ export async function adminAccessProblem({ store, env }) {
 }
 
 async function main(env = process.env) {
+  if (env.PAYDAY_SANDBOX === '1') {
+    let sandbox;
+    try { sandbox = await createSandbox(env); } catch (e) { console.error(`payday-api: ${e.message}`); process.exit(1); }
+    const app = createApp({ store: sandbox.store, registry: sandbox.registry, env, log: (l) => console.log(l) });
+    const port = Number(env.PORT) || 3000;
+    makeHttpServer(app).listen(port, () => console.log(`payday-api SANDBOX listening on ${port}; in-memory, mock vendors, resets on restart`));
+    return;
+  }
   const missing = ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'].filter((k) => !env[k]);
   if (missing.length) {
     console.error(`payday-api: missing env ${missing.join(', ')}`);
