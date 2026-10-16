@@ -160,3 +160,42 @@ test('limit event: it is tied to the customer, and a cooling-off exit earns no h
   const lim = (await p.call('GET', '/v1/events')).body.events.find((e) => e.type === 'limit.increase_granted');
   assert.deepEqual([lim.data.customer_id, lim.data.limit, lim.data.application_id], [normal, up.body.limit, undefined]);
 });
+
+test('sandbox boot: in memory with mock vendors, and it refuses to sit next to a real database or vendor', async () => {
+  const { sandboxProblem, createSandbox } = await import('./sandbox.js');
+  assert.match(sandboxProblem({ PAYDAY_API_KEY: 'k', SUPABASE_URL: 'https://x.supabase.co' }), /never uses a real database/);
+  assert.match(sandboxProblem({ PAYDAY_API_KEY: 'k', VENDOR_KYC: 'digitap' }), /never uses a real vendor: unset VENDOR_KYC/);
+  assert.match(sandboxProblem({}), /PAYDAY_API_KEY/);
+  assert.equal(sandboxProblem({ PAYDAY_API_KEY: 'k', VENDOR_KYC: 'mock' }), null, 'saying mock is fine');
+  const env = { PAYDAY_API_KEY: 'k', PAYDAY_SANDBOX: '1', PAN_PEPPER: 'p', PARTNER_BUDDYLOAN_SECRET: 's', NODE_ENV: 'production' };
+  const { store, registry } = await createSandbox(env);
+  const app = createApp({ store, registry, env });
+  const as = (key) => (method, path, body) => app.handle({ method, path, headers: { 'x-api-key': key }, rawBody: body === undefined ? '' : JSON.stringify(body) });
+  const admin = as('k');
+  const pr = await admin('POST', '/v1/partners', { name: 'BuddyLoan', callback_url: 'https://sandbox-events.invalid/payday', callback_secret_env: 'PARTNER_BUDDYLOAN_SECRET' });
+  const key = (await admin('POST', '/v1/clients', { name: 'BuddyLoan sandbox', role: 'partner', partner_id: pr.body.id })).body.api_key;
+  const call = as(key);
+  const customerId = (await call('POST', '/v1/customers', { mobile: '9812345673', salary_day: 1 })).body.customer_id;
+  await call('POST', `/v1/customers/${customerId}/consents`, { purposes: ['kyc', 'credit_bureau', 'terms'], text_version: 'v1', channel: 'app' });
+  const a = await call('POST', '/v1/applications', { customer_id: customerId, product_code: 'PAYDAY_30', requested_amount: 10000, intake });
+  assert.equal(a.body.decision, 'approve', 'a ready-made product and mock vendors: a developer can apply straight away');
+  await call('POST', `/v1/applications/${a.body.application_id}/agreement`);
+  await call('POST', `/v1/sandbox/applications/${a.body.application_id}/sign`);
+  const d = await call('POST', `/v1/applications/${a.body.application_id}/disburse`, { account });
+  assert.equal(d.body.status, 'success');
+});
+
+test('sandbox seed: a partner key from the environment works after every restart, and a weak one is refused', async () => {
+  const { createSandbox } = await import('./sandbox.js');
+  const key = 'pk_sandbox_0123456789abcdef0123456789abcdef';
+  const env = { PAYDAY_API_KEY: 'k', PAYDAY_SANDBOX: '1', PARTNER_SANDBOX_SECRET: 's', SANDBOX_PARTNER_KEY: key };
+  for (let boot = 0; boot < 2; boot += 1) {
+    const { store, registry } = await createSandbox(env);
+    const app = createApp({ store, registry, env });
+    const r = await app.handle({ method: 'GET', path: '/v1/lender', headers: { 'x-api-key': key }, rawBody: '' });
+    assert.equal(r.status, 200, `boot ${boot + 1}`);
+    const denied = await app.handle({ method: 'GET', path: '/v1/policies', headers: { 'x-api-key': key }, rawBody: '' });
+    assert.equal(denied.status, 403, 'it is a partner key, not an admin key');
+  }
+  await assert.rejects(createSandbox({ ...env, SANDBOX_PARTNER_KEY: 'short' }), /at least 32 characters/);
+});

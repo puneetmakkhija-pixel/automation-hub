@@ -11,7 +11,7 @@ Reference: `GET /openapi.json` (OpenAPI 3.1, no key needed) and `docs/partner-ap
 ## 1. Keys and environments
 
 - Send your key in the `x-api-key` header. Keys are issued to a partner, and a partner key sees only its own customers, applications and loans. Anything else answers `404`, not `403`.
-- **Sandbox** is a separate deployment on mock vendors (`PAYDAY_SANDBOX=1`). You can finish a whole loan alone there (section 5). Never run the sandbox next to real vendors.
+- **Sandbox** is a separate deployment on mock vendors and an in-memory store. It resets whenever it restarts, so do not keep anything in it. A product `PAYDAY_30` is ready, and you can finish a whole loan alone (section 5). Your sandbox key and URL come from the NBFC.
 - **Production** uses real vendors and a real key. Ask the NBFC for both.
 
 ## 2. The loan journey, call by call
