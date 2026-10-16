@@ -74,7 +74,10 @@ export async function accruePenalty({ store, loan, product, asOf = istToday() })
       added = round2(added + delta);
     }
   }
-  if (overdue && loan.status === 'active') await store.patchLoan(loan.id, { status: 'overdue' });
+  if (overdue && loan.status === 'active') {
+    await store.patchLoan(loan.id, { status: 'overdue' });
+    await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.overdue', data: { loan_id: loan.id, due_date: loan.due_date } });
+  }
   return { added, overdue };
 }
 
@@ -109,7 +112,10 @@ export async function requestCoolingOffExit({ store, loan: loanRef, product, asO
   if (!loan || !loan.disbursed_at || !OPEN.includes(loan.status)) throw new BusinessRuleError('loan is not open');
   const q = await coolingOffQuote({ store, loan, product, asOf });
   if (!q.open) throw new BusinessRuleError(q.ends ? `the cooling-off period ended on ${q.ends}` : 'the cooling-off exit is not available for this loan');
-  if (!loan.cooling_off_exit_at) await store.patchLoan(loan.id, { cooling_off_exit_at: new Date().toISOString() });
+  if (!loan.cooling_off_exit_at) {
+    await store.patchLoan(loan.id, { cooling_off_exit_at: new Date().toISOString() });
+    await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.cooling_off_requested', data: { loan_id: loan.id, amount_due: q.amount_due, ends: q.ends } });
+  }
   return { ...q, requested: true };
 }
 
@@ -164,6 +170,10 @@ export async function recordPayment({ store, loan: loanRef, product, amount, mod
 
   const after = await store.getSchedule(loan.id);
   const outstanding = outstandingOf(after);
+  await emitPartnerEvent({
+    store, applicationId: loan.application_id, type: 'payment.received', key: payment.id,
+    data: { loan_id: loan.id, payment_id: payment.id, amount: Number(amount), applied, outstanding, closed: outstanding <= EPS },
+  });
   let closed = false;
   if (outstanding <= EPS) {
     loan = await store.patchLoan(loan.id, { status: 'closed', closed_at: paidAt });
@@ -200,6 +210,7 @@ export async function rollover({ store, loan: loanRef, product, asOf = istToday(
   await store.patchSchedule(row.id, { principal_due: principalLeft, fee_due: newFee, penalty_due: 0, paid_amount: 0, due_date: newDue, status: 'due' });
   const updated = await store.patchLoan(loan.id, { due_date: newDue, rollover_count: loan.rollover_count + 1, status: 'active' });
   await ledger(store, loan.id, 'fee', 'debit', newFee, 'loan', loan.id);
+  await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.rolled_over', key: String(updated.rollover_count), data: { loan_id: loan.id, due_date: newDue, rollover_count: updated.rollover_count } });
   return { loan: updated, principalLeft, newFee, newDue };
 }
 
@@ -214,6 +225,7 @@ export async function writeOff({ store, loan: loanRef, asOf = istToday(), reason
   for (const r of rows) await store.patchSchedule(r.id, { status: 'written_off' });
   const updated = await store.patchLoan(loan.id, { status: 'written_off', closed_at: new Date().toISOString() });
   await blockCustomer({ store, loan: updated, reason });
+  await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'loan.written_off', data: { loan_id: loan.id } });
   return { loan: updated, writtenOff: amount };
 }
 

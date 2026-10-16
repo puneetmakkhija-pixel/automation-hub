@@ -78,6 +78,15 @@ Note: a written-off loan keeps its scheduled amount (still legally owed) while i
 
 The schema is empty: add a `loan_product` row (and `lender` / `colending_arrangement` rows if co-lending) before the first application.
 
+## For partners: the spec, the guide and the events
+- `GET /openapi.json` serves the API as OpenAPI 3.1 (no key). `docs/partner-api.html` is the same, readable; rebuild it with `node payday-api/docs/build-docs.mjs`. `docs/PARTNER_GUIDE.md` explains the journey call by call. `openapi.js` is the source, and a test fails if a documented call is not routed.
+- Events we send (`GET /v1/event-types`): `application.decided`, `agreement.signed`, `loan.disbursed`, `payout.failed`, `payment.received`, `loan.overdue`, `loan.rolled_over`, `loan.cooling_off_requested`, `loan.closed`, `loan.written_off`, `limit.increase_granted`. A partner reads its own back with `GET /v1/events?since=&status=` and can resend one with `POST /v1/events/:id/redeliver`.
+- `Idempotency-Key` header on `POST /v1/applications`, `/v1/loans/:id/collect` and `/v1/customers/:id/limit-increase` (migration 011).
+- `PAYDAY_SANDBOX=1` makes this a sandbox: `POST /v1/sandbox/applications/:id/sign` and `POST /v1/sandbox/loans/:id/pay` stand in for the e-sign and payment vendors, and a partner key may start payout. Never set it next to real vendors.
+
+## Migration 011 (idempotency keys): draft
+`database/migrations/011_payday_idempotency_keys.sql` adds `payday.idempotency_key`. Additive. **Apply it before deploying**, or a call that sends an `Idempotency-Key` fails against the live database. Old rows can be deleted after a day.
+
 ## Migration 010 (RBI limit and cooling-off): applied
 `database/migrations/010_payday_rbi_limit_cooling_off.sql` adds `customer_limit.eligible_amount`, `loan.cooling_off_exit_at` and `loan_product.cooling_off_days`. It is additive and was applied to the live project on 2026-10-15. Apply it before deploying code that reads these columns, or limit updates at loan close and cooling-off requests fail.
 

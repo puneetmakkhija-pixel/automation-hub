@@ -308,7 +308,7 @@ test('APR reaches the e-sign request and the loan; a partner receives the milest
   await recordPayment({ store, loan: d.loan, product, amount: 10800, mode: 'upi', utr: 'P1', paidAt: '2026-01-10T10:00:00+05:30' });
 
   const types = store.db.partnerEvents.map((e) => e.event_type);
-  assert.deepEqual(types, ['application.decided', 'agreement.signed', 'loan.disbursed', 'loan.closed']);
+  assert.deepEqual(types, ['application.decided', 'agreement.signed', 'loan.disbursed', 'payment.received', 'loan.closed']);
   const decided = store.db.partnerEvents[0].payload;
   assert.equal(decided.decision, 'approve');
   assert.deepEqual([decided.offer.amount, decided.offer.repayment, decided.offer.apr_simple_pct], [10000, 10800, 97.33]);

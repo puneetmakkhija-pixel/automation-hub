@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PaydayOS partner API</title>
+<style>
+:root{--bg:#f5f6f4;--surface:#fff;--fg:#1b2024;--muted:#5d666d;--line:#d9ddd9;--accent:#1f4e79;--soft:#e3ecf4}
+@media (prefers-color-scheme:dark){:root{--bg:#13181c;--surface:#1b2126;--fg:#e6eaec;--muted:#9aa4ab;--line:#2f373d;--accent:#8db8e0;--soft:#1e2d3a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif;padding:24px 16px 60px}
+.wrap{max-width:900px;margin:0 auto}h1{font-size:30px;margin:0 0 6px}h2{margin:28px 0 8px;font-size:20px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.lead{color:var(--muted)}details{background:var(--surface);border:1px solid var(--line);border-radius:8px;margin:8px 0}
+summary{padding:10px 14px;cursor:pointer;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}.body{padding:0 16px 14px}
+.m{font:600 11px ui-monospace,monospace;padding:3px 7px;border-radius:4px;background:var(--soft);color:var(--accent)}.m.POST{background:#dff0e6;color:#1d6b43}
+.s{color:var(--muted)}code{font:13px ui-monospace,monospace;background:var(--soft);padding:1px 5px;border-radius:3px;overflow-wrap:anywhere}
+pre{background:var(--soft);padding:10px 12px;border-radius:6px;overflow-x:auto;font:12.5px/1.5 ui-monospace,monospace;margin:6px 0}
+h4{margin:12px 0 2px;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+</style></head><body><div class="wrap">
+<h1>PaydayOS partner API</h1>
+<p class="lead">The NBFC's loan system as a back end for a partner app. The partner shows the screens. PaydayOS holds the loan record, pays the borrower directly and collects repayments directly. Events we send are listed under webhooks and signed: <code>x-payday-signature</code> is <code>sha256=</code> plus the HMAC-SHA256 of <code>{x-payday-timestamp}.{raw body}</code> with your shared secret.</p>
+<p>Send your key as <code>x-api-key</code>. The same document is served at <code>GET /openapi.json</code>. The step-by-step guide is <code>docs/PARTNER_GUIDE.md</code>.</p>
+<h2>Lender</h2><details id="GET/v1/lender"><summary><span class="m GET">GET</span> <code>/v1/lender</code> <span class="s">Who the lender is</span></summary>
+    <div class="body"><p>The NBFC name, registration, address and grievance officer, and the lending service provider (BuddyLoan). Show these in the app and on the website. <code>complete: false</code> means a lender detail is not set yet.<br><br>Who may call it: partner, ops, admin.</p>
+    <h4>Response 200</h4><pre>{
+  "name": "Example Finance Ltd",
+  "registration": "N-00.00000",
+  "address": "1 Road, City",
+  "support_email": "help@example.com",
+  "support_phone": "1800...",
+  "grievance_officer": {
+    "name": "A. Officer",
+    "email": "g@example.com",
+    "phone": "..."
+  },
+  "lending_service_provider": {
+    "name": "BuddyLoan"
+  },
+  "complete": true,
+  "missing": []
+}</pre></div></details><h2>Customers</h2><details id="POST/v1/customers"><summary><span class="m POST">POST</span> <code>/v1/customers</code> <span class="s">Create or update a customer by mobile number</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p>
+    <h4>Request</h4><pre>{
+  "mobile": "9876543210",
+  "full_name": "Asha Verma",
+  "salary_day": 1
+}</pre><h4>Response 200</h4><pre>{
+  "customer_id": "c0a8..."
+}</pre></div></details><details id="POST/v1/customers/{customer_id}/consents"><summary><span class="m POST">POST</span> <code>/v1/customers/{customer_id}/consents</code> <span class="s">Record the borrower's permission</span></summary>
+    <div class="body"><p>Record each permission with the text version the borrower saw and the channel. No identity or credit check runs until <code>kyc</code>, <code>credit_bureau</code> and <code>terms</code> are on record.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>customer_id</code> (path)</p>
+    <h4>Request</h4><pre>{
+  "purposes": [
+    "kyc",
+    "credit_bureau",
+    "terms"
+  ],
+  "text_version": "v1",
+  "channel": "app"
+}</pre><h4>Response 200</h4><pre>{
+  "recorded": [
+    "kyc",
+    "credit_bureau",
+    "terms"
+  ]
+}</pre></div></details><details id="POST/v1/customers/{customer_id}/consents/revoke"><summary><span class="m POST">POST</span> <code>/v1/customers/{customer_id}/consents/revoke</code> <span class="s">Withdraw a permission</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>customer_id</code> (path)</p>
+    <h4>Request</h4><pre>{
+  "purpose": "credit_bureau"
+}</pre><h4>Response 200</h4><pre>{
+  "revoked": "credit_bureau"
+}</pre></div></details><details id="GET/v1/customers/{customer_id}/limit"><summary><span class="m GET">GET</span> <code>/v1/customers/{customer_id}/limit</code> <span class="s">The limit offered, and what the customer qualifies for</span></summary>
+    <div class="body"><p>Query <code>product</code> (the product code). The limit offered never rises on its own. When <code>can_request_increase</code> is true, show an "ask for a higher limit" option.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>customer_id</code> (path), <code>product</code> (query)</p>
+    <h4>Response 200</h4><pre>{
+  "eligible": true,
+  "limit": 10000,
+  "eligible_limit": 15000,
+  "can_request_increase": true,
+  "reason": null
+}</pre></div></details><details id="POST/v1/customers/{customer_id}/limit-increase"><summary><span class="m POST">POST</span> <code>/v1/customers/{customer_id}/limit-increase</code> <span class="s">The borrower asks for the higher limit they have earned</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>customer_id</code> (path), <code>Idempotency-Key</code> (header)</p>
+    <h4>Request</h4><pre>{
+  "product_code": "PAYDAY_30",
+  "amount": 15000
+}</pre><h4>Response 200</h4><pre>{
+  "limit": 15000,
+  "eligible_limit": 15000
+}</pre></div></details><details id="GET/v1/customers/{customer_id}/rewards"><summary><span class="m GET">GET</span> <code>/v1/customers/{customer_id}/rewards</code> <span class="s">Spins and fee waivers the customer holds</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>customer_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "spins_available": 1,
+  "reward": null
+}</pre></div></details><details id="POST/v1/customers/{customer_id}/wheel/spin"><summary><span class="m POST">POST</span> <code>/v1/customers/{customer_id}/wheel/spin</code> <span class="s">Spin the fee-waiver wheel</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>customer_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "slice": 3,
+  "waiver_pct": 20,
+  "expires_at": "2026-11-15T00:00:00Z"
+}</pre></div></details><h2>Applications</h2><details id="POST/v1/applications"><summary><span class="m POST">POST</span> <code>/v1/applications</code> <span class="s">Apply: run the checks and get a decision</span></summary>
+    <div class="body"><p>Runs the identity check, pulls the credit report and decides. A partner key may open at most 3 applications per customer in 24 hours (429 <code>TOO_MANY_APPLICATIONS</code>). Send an <code>Idempotency-Key</code> so a retry never opens a second application.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>Idempotency-Key</code> (header)</p>
+    <h4>Request</h4><pre>{
+  "customer_id": "c0a8...",
+  "product_code": "PAYDAY_30",
+  "requested_amount": 10000,
+  "intake": {
+    "declaredSalary": 40000,
+    "tenureMonths": 24,
+    "employerCategory": "listed_large",
+    "residence": "rented_long",
+    "purposeClarity": "generic",
+    "referencesVerified": "none"
+  },
+  "pan": "ABCDE1234F"
+}</pre><h4>Response 200</h4><pre>{
+  "application_id": "a1b2...",
+  "decision": "approve",
+  "offer": {
+    "amount": 10000,
+    "fee": 800,
+    "repayment": 10800,
+    "tenure_days": 30,
+    "aprEffectivePct": 155.07
+  }
+}</pre></div></details><details id="GET/v1/applications/{application_id}"><summary><span class="m GET">GET</span> <code>/v1/applications/{application_id}</code> <span class="s">Application status</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>application_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "application_id": "a1b2...",
+  "status": "approved",
+  "requested_amount": 10000,
+  "approved_amount": 10000,
+  "loan_id": null
+}</pre></div></details><details id="GET/v1/applications/{application_id}/kfs"><summary><span class="m GET">GET</span> <code>/v1/applications/{application_id}/kfs</code> <span class="s">The key facts statement for the offer</span></summary>
+    <div class="body"><p>Show this to the borrower before they accept. Includes the APR, fees, cooling-off terms and the grievance officer. Each statement issued is logged with its <code>sha256</code>. <code>complete: false</code> means a lender detail is missing: do not show it to customers yet.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>application_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "version": 1,
+  "complete": true,
+  "lender": {
+    "name": "Example Finance Ltd"
+  },
+  "part1": {
+    "sanctioned_amount": 10000,
+    "total_to_repay": 10800,
+    "apr_pct": 155.07
+  },
+  "part2": {
+    "cooling_off": {
+      "days": 1
+    }
+  },
+  "sha256": "9f2c..."
+}</pre></div></details><details id="POST/v1/applications/{application_id}/agreement"><summary><span class="m POST">POST</span> <code>/v1/applications/{application_id}/agreement</code> <span class="s">Send the agreement for e-signing</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>application_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "esign_status": "sent",
+  "document_url": "https://...",
+  "reused": false
+}</pre></div></details><details id="POST/v1/applications/{application_id}/disburse"><summary><span class="m POST">POST</span> <code>/v1/applications/{application_id}/disburse</code> <span class="s">Pay the loan out</span></summary>
+    <div class="body"><p>The lender's act. The money goes only to the bank account sent here, which must be in the borrower's own name. Safe to repeat: a second call answers <code>already_disbursed</code>.<br><br>Who may call it: ops, admin (partner in the sandbox).</p><p><b>Parameters:</b> <code>application_id</code> (path)</p>
+    <h4>Request</h4><pre>{
+  "account": {
+    "name": "Asha Verma",
+    "number": "123456789012",
+    "ifsc": "HDFC0000001"
+  }
+}</pre><h4>Response 200</h4><pre>{
+  "status": "success",
+  "loan_id": "l9f8..."
+}</pre></div></details><h2>Loans</h2><details id="GET/v1/loans/{loan_id}"><summary><span class="m GET">GET</span> <code>/v1/loans/{loan_id}</code> <span class="s">The loan: schedule, balance, cooling-off</span></summary>
+    <div class="body"><p>Call this whenever My Loans opens. Keep no copy of the ledger. <code>cooling_off.open</code> is true during the window and <code>amount_due</code> is what an exit costs today.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>loan_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "loan_id": "l9f8...",
+  "status": "active",
+  "principal": 10000,
+  "due_date": "2026-11-15",
+  "outstanding": 10800,
+  "days_overdue": 0,
+  "cooling_off": {
+    "open": true,
+    "amount_due": 10026.67
+  }
+}</pre></div></details><details id="POST/v1/loans/{loan_id}/collect"><summary><span class="m POST">POST</span> <code>/v1/loans/{loan_id}/collect</code> <span class="s">Create a repayment link</span></summary>
+    <div class="body"><p>The link pays straight into the lender's account. The money never passes through BuddyLoan. The payment is confirmed to us by the payment vendor, which then sends you <code>payment.received</code>.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>loan_id</code> (path), <code>Idempotency-Key</code> (header)</p>
+    <h4>Request</h4><pre>{
+  "amount": 10800
+}</pre><h4>Response 200</h4><pre>{
+  "provider_ref": "pay_123",
+  "status": "created",
+  "payment_url": "https://...",
+  "amount": 10800
+}</pre></div></details><details id="POST/v1/loans/{loan_id}/cooling-off"><summary><span class="m POST">POST</span> <code>/v1/loans/{loan_id}/cooling-off</code> <span class="s">The borrower asks to exit in the cooling-off window</span></summary>
+    <div class="body"><p>Returns what to pay: the principal plus the fee for the days held. Pay with a repayment link inside the window. 409 once the window has ended.<br><br>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>loan_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "open": true,
+  "ends": "2026-10-17",
+  "days_held": 1,
+  "principal": 10000,
+  "fee": 26.67,
+  "fee_reversed": 773.33,
+  "amount_due": 10026.67,
+  "requested": true
+}</pre></div></details><h2>Events</h2><details id="GET/v1/events"><summary><span class="m GET">GET</span> <code>/v1/events</code> <span class="s">Read your events back</span></summary>
+    <div class="body"><p>Everything we queued for you, oldest first. Use it to catch up after an outage: pass <code>since</code> (the <code>next_since</code> of your last read) and <code>status</code>.<br><br>Who may call it: partner (ops and admin add partner_id).</p>
+    <h4>Response 200</h4><pre>{
+  "events": [
+    {
+      "id": "e1...",
+      "event_id": "a1b2...:application.decided",
+      "type": "application.decided",
+      "status": "delivered",
+      "attempts": 1,
+      "data": {}
+    }
+  ],
+  "next_since": "2026-10-16T10:00:00Z"
+}</pre></div></details><details id="POST/v1/events/{event_id}/redeliver"><summary><span class="m POST">POST</span> <code>/v1/events/{event_id}/redeliver</code> <span class="s">Send an event again</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>event_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "queued": true
+}</pre></div></details><details id="GET/v1/event-types"><summary><span class="m GET">GET</span> <code>/v1/event-types</code> <span class="s">The list of event types</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p>
+    <h4>Response 200</h4><pre>{
+  "event_types": [
+    {
+      "type": "loan.closed",
+      "when": "...",
+      "data": [
+        "loan_id",
+        "reason"
+      ]
+    }
+  ]
+}</pre></div></details><h2>Sandbox</h2><details id="POST/v1/sandbox/applications/{application_id}/sign"><summary><span class="m POST">POST</span> <code>/v1/sandbox/applications/{application_id}/sign</code> <span class="s">Pretend the borrower signed</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>application_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "status": "signed"
+}</pre></div></details><details id="POST/v1/sandbox/loans/{loan_id}/pay"><summary><span class="m POST">POST</span> <code>/v1/sandbox/loans/{loan_id}/pay</code> <span class="s">Pretend the borrower paid in full</span></summary>
+    <div class="body"><p>Who may call it: partner, ops, admin.</p><p><b>Parameters:</b> <code>loan_id</code> (path)</p>
+    <h4>Response 200</h4><pre>{
+  "applied": 10800,
+  "closed": true
+}</pre></div></details>
+<h2>Events we send you</h2><p class="lead">Each is a signed <code>POST</code> to your callback URL. Answer any 2xx once saved. Events can arrive twice or out of order: use <code>event_id</code>, and call the read endpoints for the truth.</p><details><summary><code>application.decided</code> <span class="s">Underwriting finished. Tells the partner approve, refer or decline, and the offer if there is one.</span></summary><div class="body"><p>Underwriting finished. Tells the partner approve, refer or decline, and the offer if there is one.<br><br>Fields in <code>data</code>: decision, offer.</p><pre>{
+  "event_id": "a1b2...:application.decided",
+  "type": "application.decided",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "decision": "...",
+    "offer": "..."
+  }
+}</pre></div></details><details><summary><code>agreement.signed</code> <span class="s">The borrower signed the agreement.</span></summary><div class="body"><p>The borrower signed the agreement.<br><br>Fields in <code>data</code>: none beyond application_id.</p><pre>{
+  "event_id": "a1b2...:agreement.signed",
+  "type": "agreement.signed",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "..."
+  }
+}</pre></div></details><details><summary><code>loan.disbursed</code> <span class="s">The money was paid into the borrower's bank account and the loan started.</span></summary><div class="body"><p>The money was paid into the borrower's bank account and the loan started.<br><br>Fields in <code>data</code>: loan_id, amount, fee, due_date, apr_pct.</p><pre>{
+  "event_id": "a1b2...:loan.disbursed",
+  "type": "loan.disbursed",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "...",
+    "amount": "...",
+    "fee": "...",
+    "due_date": "...",
+    "apr_pct": "..."
+  }
+}</pre></div></details><details><summary><code>payout.failed</code> <span class="s">The bank payout failed. No loan was started. The partner can offer the borrower another account.</span></summary><div class="body"><p>The bank payout failed. No loan was started. The partner can offer the borrower another account.<br><br>Fields in <code>data</code>: reason.</p><pre>{
+  "event_id": "a1b2...:payout.failed",
+  "type": "payout.failed",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "reason": "..."
+  }
+}</pre></div></details><details><summary><code>payment.received</code> <span class="s">A repayment was confirmed. One event per payment.</span></summary><div class="body"><p>A repayment was confirmed. One event per payment.<br><br>Fields in <code>data</code>: loan_id, payment_id, amount, applied, outstanding, closed.</p><pre>{
+  "event_id": "a1b2...:payment.received",
+  "type": "payment.received",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "...",
+    "payment_id": "...",
+    "amount": "...",
+    "applied": "...",
+    "outstanding": "...",
+    "closed": "..."
+  }
+}</pre></div></details><details><summary><code>loan.overdue</code> <span class="s">The loan passed its due date unpaid. Sent once, when it first becomes overdue.</span></summary><div class="body"><p>The loan passed its due date unpaid. Sent once, when it first becomes overdue.<br><br>Fields in <code>data</code>: loan_id, due_date.</p><pre>{
+  "event_id": "a1b2...:loan.overdue",
+  "type": "loan.overdue",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "...",
+    "due_date": "..."
+  }
+}</pre></div></details><details><summary><code>loan.rolled_over</code> <span class="s">The loan was extended to a new due date.</span></summary><div class="body"><p>The loan was extended to a new due date.<br><br>Fields in <code>data</code>: loan_id, due_date, rollover_count.</p><pre>{
+  "event_id": "a1b2...:loan.rolled_over",
+  "type": "loan.rolled_over",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "...",
+    "due_date": "...",
+    "rollover_count": "..."
+  }
+}</pre></div></details><details><summary><code>loan.cooling_off_requested</code> <span class="s">The borrower asked to exit inside the cooling-off window.</span></summary><div class="body"><p>The borrower asked to exit inside the cooling-off window.<br><br>Fields in <code>data</code>: loan_id, amount_due, ends.</p><pre>{
+  "event_id": "a1b2...:loan.cooling_off_requested",
+  "type": "loan.cooling_off_requested",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "...",
+    "amount_due": "...",
+    "ends": "..."
+  }
+}</pre></div></details><details><summary><code>loan.closed</code> <span class="s">The loan is fully repaid. reason is repaid or cooling_off_exit.</span></summary><div class="body"><p>The loan is fully repaid. reason is repaid or cooling_off_exit.<br><br>Fields in <code>data</code>: loan_id, reason.</p><pre>{
+  "event_id": "a1b2...:loan.closed",
+  "type": "loan.closed",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "...",
+    "reason": "..."
+  }
+}</pre></div></details><details><summary><code>loan.written_off</code> <span class="s">The lender wrote the loan off.</span></summary><div class="body"><p>The lender wrote the loan off.<br><br>Fields in <code>data</code>: loan_id.</p><pre>{
+  "event_id": "a1b2...:loan.written_off",
+  "type": "loan.written_off",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "loan_id": "..."
+  }
+}</pre></div></details><details><summary><code>limit.increase_granted</code> <span class="s">The borrower asked for a higher limit and got it.</span></summary><div class="body"><p>The borrower asked for a higher limit and got it.<br><br>Fields in <code>data</code>: limit.</p><pre>{
+  "event_id": "a1b2...:limit.increase_granted",
+  "type": "limit.increase_granted",
+  "created_at": "2026-10-16T10:00:00Z",
+  "data": {
+    "application_id": "...",
+    "limit": "..."
+  }
+}</pre></div></details>
+</div></body></html>

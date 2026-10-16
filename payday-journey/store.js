@@ -22,7 +22,7 @@ export function memoryStore(seed = {}) {
     colending: [...(seed.colending || [])],
     lenders: seed.lenders || [{ id: 'lender-own-book', name: 'OWN_BOOK', lender_type: 'own_book' }],
     kycChecks: [], enrichment: [], scorecards: [], applicationPatches: [],
-    partners: [], apiClients: [], audit: [], consents: [], policies: [], partnerEvents: [], rewards: [],
+    partners: [], apiClients: [], audit: [], consents: [], policies: [], partnerEvents: [], rewards: [], idempotency: [],
   };
   const find = (list, pred) => clone(list.find(pred) ?? null);
   const patch = (list, pred, p) => {
@@ -244,6 +244,23 @@ export function memoryStore(seed = {}) {
       return clone(t.partnerEvents.filter((e) => e.status === 'pending' && e.next_attempt_at <= nowIso).slice(0, limit));
     },
     async patchPartnerEvent(id, p) { return patch(t.partnerEvents, (e) => e.id === id, p); },
+    async getPartnerEvent(id) { return find(t.partnerEvents, (e) => e.id === id); },
+    // A partner reads its own outbox: to catch up after an outage, or to check what was sent.
+    async listPartnerEvents({ partnerId, status = null, since = null, limit = 100 }) {
+      return clone(t.partnerEvents
+        .filter((e) => (!partnerId || e.partner_id === partnerId) && (!status || e.status === status) && (!since || e.created_at > since))
+        .sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)).slice(0, limit));
+    },
+    // ---- idempotency keys: claim first, then complete. A second claim of the same key sees the first.
+    async claimIdempotencyKey({ clientKey, key, requestHash }) {
+      const existing = t.idempotency.find((r) => r.client_key === clientKey && r.idem_key === key);
+      if (existing) return { created: false, row: clone(existing) };
+      const row = withId({ client_key: clientKey, idem_key: key, request_hash: requestHash, status: 'in_progress', response_status: null, response_body: null });
+      t.idempotency.push(row);
+      return { created: true, row: clone(row) };
+    },
+    async completeIdempotencyKey(id, { status, body }) { return patch(t.idempotency, (r) => r.id === id, { status: 'done', response_status: status, response_body: body }); },
+    async releaseIdempotencyKey(id) { const i = t.idempotency.findIndex((r) => r.id === id); if (i >= 0) t.idempotency.splice(i, 1); },
     // ---- vendor webhooks
     async recordVendorEvent(ev) {
       const existing = t.events.find((e) => e.provider === ev.provider && e.event_id === ev.event_id);
@@ -408,6 +425,22 @@ export function supabaseStore(client) {
     insertPartnerEvent: (row) => insertOne('partner_event', row),
     listDuePartnerEvents: (nowIso, limit = 50) => run(from('partner_event').select('*').eq('status', 'pending').lte('next_attempt_at', nowIso).order('next_attempt_at').limit(limit), 'partner_event select'),
     patchPartnerEvent: (id, p) => patchBy('partner_event', 'id', id, p),
+    getPartnerEvent: (id) => getBy('partner_event', 'id', id),
+    listPartnerEvents({ partnerId, status = null, since = null, limit = 100 }) {
+      let q = from('partner_event').select('*');
+      if (partnerId) q = q.eq('partner_id', partnerId);
+      if (status) q = q.eq('status', status);
+      if (since) q = q.gt('created_at', since);
+      return run(q.order('created_at').limit(limit), 'partner_event select');
+    },
+    async claimIdempotencyKey({ clientKey, key, requestHash }) {
+      const { data, error } = await from('idempotency_key').insert({ client_key: clientKey, idem_key: key, request_hash: requestHash }).select().single();
+      if (!error) return { created: true, row: data };
+      if (error.code !== '23505') { const e = new Error(`payday.idempotency_key insert: ${error.message}`); e.code = error.code; throw e; }
+      return { created: false, row: await run(from('idempotency_key').select('*').eq('client_key', clientKey).eq('idem_key', key).single(), 'idempotency_key select') };
+    },
+    completeIdempotencyKey: (id, { status, body }) => patchBy('idempotency_key', 'id', id, { status: 'done', response_status: status, response_body: body }),
+    releaseIdempotencyKey: (id) => run(from('idempotency_key').delete().eq('id', id), 'idempotency_key delete'),
 
     async recordVendorEvent(ev) {
       const { error } = await from('vendor_event').insert(ev);
