@@ -152,7 +152,10 @@ export async function completeDisbursement({ store, disbursementId, result }) {
   if (d.status === 'success') return { status: 'success', alreadyDone: true, disbursement: d, loan: await store.getLoan(d.loan_id) };
   if (result.status === 'pending') return { status: 'pending', disbursement: d, loan: await store.getLoan(d.loan_id) };
   if (result.status === 'failed') {
-    return { status: 'failed', disbursement: await store.patchDisbursement(d.id, { status: 'failed' }), loan: await store.getLoan(d.loan_id) };
+    const loan = await store.getLoan(d.loan_id);
+    const failed = await store.patchDisbursement(d.id, { status: 'failed' });
+    if (loan) await emitPartnerEvent({ store, applicationId: loan.application_id, type: 'payout.failed', key: d.id, data: { reason: 'the bank did not accept the payout' } });
+    return { status: 'failed', disbursement: failed, loan };
   }
 
   // A loan is paid out once. A second payout reporting success means money moved twice: refuse to book it as

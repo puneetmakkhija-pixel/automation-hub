@@ -11,6 +11,7 @@
 // until the customer asks for the increase (requestLimitIncrease). Reductions and blocks apply at once.
 import { daysBetween, toDate } from './dates.js';
 import { BusinessRuleError } from './errors.js';
+import { emitPartnerEvent } from './partners.js';
 
 export const LADDER = [5000, 8000, 10000, 15000, 20000, 25000, 30000, 40000, 50000];
 export const GRACE_DAYS = 3;
@@ -71,10 +72,12 @@ export async function requestLimitIncrease({ store, customer, product, requested
     if (!(target > offered)) throw new BusinessRuleError('the amount asked for must be above the current limit');
     if (target > eligible) throw new BusinessRuleError(`the most available right now is ${eligible}`);
   }
-  return store.insertCustomerLimit({
+  const row = await store.insertCustomerLimit({
     customer_id: customer.id, limit_amount: target, eligible_amount: eligible > target ? eligible : null,
     cycle_number: cur.cycle_number, reason: 'borrower_requested_increase', created_by: 'customer',
   });
+  await emitPartnerEvent({ store, customerId: customer.id, type: 'limit.increase_granted', key: `${cur.cycle_number}:${target}`, data: { limit: target } });
+  return row;
 }
 
 export async function blockCustomer({ store, loan, reason }) {

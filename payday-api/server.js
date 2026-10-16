@@ -11,8 +11,8 @@ const MAX_BODY = 1_000_000; // 1 MB
 
 export function makeHttpServer(app) {
   return http.createServer(async (req, res) => {
-    const send = (status, body) => {
-      res.writeHead(status, { 'content-type': 'application/json' });
+    const send = (status, body, extra = {}) => {
+      res.writeHead(status, { 'content-type': 'application/json', ...extra });
       res.end(JSON.stringify(body));
     };
     try {
@@ -38,7 +38,7 @@ export function makeHttpServer(app) {
         method: req.method, path: url.pathname, headers, rawBody: Buffer.concat(chunks).toString('utf8'),
         query: Object.fromEntries(url.searchParams),
       });
-      send(r.status, r.body);
+      send(r.status, r.body, r.headers);
     } catch (e) {
       console.error(`payday-api server error: ${e.message}`);
       send(500, { error: 'internal error' });

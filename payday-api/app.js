@@ -9,6 +9,7 @@
 // The key in PAYDAY_API_KEY is a bootstrap admin so a new deployment can create real clients; then unset it (the server
 // starts without it as soon as an active admin client exists, see server.js).
 import { createHash } from 'node:crypto';
+import { openApiSpec } from './openapi.js';
 import { NO_BANK_POLICY, DEFAULT_POLICY } from '../payday-engine/index.js';
 import {
   createApplication, ApplicationError, runUnderwriting, sendAgreement, disburseLoan, recordPayment, rollover, writeOff,
@@ -16,7 +17,7 @@ import {
   recordConsents, revokeConsent, REQUIRED_CONSENTS, createApiClient, authenticate, createPartner, audit,
   createPolicyDraft, updatePolicyDraft, activatePolicy, loadActivePolicy, simulatePolicy, ROLES,
   WHEEL, wheelOdds, getRewardState, spinWheel, applyReward,
-  requestLimitIncrease, coolingOffQuote, requestCoolingOffExit, lenderProfile, buildKfs,
+  requestLimitIncrease, coolingOffQuote, requestCoolingOffExit, lenderProfile, buildKfs, EVENT_CATALOGUE, recordAgreementSigned,
   BusinessRuleError, NotConfiguredError, VendorHttpError, ValidationError,
 } from '../payday-journey/index.js';
 
@@ -29,6 +30,9 @@ const ID = /^[\w-]{1,64}$/;
 
 const json = (status, body) => ({ status, body });
 const bad = (msg) => json(400, { error: msg });
+
+// POST calls that create something and so accept an Idempotency-Key.
+const IDEMPOTENT = [/^\/v1\/applications$/, /^\/v1\/customers\/[^/]+\/limit-increase$/, /^\/v1\/loans\/[^/]+\/collect$/];
 
 const ADMIN = ['admin'];
 const INTERNAL = ['admin', 'ops'];
@@ -47,6 +51,9 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
   // pulls: KYC, bureau, bank statement). PAYDAY_PARTNER_APPS_PER_DAY=0 switches the limit off. Ops and admin are not limited.
   const partnerAppsPerDay = env.PAYDAY_PARTNER_APPS_PER_DAY === undefined || env.PAYDAY_PARTNER_APPS_PER_DAY === '' ? 3 : Number(env.PAYDAY_PARTNER_APPS_PER_DAY);
   const fallback = bankStatementAbove === Infinity ? NO_BANK_POLICY : DEFAULT_POLICY;
+  // Sandbox: a deployment on mock vendors where a partner's developers can finish a loan on their own. It adds two helpers
+  // that stand in for the e-sign vendor and the payment vendor. Never switch this on next to real vendors.
+  const sandbox = env.PAYDAY_SANDBOX === '1';
 
   const missing = (label) => Object.assign(new Error(`${label} not found`), { notFound: true });
   const need = async (loader, label) => {
@@ -219,8 +226,9 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       return json(reused ? 200 : 201, { esign_status: agreement.esign_status, document_url: agreement.document_url, kfs_url: agreement.kfs_url, reused });
     }],
 
-    ['POST', /^\/v1\/applications\/([^/]+)\/disburse$/, INTERNAL, async ({ actor, params, body }) => {
-      const application = await need(() => store.getApplication(params[0]), 'application');
+    // Disbursal is the lender's act: ops and admin only. In the sandbox a partner may start it so its developers can finish a loan.
+    ['POST', /^\/v1\/applications\/([^/]+)\/disburse$/, sandbox ? ALL : INTERNAL, async ({ actor, params, body }) => {
+      const application = await ownedApplication(actor, params[0]);
       const customer = await store.getCustomer(application.customer_id);
       const product = await store.getProduct(application.product_id);
       // Audited BEFORE the money moves: if the audit row cannot be written, nothing is paid.
@@ -321,6 +329,43 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       return json(200, await deliverPartnerEvents({ store, env, fetchImpl }));
     }],
 
+    // ------------------------------------------------------------ events (what we tell a partner, and what it can read back)
+    // A partner reads its own outbox to catch up after an outage or to check what was sent. Ops and admin pass partner_id.
+    ['GET', /^\/v1\/events$/, ALL, async ({ actor, query }) => {
+      const partnerId = actor.role === 'partner' ? actor.partner_id : (query.partner_id || null);
+      if (actor.role !== 'partner' && !partnerId) return bad('partner_id is required');
+      if (query.status !== undefined && !['pending', 'delivered', 'failed'].includes(query.status)) return bad('status must be pending, delivered or failed');
+      const limit = Math.min(Math.max(Number(query.limit) || 100, 1), 500);
+      const events = await store.listPartnerEvents({ partnerId, status: query.status ?? null, since: query.since ?? null, limit });
+      return json(200, { events: events.map((e) => ({ id: e.id, event_id: e.event_id, type: e.event_type, status: e.status, attempts: e.attempts, created_at: e.created_at, delivered_at: e.delivered_at, last_error: e.last_error, data: e.payload })), next_since: events.length ? events[events.length - 1].created_at : (query.since ?? null) });
+    }],
+    // Send an event again: one that failed for good, or one the partner lost.
+    ['POST', /^\/v1\/events\/([^/]+)\/redeliver$/, ALL, async ({ actor, params }) => {
+      const ev = await need(() => store.getPartnerEvent(params[0]), 'event');
+      if (actor.role === 'partner' && ev.partner_id !== actor.partner_id) throw missing('event');
+      await note(actor, 'event.redeliver', 'partner_event', ev.id, { type: ev.event_type });
+      await store.patchPartnerEvent(ev.id, { status: 'pending', next_attempt_at: new Date().toISOString(), last_error: null });
+      return json(200, { queued: true });
+    }],
+    ['GET', /^\/v1\/event-types$/, ALL, async () => json(200, { event_types: Object.entries(EVENT_CATALOGUE).map(([type, v]) => ({ type, when: v.when, data: v.data })) })],
+
+    // ------------------------------------------------------------ sandbox helpers (only when PAYDAY_SANDBOX=1)
+    ['POST', /^\/v1\/sandbox\/applications\/([^/]+)\/sign$/, ALL, async ({ actor, params }) => {
+      if (!sandbox) throw missing('route');
+      const application = await ownedApplication(actor, params[0]);
+      const r = await recordAgreementSigned({ store, applicationId: application.id });
+      return json(200, { status: (await store.getApplication(application.id)).status, ignored: Boolean(r.ignored) });
+    }],
+    ['POST', /^\/v1\/sandbox\/loans\/([^/]+)\/pay$/, ALL, async ({ actor, params }) => {
+      if (!sandbox) throw missing('route');
+      const loan = await ownedLoan(actor, params[0]);
+      const product = await store.getProduct(loan.product_id);
+      const s = await getLoanSummary({ store, loanId: loan.id });
+      if (!(s.outstanding > 0)) throw new BusinessRuleError('nothing is owed on this loan');
+      const r = await recordPayment({ store, loan, product, amount: s.outstanding, mode: 'sandbox', utr: `SANDBOX-${loan.id}-${Date.now()}` });
+      return json(200, { applied: r.applied, closed: r.closed });
+    }],
+
     // ------------------------------------------------------------ credit policies
     ['GET', /^\/v1\/policies$/, INTERNAL, async () => json(200, { policies: await store.listPolicies() })],
     ['GET', /^\/v1\/policies\/active$/, INTERNAL, async () => {
@@ -392,6 +437,8 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
       try {
         if (method === 'GET' && path === '/healthz') return done(json(200, { ok: true }));
 
+        if (method === 'GET' && path === '/openapi.json') return done(json(200, openApiSpec({ sandbox })));
+
         const hook = path.match(/^\/v1\/webhooks\/([\w-]+)$/);
         if (hook) {
           if (method !== 'POST') return done(json(405, { error: 'method not allowed' }));
@@ -410,6 +457,25 @@ export function createApp({ store, registry, env = process.env, log = () => {}, 
           if ((method === 'POST' || method === 'PUT') && rawBody) {
             try { body = JSON.parse(rawBody); } catch { return done(bad('invalid JSON')); }
             if (body === null || typeof body !== 'object' || Array.isArray(body)) return done(bad('body must be a JSON object'));
+          }
+          // Idempotency: a retry with the same key and the same request gets the first answer, so a dropped connection
+          // never creates a second application or a second payment link.
+          const idemKey = headers['idempotency-key'];
+          if (method === 'POST' && idemKey !== undefined && IDEMPOTENT.some((r) => r.test(path))) {
+            if (!/^[\w.:-]{8,128}$/.test(idemKey)) return done(bad('Idempotency-Key must be 8 to 128 characters: letters, digits and . _ : -'));
+            const requestHash = createHash('sha256').update(`${method} ${path} ${rawBody}`).digest('hex');
+            const claim = await store.claimIdempotencyKey({ clientKey: actor.id ?? 'bootstrap', key: idemKey, requestHash });
+            if (!claim.created) {
+              if (claim.row.request_hash !== requestHash) return done(json(422, { error: 'this Idempotency-Key was already used for a different request', code: 'IDEMPOTENCY_KEY_REUSED' }));
+              if (claim.row.status !== 'done') return done(json(409, { error: 'the first request with this key is still running', code: 'REQUEST_IN_PROGRESS' }));
+              return done({ status: claim.row.response_status, body: claim.row.response_body, headers: { 'idempotent-replayed': 'true' } });
+            }
+            let res;
+            try { res = await fn({ actor, params: match.slice(1), body, query }); } catch (e) { await store.releaseIdempotencyKey(claim.row.id); throw e; }
+            // Only a success is kept. A refusal (too many applications, a rule) may be fine on a later try with the same key.
+            if (res.status >= 200 && res.status < 300) await store.completeIdempotencyKey(claim.row.id, { status: res.status, body: res.body });
+            else await store.releaseIdempotencyKey(claim.row.id);
+            return done(res);
           }
           return done(await fn({ actor, params: match.slice(1), body, query }));
         }

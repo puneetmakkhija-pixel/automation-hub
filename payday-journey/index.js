@@ -23,7 +23,7 @@ export {
 export { ROLES, generateApiKey, hashKey, createApiClient, authenticate } from './clients.js';
 export { audit, redact } from './audit.js';
 export {
-  createPartner, validateCallbackUrl, emitPartnerEvent, deliverPartnerEvents, signPartnerPayload,
+  createPartner, validateCallbackUrl, emitPartnerEvent, EVENT_CATALOGUE, deliverPartnerEvents, signPartnerPayload,
 } from './partners.js';
 export {
   createPolicyDraft, updatePolicyDraft, activatePolicy, loadActivePolicy, simulatePolicy,
