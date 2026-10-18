@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
+import { pingHealthcheck, withHealthcheck } from "./healthcheck.js";
 
 // Copies lender serviceable-pincode lists from the DSA CRM (smecircle), which is
 // canonical, into this project's serviceable_pincodes — the table the IVR gating
@@ -355,7 +356,9 @@ async function main() {
   }
 
   if (blocked > 0) {
-    console.error(`[sync-pincodes] ${blocked} lender(s) refused — re-run with --force only if the source is correct`);
+    const msg = `${blocked} lender(s) refused — re-run with --force only if the source is correct`;
+    console.error(`[sync-pincodes] ${msg}`);
+    await pingHealthcheck("pincode-sync", msg); // process.exit below would skip withHealthcheck
     process.exit(2);
   }
 }
@@ -363,7 +366,7 @@ async function main() {
 // Only run when invoked directly. shrinkGuard is imported by the test, and a
 // module that starts syncing on import cannot be tested without credentials.
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
-  main().catch((error) => {
+  withHealthcheck("pincode-sync", main).catch((error) => {
     console.error("[sync-pincodes]", error.message);
     process.exit(1);
   });

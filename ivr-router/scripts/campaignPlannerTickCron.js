@@ -1,5 +1,6 @@
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
+import { withHealthcheck } from "../lib/healthcheck.js";
 import SupabaseClient from "../lib/supabaseClient.js";
 import { obdClient } from "../lib/flexiloansCampaignOrchestrator.js";
 
@@ -17,7 +18,7 @@ async function main() {
 }
 
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
-  main().catch((error) => {
+  withHealthcheck("campaign-planner", main).catch((error) => {
     console.error("[campaign-planner-cron]", error.message);
     process.exit(1);
   });

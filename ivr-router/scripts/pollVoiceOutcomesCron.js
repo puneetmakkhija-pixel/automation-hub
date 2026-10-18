@@ -1,5 +1,6 @@
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
+import { withHealthcheck } from "../lib/healthcheck.js";
 import { pollVoiceOutcomes } from "../lib/voiceOutcomePoll.js";
 import { probeElevenCredits } from "../lib/elevenCreditsProbe.js";
 
@@ -27,7 +28,7 @@ async function main() {
 }
 
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
-  main().catch((error) => {
+  withHealthcheck("voice-outcome-poll", main).catch((error) => {
     console.error("[voice-poll-cron]", error.message);
     process.exit(1);
   });

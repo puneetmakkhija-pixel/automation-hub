@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { argv } from "node:process";
 import { pathToFileURL } from "node:url";
+import { withHealthcheck } from "./healthcheck.js";
 
 // Enriches the personal-loan press-1 leads against the SE base.
 //
@@ -196,7 +197,7 @@ async function main() {
 // Only run when invoked directly — daysInRange is imported by the test, and a
 // module that starts writing on import cannot be tested without credentials.
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
-  main().catch((error) => {
+  withHealthcheck("enrich-press1", main).catch((error) => {
     console.error("[enrich-press1]", error.message);
     process.exit(1);
   });
