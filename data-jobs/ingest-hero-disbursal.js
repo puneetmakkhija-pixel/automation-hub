@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { Readable } from "node:stream";
 import path from "node:path";
 import { fetchLatestReport, HERO_DISBURSAL } from "./fetch-mis-mail.js";
+import { withHealthcheck } from "./healthcheck.js";
 
 // Ingests Hero Fincorp's daily disbursal report into crm.mis_hero_disbursal.
 //
@@ -266,7 +267,7 @@ async function main() {
 }
 
 if (argv[1] && import.meta.url === pathToFileURL(argv[1]).href) {
-  main().catch((error) => {
+  withHealthcheck("hero-disbursal", main).catch((error) => {
     console.error("[hero-disbursal]", error.message);
     process.exit(1);
   });
