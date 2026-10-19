@@ -309,27 +309,31 @@ morning's report with hours to spare.
 
 ### Finance tracker sync (`finTrackerSync.js`)
 
-Reads finance mail from the MIS mailbox, has Claude extract it, and loads it with
-`crm.fin_load` on smecircle (`ymdkcaedwnnhszhzirli`). `data-jobs` has no Redis, so this is
-a one-shot script on a Railway cron like its siblings, not a BullMQ worker.
+Reads the finance team's mail from the MIS mailbox and loads it with `crm.fin_load` on smecircle
+(`ymdkcaedwnnhszhzirli`). Deterministic rules, no AI: the same rules that produced the Sep-Oct seed
+(the tracker workbook's "Daily Auto-Update Setup" tab). `data-jobs` has no Redis, so this is a one-shot
+script on a Railway cron like its siblings, not a BullMQ worker.
 
 - **Schedule:** `30 3 * * *` UTC = 09:00 IST, command `npm run sync:fin-tracker:cron`.
-- **Every new row is `needs_check = true`.** Seeded rows are `locked`, which `fin_load` honours.
-- **Which mail is read** follows the tracker workbook's rule: team mail with "invoice" or "bill" in the subject, plus every "Bill Closure" mail.
-- **`source_key` = Gmail message id**, so a mail already in the tracker is skipped before any model call.
+- **Which mail:** vendor invoices = mail from Jaideep / Abhishek / Jaya with "invoice" or "bill" in the
+  subject; lender billing = every "Bill Closure" mail, from anyone.
+- **Keyed by Gmail thread id** (hex), as the seeded rows are, so a reply on an existing thread updates that
+  row and never creates a second one. Recent threads are re-read every run, so approval and invoice-raised
+  dates arrive when they happen.
+- **Seeded rows are `locked`**, which `fin_load` honours. A row a rule could not read cleanly (amount from a
+  fallback pattern) arrives `needs_check = true`.
+- **Read-only mailbox:** it cannot mark mail seen, so it cannot interfere with the CRM's mail watcher.
 - Writes a `railway-imap` row to `crm.fin_sync_log` on every run, even an empty one.
 
 | Variable | Why |
 | --- | --- |
 | `MIS_IMAP_*` / `GMAIL_IMAP_*` | the mailbox (same pair as the Hero job) |
-| `FIN_SENDERS` | the finance team, comma-separated: display names, addresses or domains (`Jaideep,Abhishek,Jaya,Dynexus`). Required; no default |
-| `FIN_SUBJECTS` (`invoice,bill`) | a team mail is read only if its subject has one of these |
-| `FIN_CLOSURE_SUBJECT` (`Bill Closure`) | mails with this subject are read from ANY sender (lender billing closures). Empty = off |
-| `ANTHROPIC_API_KEY` | extraction |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | smecircle |
-| `FIN_LOOKBACK_DAYS` (3), `FIN_MAX_MAILS` (50), `FIN_MODEL` (`claude-haiku-5-5`) | optional |
+| `FIN_LOOKBACK_DAYS` (3) | days of mail to read; 60 for a backfill |
+| `FIN_TEAM` (`jaideep OR abhishek OR jaya`) | Gmail `from:` terms for vendor invoices |
 
-`--dry-run` prints the rows without calling `fin_load`.
+`--dry-run` prints the rows and writes nothing. Where a table layout is unusual the rules fall back to a
+total and flag the row; add a rule rather than loosening one.
 
 ### The pincode sync says what it discarded, and why it skipped
 

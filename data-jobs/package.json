@@ -19,7 +19,6 @@
     "sync:fin-tracker:cron": "node finTrackerSync.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.135.0",
     "@supabase/supabase-js": "^2.45.4",
     "exceljs": "^4.4.0",
     "imapflow": "^1.7.8",
