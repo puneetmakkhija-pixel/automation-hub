@@ -74,7 +74,7 @@ export function pickAttachment(attachments, rule) {
  * watcher had processed it, and the report would look handled while nothing had
  * been written. This connection cannot do that.
  */
-async function openMailbox(client, log = console) {
+export async function openMailbox(client, log = console) {
   const refused = [];
   for (const name of MAILBOXES) {
     try {

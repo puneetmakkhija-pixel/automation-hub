@@ -307,6 +307,27 @@ Verified end to end on 05 Sep 2026, 16:50 UTC:
 Hero sends it about **04:25 UTC (09:55 IST)**, so the 22:00 UTC run collects that
 morning's report with hours to spare.
 
+### Finance tracker sync (`finTrackerSync.js`)
+
+Reads finance mail from the MIS mailbox, has Claude extract it, and loads it with
+`crm.fin_load` on smecircle (`ymdkcaedwnnhszhzirli`). `data-jobs` has no Redis, so this is
+a one-shot script on a Railway cron like its siblings, not a BullMQ worker.
+
+- **Schedule:** `30 3 * * *` UTC = 09:00 IST, command `npm run sync:fin-tracker:cron`.
+- **Every new row is `needs_check = true`.** Seeded rows are `locked`, which `fin_load` honours.
+- **`source_key` = Gmail message id**, so a mail already in the tracker is skipped before any model call.
+- Writes a `railway-imap` row to `crm.fin_sync_log` on every run, even an empty one.
+
+| Variable | Why |
+| --- | --- |
+| `MIS_IMAP_*` / `GMAIL_IMAP_*` | the mailbox (same pair as the Hero job) |
+| `FIN_SENDERS` | comma-separated senders or domains to read. Required; no default |
+| `ANTHROPIC_API_KEY` | extraction |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | smecircle |
+| `FIN_LOOKBACK_DAYS` (3), `FIN_MAX_MAILS` (50), `FIN_MODEL` (`claude-haiku-5-5`) | optional |
+
+`--dry-run` prints the rows without calling `fin_load`.
+
 ### The pincode sync says what it discarded, and why it skipped
 
 Same treatment as the enrichment job below, for the same reason: a filter that
