@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { toRows, cleanMonth } from "./finTrackerSync.js";
+import { toRows, cleanMonth, subjectHasAny } from "./finTrackerSync.js";
 
 const mail = { date: "2026-10-19T04:00:00.000Z", from: "Jaideep Singh <j@x.com>" };
 
@@ -34,5 +34,11 @@ assert.equal(l.lender_billing[0].closure_sent_on, "2026-10-19");
 const p = toRows("abc", mail, { kind: "po", po_ledger: [{ po_number: "BVAL/26-27/PO/0203", vendor: "Cube Finserv", po_amount: 4900000 }, { po_number: "X", vendor: "Y" }] });
 assert.equal(p.po_ledger.length, 1, "PO without an amount is dropped");
 assert.equal(p.po_ledger[0].invoiced_amount, 0);
+
+assert.equal(subjectHasAny("Tax Invoice-30 for Sep", ["invoice", "bill"]), true);
+assert.equal(subjectHasAny("RE: BILL closure - InCred", ["invoice", "bill"]), true, "case-insensitive");
+assert.equal(subjectHasAny("Lunch on Friday", ["invoice", "bill"]), false);
+assert.equal(subjectHasAny(undefined, ["invoice"]), false);
+assert.equal(subjectHasAny("anything", []), false, "no words matches nothing, not everything");
 
 console.log("fin-tracker: ok");

@@ -315,13 +315,16 @@ a one-shot script on a Railway cron like its siblings, not a BullMQ worker.
 
 - **Schedule:** `30 3 * * *` UTC = 09:00 IST, command `npm run sync:fin-tracker:cron`.
 - **Every new row is `needs_check = true`.** Seeded rows are `locked`, which `fin_load` honours.
+- **Which mail is read** follows the tracker workbook's rule: team mail with "invoice" or "bill" in the subject, plus every "Bill Closure" mail.
 - **`source_key` = Gmail message id**, so a mail already in the tracker is skipped before any model call.
 - Writes a `railway-imap` row to `crm.fin_sync_log` on every run, even an empty one.
 
 | Variable | Why |
 | --- | --- |
 | `MIS_IMAP_*` / `GMAIL_IMAP_*` | the mailbox (same pair as the Hero job) |
-| `FIN_SENDERS` | comma-separated senders or domains to read. Required; no default |
+| `FIN_SENDERS` | the finance team, comma-separated: display names, addresses or domains (`Jaideep,Abhishek,Jaya,Dynexus`). Required; no default |
+| `FIN_SUBJECTS` (`invoice,bill`) | a team mail is read only if its subject has one of these |
+| `FIN_CLOSURE_SUBJECT` (`Bill Closure`) | mails with this subject are read from ANY sender (lender billing closures). Empty = off |
 | `ANTHROPIC_API_KEY` | extraction |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | smecircle |
 | `FIN_LOOKBACK_DAYS` (3), `FIN_MAX_MAILS` (50), `FIN_MODEL` (`claude-haiku-5-5`) | optional |

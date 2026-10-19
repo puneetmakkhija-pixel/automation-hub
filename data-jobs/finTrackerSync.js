@@ -94,6 +94,17 @@ const SYSTEM =
   "Take invoice numbers and amounts from the attached PDF when there is one, not from the subject. " +
   "Return amounts as plain numbers (no commas). If the mail is not a vendor invoice, PO, or lender billing closure, use kind 'other'.";
 
+/**
+ * The finance team's own rule, from the tracker workbook ("Daily Auto-Update Setup"):
+ *   - vendor invoices: mail from the team (FIN_SENDERS) with "invoice" or "bill" in the subject;
+ *   - lender billing: EVERY "Bill Closure" mail, whoever sent it (FIN_CLOSURE_SUBJECT).
+ * Pure so it is tested without a mailbox.
+ */
+export function subjectHasAny(subject, words) {
+  const s = String(subject ?? "").toLowerCase();
+  return words.some((w) => w && s.includes(w.toLowerCase()));
+}
+
 /** Mon-YY or null; anything else is dropped rather than stored malformed. */
 export function cleanMonth(m) {
   return typeof m === "string" && MONTH.test(m.trim()) ? m.trim() : null;
@@ -211,13 +222,15 @@ async function main() {
   const days = Number(process.env.FIN_LOOKBACK_DAYS) || 3;
   const maxMails = Number(process.env.FIN_MAX_MAILS) || 50;
   const model = process.env.FIN_MODEL || DEFAULT_MODEL;
+  const subjectWords = (process.env.FIN_SUBJECTS ?? "invoice,bill").split(",").map((w) => w.trim()).filter(Boolean);
+  const closureSubject = (process.env.FIN_CLOSURE_SUBJECT ?? "Bill Closure").trim();
 
   const user = process.env.MIS_IMAP_USER || process.env.GMAIL_IMAP_USER;
   const pass = process.env.MIS_IMAP_APP_PASSWORD || process.env.GMAIL_IMAP_APP_PASSWORD;
   const senders = (process.env.FIN_SENDERS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
   const missing = [
     !user || !pass ? "MIS_IMAP_USER/MIS_IMAP_APP_PASSWORD (or GMAIL_IMAP_*)" : null,
-    !senders.length ? "FIN_SENDERS (comma-separated sender addresses or domains)" : null,
+    !senders.length ? "FIN_SENDERS (comma-separated sender names, addresses or domains)" : null,
     !process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null,
     !process.env.SUPABASE_URL ? "SUPABASE_URL" : null,
     !process.env.SUPABASE_SERVICE_ROLE_KEY ? "SUPABASE_SERVICE_ROLE_KEY" : null,
@@ -231,22 +244,30 @@ async function main() {
   await imap.connect();
   const payload = { vendor_invoices: [], po_ledger: [], lender_billing: [] };
   const errors = [];
-  const stats = { found: 0, already_in_tracker: 0, read: 0, other: 0, failed: 0 };
+  const stats = { found: 0, off_topic: 0, already_in_tracker: 0, read: 0, other: 0, failed: 0 };
 
   const { lock, mailbox } = await openMailbox(imap);
   try {
     const since = new Date(Date.now() - days * 86_400_000);
-    const uids = new Set();
+    // Two routes in, per the finance team's rule (see subjectHasAny). IMAP FROM matches the header text, so a
+    // display name ("Jaideep") works as well as an address or domain.
+    const fromTeam = new Set();
     for (const from of senders) {
-      for (const uid of (await imap.search({ from, since }, { uid: true })) || []) uids.add(uid);
+      for (const uid of (await imap.search({ from, since }, { uid: true })) || []) fromTeam.add(uid);
     }
-    const sorted = [...uids].sort((a, b) => b - a);
+    const closures = new Set();
+    if (closureSubject) for (const uid of (await imap.search({ subject: closureSubject, since }, { uid: true })) || []) closures.add(uid);
+    const sorted = [...new Set([...fromTeam, ...closures])].sort((a, b) => b - a);
     stats.found = sorted.length;
-    console.log(`[fin-tracker] ${mailbox}: ${sorted.length} message(s) from ${senders.length} sender(s) since ${since.toISOString().slice(0, 10)}`);
+    console.log(`[fin-tracker] ${mailbox}: ${fromTeam.size} from ${senders.length} sender(s), ${closures.size} "${closureSubject}" since ${since.toISOString().slice(0, 10)}`);
 
-    // Cheap pass first: ids only, so mails already in the tracker cost nothing.
+    // Cheap pass first: ids and subjects only, so mails already in the tracker (or off-topic) cost nothing.
     const ids = [];
-    for await (const m of imap.fetch(sorted, { emailId: true }, { uid: true })) ids.push({ uid: m.uid, emailId: m.emailId });
+    for await (const m of imap.fetch(sorted, { emailId: true, envelope: true }, { uid: true })) {
+      const ok = closures.has(m.uid) || (fromTeam.has(m.uid) && subjectHasAny(m.envelope?.subject, subjectWords));
+      if (ok) ids.push({ uid: m.uid, emailId: m.emailId });
+    }
+    stats.off_topic = sorted.length - ids.length;
     const known = await existingKeys(db, ids.map((i) => i.emailId));
     const todo = ids.filter((i) => !known.has(i.emailId)).slice(0, maxMails);
     stats.already_in_tracker = ids.length - ids.filter((i) => !known.has(i.emailId)).length;
