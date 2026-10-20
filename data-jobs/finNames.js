@@ -15,7 +15,11 @@ export const LENDERS = [
 
 export const VENDORS = [
   { name: "A2Z Financial Solutions", category: "DSA / Lending partner" },
-  { name: "Brimming Grace Capital Pvt Ltd", category: "DSA / Lending partner" },
+  { name: "Brimming Grace Capital Pvt Ltd", category: "Call center - Dialer services" },
+  { name: "WORK WELL ADVISORS PRIVATE Limited", category: "Call center - HR services" },
+  { name: "Fastfi Connect", category: "DSA / Lending partner" },
+  { name: "Digitap", category: "Call center - API services" },
+  { name: "Delhi EB", category: "Call center - Electricity" },
   { name: "Computer Rental Services", category: "Office & IT" },
   { name: "Cube Finserv", category: "DSA / Lending partner" },
   { name: "Dynexus Partners", category: "DSA / Lending partner" },
