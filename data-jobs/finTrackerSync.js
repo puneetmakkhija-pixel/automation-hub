@@ -127,24 +127,38 @@ export function latestPerPo(rows) {
 }
 
 // ---------- IMAP ----------
-async function loadThreads(client, gmraw) {
+/**
+ * Threads for a Gmail raw search. A message or thread that cannot be read is skipped and named in `warn`
+ * instead of throwing: one message with no body (Gmail returns none for some) must not lose the other 60 days.
+ * Exported with the client injected so a fake mailbox can test it.
+ */
+export async function loadThreads(client, gmraw, warn = []) {
   const uids = (await client.search({ gmraw }, { uid: true })) || [];
   const thrids = new Set();
   if (uids.length) for await (const m of client.fetch(uids, { threadId: true }, { uid: true })) thrids.add(m.threadId);
   const threads = [];
   for (const thrid of thrids) {
-    const tu = (await client.search({ threadId: thrid }, { uid: true })) || [];
-    const msgs = [];
-    for await (const m of client.fetch(tu, { source: true }, { uid: true })) {
-      const p = await simpleParser(m.source);
-      msgs.push({
-        subject: p.subject || "", from: p.from?.value?.[0]?.address || "", fromName: p.from?.value?.[0]?.name || "",
-        date: p.date, text: p.text || "",
-        files: (p.attachments || []).filter((a) => !a.related).map((a) => a.filename).filter(Boolean),
-      });
+    try {
+      const tu = (await client.search({ threadId: thrid }, { uid: true })) || [];
+      const msgs = [];
+      for await (const m of client.fetch(tu, { source: true }, { uid: true })) {
+        if (!m.source) { warn.push(`thread ${thrid} uid ${m.uid}: no message body returned, skipped`); continue; }
+        try {
+          const p = await simpleParser(m.source);
+          msgs.push({
+            subject: p.subject || "", from: p.from?.value?.[0]?.address || "", fromName: p.from?.value?.[0]?.name || "",
+            date: p.date || new Date(0), text: p.text || "",
+            files: (p.attachments || []).filter((a) => !a.related).map((a) => a.filename).filter(Boolean),
+          });
+        } catch (e) {
+          warn.push(`thread ${thrid} uid ${m.uid}: ${e.message}, skipped`);
+        }
+      }
+      msgs.sort((a, b) => a.date - b.date);
+      if (msgs.length) threads.push({ id: BigInt(thrid).toString(16), url: gmailUrl(thrid), subject: msgs[0].subject, msgs });
+    } catch (e) {
+      warn.push(`thread ${thrid}: ${e.message}, skipped`);
     }
-    msgs.sort((a, b) => a.date - b.date);
-    if (msgs.length) threads.push({ id: BigInt(thrid).toString(16), url: gmailUrl(thrid), subject: msgs[0].subject, msgs });
   }
   return threads;
 }
@@ -167,15 +181,16 @@ async function main() {
   await imap.connect();
   // Read-only: the CRM's mail watcher reads this mailbox and marks what it ingested \Seen.
   const { lock, mailbox } = await openMailbox(imap);
+  const warn = [];
   let vendorThreads = [];
   let closureThreads = [];
   try {
-    vendorThreads = await loadThreads(imap, `from:(${team}) subject:(invoice OR invoices OR bill) -subject:"bill closure" newer_than:${days}d`);
+    vendorThreads = await loadThreads(imap, `from:(${team}) subject:(invoice OR invoices OR bill) -subject:"bill closure" newer_than:${days}d`, warn);
     for (const t of vendorThreads) {
       try { const r = parseVendor(t); out.vendor_invoices.push(r.vendor); if (r.po) out.po_ledger.push(r.po); }
       catch (e) { out.errors += `V ${t.subject}: ${e.message}; `; }
     }
-    closureThreads = await loadThreads(imap, `subject:"bill closure" newer_than:${days}d`);
+    closureThreads = await loadThreads(imap, `subject:"bill closure" newer_than:${days}d`, warn);
     for (const t of closureThreads) {
       try { out.lender_billing.push(parseClosure(t)); }
       catch (e) { out.errors += `L ${t.subject}: ${e.message}; `; }
@@ -187,7 +202,8 @@ async function main() {
   out.po_ledger = latestPerPo(out.po_ledger);
 
   const counts = { vendor_invoices: out.vendor_invoices.length, po_ledger: out.po_ledger.length, lender_billing: out.lender_billing.length };
-  console.log(`[fin-tracker] ${JSON.stringify({ mailbox, days, vendor_threads: vendorThreads.length, closure_threads: closureThreads.length, ...counts, errors: out.errors || null, dryRun })}`);
+  console.log(`[fin-tracker] ${JSON.stringify({ mailbox, days, vendor_threads: vendorThreads.length, closure_threads: closureThreads.length, ...counts, errors: out.errors || null, skipped: warn.length, dryRun })}`);
+  for (const w of warn) console.warn(`[fin-tracker] warn: ${w}`);
   if (dryRun) {
     console.log(JSON.stringify(out, null, 2));
     return;
@@ -198,7 +214,7 @@ async function main() {
   const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     db: { schema: "crm" }, auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data, error } = await sb.rpc("fin_load", { p: { ...out, errors: out.errors || undefined }, p_source: SOURCE });
+  const { data, error } = await sb.rpc("fin_load", { p: { ...out, errors: [out.errors, ...warn.map((w) => `warn: ${w}`)].join("; ") || undefined }, p_source: SOURCE });
   if (error) throw new Error(`fin_load: ${error.message}`);
   console.log(`[fin-tracker] fin_load ${JSON.stringify(data)}`);
   if (out.errors) throw new Error(`some threads failed to parse: ${out.errors.slice(0, 300)}`);

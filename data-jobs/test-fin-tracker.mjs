@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseVendor, parseClosure, latestPerPo, billingMonth } from "./finTrackerSync.js";
+import { parseVendor, parseClosure, latestPerPo, billingMonth, loadThreads } from "./finTrackerSync.js";
 
 const d = (s) => new Date(s);
 const msg = (o) => ({ subject: "", from: "", fromName: "", date: d("2026-10-13T05:00:00Z"), text: "", files: [], ...o });
@@ -64,5 +64,32 @@ assert.equal(t.needs_check, true);
 const rows = latestPerPo([{ po_number: "P1", invoiced_amount: 100 }, { po_number: "P1", invoiced_amount: 300 }, { po_number: "P1", invoiced_amount: 200 }, { po_number: "P2", invoiced_amount: 5 }]);
 assert.equal(rows.find((r) => r.po_number === "P1").invoiced_amount, 300);
 assert.equal(rows.length, 2);
+
+// --- a fake mailbox: one good thread, one thread with a body-less message, one thread that throws
+const raw = (subject, from, body) => Buffer.from(`From: ${from}\r\nSubject: ${subject}\r\nDate: Tue, 13 Oct 2026 10:00:00 +0530\r\n\r\n${body}`);
+const fake = {
+  search: async (q) => {
+    if (q.gmraw) return [1, 2, 3];
+    if (q.threadId === "100") return [1];
+    if (q.threadId === "200") return [2, 22];
+    throw new Error("search blew up");
+  },
+  fetch: async function* (uids, q) {
+    if (q.threadId) { yield { uid: 1, threadId: "100" }; yield { uid: 2, threadId: "200" }; yield { uid: 3, threadId: "300" }; return; }
+    for (const uid of uids) {
+      if (uid === 1) yield { uid, source: raw("Tax Invoice-30", "Jaideep <j@x.com>", "Grand Total: 1000") };
+      if (uid === 2) yield { uid, source: raw("Invoice 2", "Jaya <jj@x.com>", "Grand Total: 2000") };
+      if (uid === 22) yield { uid }; // no body
+    }
+  },
+};
+const warn = [];
+const threads = await loadThreads(fake, "x", warn);
+assert.equal(threads.length, 2, "good threads survive");
+assert.equal(threads[1].msgs.length, 1, "the body-less message is dropped, the other kept");
+assert.equal(warn.length, 2);
+assert.match(warn.join(" | "), /no message body returned/);
+assert.match(warn.join(" | "), /search blew up/);
+assert.equal(threads[0].id, (100n).toString(16));
 
 console.log("fin-tracker: ok");
