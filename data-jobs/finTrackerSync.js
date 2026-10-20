@@ -3,6 +3,7 @@ import { simpleParser } from "mailparser";
 import { createClient } from "@supabase/supabase-js";
 import { openMailbox } from "./fetch-mis-mail.js";
 import { withHealthcheck } from "./healthcheck.js";
+import { matchLender, matchVendor } from "./finNames.js";
 
 // Finance tracker sync: mailbox -> crm.fin_load on smecircle (ymdkcaedwnnhszhzirli).
 //
@@ -76,11 +77,16 @@ export function parseVendor(thread) {
     inv = m ? num(m[1]) : null;
     needs = true;
   }
+  // Names: the PO table's vendor, else the subject, else the sender, matched to the names already in the tracker.
+  // An unknown vendor keeps its text but is flagged: a human decides whether it is a new vendor.
+  const known = matchVendor(poRow?.vendor) || matchVendor(thread.subject) || matchVendor(first.fromName);
+  if (!known) needs = true;
+  if (poRow && known) poRow.vendor = known.name;
   const appr = thread.msgs.find((m) => APPROVERS.test(m.from) && m !== first);
   return {
     vendor: {
-      source_key: thread.id, category: null,
-      vendor: poRow?.vendor || thread.subject.replace(/^(re|fwd?):\s*/i, "").slice(0, 80),
+      source_key: thread.id, category: known?.category ?? null,
+      vendor: known?.name || poRow?.vendor || thread.subject.replace(/^(re|fwd?):\s*/i, "").slice(0, 80),
       invoice_ref: thread.subject.slice(0, 120), billing_month: billingMonth(thread.subject, first.date), po_number: po,
       sent_at: first.date, sent_by: first.fromName, amount_ex_gst: inv, status: appr ? "Approved" : "Submitted for approval",
       attachments: [...new Set(thread.msgs.flatMap((m) => m.files))], gmail_url: thread.url, needs_check: needs,
@@ -112,8 +118,10 @@ export function parseClosure(thread) {
   const inv = thread.msgs.find((m) => ACCOUNTS.test(m.from) && /invoice/i.test(m.text || ""));
   const lender = thread.subject.replace(/^(re|fwd?):\s*/i, "").replace(/b[il]ll closure\s*[-|:]?\s*/i, "")
     .replace(/[-|]\s*(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[\s\S]*$/i, "").trim() || thread.subject;
+  const canonical = matchLender(lender) || matchLender(thread.subject);
+  if (!canonical) needs = true; // not a lender we have billed before: keep the text, flag it
   return {
-    source_key: thread.id, lender, billing_month: billingMonth(thread.subject, first.date), so_number: so, revenue_ex_gst: rev,
+    source_key: thread.id, lender: canonical || lender, _lender_raw: lender, billing_month: billingMonth(thread.subject, first.date), so_number: so, revenue_ex_gst: rev,
     closure_sent_on: day(first.date), approved_on: day(appr?.date), invoice_raised_on: day(inv?.date), payment_terms_days: terms,
     needs_check: needs, gmail_url: thread.url,
   };
@@ -163,6 +171,45 @@ export async function loadThreads(client, gmraw, warn = []) {
   return threads;
 }
 
+export const stripDebug = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith("_")));
+
+/** source_keys (or PO numbers) already in the tracker, to tag each dry-run row new / exists. */
+async function existing(sb, table, col, values) {
+  const have = new Set();
+  for (let i = 0; i < values.length; i += 100) {
+    const { data, error } = await sb.from(table).select(col).in(col, values.slice(i, i + 100));
+    if (error) throw new Error(`${table}: ${error.message}`);
+    for (const r of data) have.add(r[col]);
+  }
+  return have;
+}
+
+/**
+ * One compact line per row (about 140 lines), because Railway drops log lines when a service writes thousands
+ * of them at once, which is what pretty-printed JSON did. Read-only: tags rows new / exists, writes nothing.
+ */
+export async function printDryRun(sb, out) {
+  const [hv, hl, hp] = await Promise.all([
+    existing(sb, "fin_vendor_invoice", "source_key", out.vendor_invoices.map((r) => r.source_key)),
+    existing(sb, "fin_lender_billing", "source_key", out.lender_billing.map((r) => r.source_key)),
+    existing(sb, "fin_po_ledger", "po_number", out.po_ledger.map((r) => r.po_number)),
+  ]);
+  const line = (tag, state, o) => console.log(`[fin-row] ${tag} ${state} ${JSON.stringify(o)}`);
+  const tally = { new: 0, exists: 0, need_check: 0 };
+  for (const r of out.vendor_invoices) {
+    const st = hv.has(r.source_key) ? "exists" : "new"; tally[st]++; if (r.needs_check) tally.need_check++;
+    line("V", st, { k: r.source_key, vendor: r.vendor, ref: r.invoice_ref, m: r.billing_month, po: r.po_number, amt: r.amount_ex_gst, status: r.status, chk: r.needs_check });
+  }
+  for (const r of out.lender_billing) {
+    const st = hl.has(r.source_key) ? "exists" : "new"; tally[st]++; if (r.needs_check) tally.need_check++;
+    line("L", st, { k: r.source_key, lender: r.lender, raw: r._lender_raw === r.lender ? undefined : r._lender_raw, m: r.billing_month, so: r.so_number, rev: r.revenue_ex_gst, appr: r.approved_on, inv: r.invoice_raised_on, chk: r.needs_check });
+  }
+  for (const r of out.po_ledger) {
+    line("P", hp.has(r.po_number) ? "exists" : "new", { po: r.po_number, vendor: r.vendor, amt: r.po_amount, invoiced: r.invoiced_amount, n: r.invoice_count });
+  }
+  console.log(`[fin-tracker] dry-run tally ${JSON.stringify(tally)} (needs_check counts new and existing rows; existing rows are locked and would not change)`);
+}
+
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const days = Number(process.env.FIN_LOOKBACK_DAYS) || 3;
@@ -204,16 +251,18 @@ async function main() {
   const counts = { vendor_invoices: out.vendor_invoices.length, po_ledger: out.po_ledger.length, lender_billing: out.lender_billing.length };
   console.log(`[fin-tracker] ${JSON.stringify({ mailbox, days, vendor_threads: vendorThreads.length, closure_threads: closureThreads.length, ...counts, errors: out.errors || null, skipped: warn.length, dryRun })}`);
   for (const w of warn) console.warn(`[fin-tracker] warn: ${w}`);
-  if (dryRun) {
-    console.log(JSON.stringify(out, null, 2));
-    return;
-  }
-
-  // Called even with nothing to load: it writes the crm.fin_sync_log row, which is how "ran and found
-  // nothing" differs from "never ran".
   const sb = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
     db: { schema: "crm" }, auth: { persistSession: false, autoRefreshToken: false },
   });
+  if (dryRun) {
+    await printDryRun(sb, out);
+    return;
+  }
+  // `_`-prefixed fields exist only to explain a row in the dry run.
+  for (const k of ["vendor_invoices", "lender_billing"]) out[k] = out[k].map(stripDebug);
+
+  // Called even with nothing to load: it writes the crm.fin_sync_log row, which is how "ran and found
+  // nothing" differs from "never ran".
   const { data, error } = await sb.rpc("fin_load", { p: { ...out, errors: [out.errors, ...warn.map((w) => `warn: ${w}`)].join("; ") || undefined }, p_source: SOURCE });
   if (error) throw new Error(`fin_load: ${error.message}`);
   console.log(`[fin-tracker] fin_load ${JSON.stringify(data)}`);

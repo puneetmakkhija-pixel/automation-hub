@@ -322,6 +322,12 @@ script on a Railway cron like its siblings, not a BullMQ worker.
   dates arrive when they happen.
 - **Seeded rows are `locked`**, which `fin_load` honours. A row a rule could not read cleanly (amount from a
   fallback pattern) arrives `needs_check = true`.
+- **Names are matched to the ones already in the tracker** (`data-jobs/finNames.js`: 46 lenders, 9 vendors with their
+  categories). "Muthoot Fincorp BL July 2026 | DSA" becomes "Muthoot Fincorp - BL". A name that is unknown or
+  ambiguous (for example "Poonawalla Fincorp" with no product) keeps its text and the row is `needs_check`. Add a new
+  lender or vendor to that file when one is genuinely new.
+- **`--dry-run` prints one compact `[fin-row]` line per row**, tagged `new` or `exists` against the live tables, then a
+  tally. (Pretty-printed JSON made Railway drop log lines.)
 - **Read-only mailbox:** it cannot mark mail seen, so it cannot interfere with the CRM's mail watcher.
 - Writes a `railway-imap` row to `crm.fin_sync_log` on every run, even an empty one.
 

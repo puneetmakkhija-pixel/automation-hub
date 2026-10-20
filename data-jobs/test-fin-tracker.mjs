@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { parseVendor, parseClosure, latestPerPo, billingMonth, loadThreads } from "./finTrackerSync.js";
+import { parseVendor, parseClosure, latestPerPo, billingMonth, loadThreads, printDryRun, stripDebug } from "./finTrackerSync.js";
+import { matchLender, matchVendor } from "./finNames.js";
 
 const d = (s) => new Date(s);
 const msg = (o) => ({ subject: "", from: "", fromName: "", date: d("2026-10-13T05:00:00Z"), text: "", files: [], ...o });
@@ -91,5 +92,53 @@ assert.equal(warn.length, 2);
 assert.match(warn.join(" | "), /no message body returned/);
 assert.match(warn.join(" | "), /search blew up/);
 assert.equal(threads[0].id, (100n).toString(16));
+
+// --- canonical names: messy subjects map to the names the reports group on; unknown or ambiguous stay unknown
+assert.equal(matchLender("Muthoot Fincorp BL July 2026 | DSA"), "Muthoot Fincorp - BL");
+assert.equal(matchLender("Tata Capital LAP Aug 2026"), "Tata Capital - LAP", "the longer, more specific name wins");
+assert.equal(matchLender("Tata Capital"), "Tata Capital");
+assert.equal(matchLender("Kissht"), "Kissht + Ring");
+assert.equal(matchLender("SmartCoin"), "Olyv (SmartCoin)");
+assert.equal(matchLender("Poonawalla Fincorp"), null, "ambiguous between five products: unknown, not a guess");
+assert.equal(matchLender("Bajaj Finance"), null);
+assert.equal(matchLender("Mystery Lender"), null);
+assert.equal(matchVendor("I2 FINTECH PRIVATE LIMITED")?.name, "I2 Fintech Pvt Ltd");
+assert.equal(matchVendor("EDNT")?.name, "Earth Digital Network Technology (EDNT)");
+assert.equal(matchVendor("Cube Finserv Sep Invoice - 28 ( PO - BVAL/26-27/PO/0203 )")?.category, "DSA / Lending partner");
+assert.equal(matchVendor("INVOICE - BUDDYLOAN - 05 Oct 2026"), null);
+
+const messy = parseClosure({ id: "t5", url: "u", subject: "Bill Closure - Muthoot Fincorp BL July 2026 | DSA", msgs: [msg({ text: "Invoice Amount: 15,144" })] });
+assert.equal(messy.lender, "Muthoot Fincorp - BL");
+assert.equal(messy.needs_check, false);
+assert.equal(messy._lender_raw.includes("Muthoot"), true, "the raw text is kept for the dry run");
+const stranger = parseClosure({ id: "t6", url: "u", subject: "Bill Closure - Mystery Lender - Sep'26", msgs: [msg({ text: "Invoice Amount: 5,000" })] });
+assert.equal(stranger.lender, "Mystery Lender");
+assert.equal(stranger.needs_check, true, "a lender we have never billed is flagged");
+
+const poVendor = parseVendor({ id: "t7", url: "u", subject: "Invoice", msgs: [msg({ from: "j@x.com", fromName: "Jaideep", text: "BVAL/VNDR/000081 I2 FINTECH PRIVATE LIMITED BVAL/26-27/PO/0226 Jul-26 4500000 873878 3342102 1157898" })] });
+assert.equal(poVendor.vendor.vendor, "I2 Fintech Pvt Ltd");
+assert.equal(poVendor.po.vendor, "I2 Fintech Pvt Ltd", "the PO ledger gets the same name");
+assert.equal(poVendor.vendor.category, "DSA / Lending partner");
+assert.equal(poVendor.vendor.needs_check, false);
+const unknownVendor = parseVendor({ id: "t8", url: "u", subject: "INVOICE - BUDDYLOAN - 05 Oct 2026", msgs: [msg({ from: "x@x.com", fromName: "Someone", text: "Grand Total: 5000" })] });
+assert.equal(unknownVendor.vendor.needs_check, true);
+assert.equal(unknownVendor.vendor.category, null);
+
+// --- the dry-run printer runs end to end against a fake database and tags rows new / exists
+const lines = [];
+const origLog = console.log;
+console.log = (l) => lines.push(l);
+const fakeSb = { from: (table) => ({ select: (col) => ({ in: async (_c, vals) => ({ data: vals.filter((v) => v === "have").map((v) => ({ [col]: v })), error: null }) }) }) };
+await printDryRun(fakeSb, {
+  vendor_invoices: [{ source_key: "have", vendor: "Cube Finserv", needs_check: false }, { source_key: "fresh", vendor: "X", needs_check: true }],
+  lender_billing: [messy], po_ledger: [{ po_number: "P1", vendor: "V", po_amount: 1, invoiced_amount: 0, invoice_count: 0 }],
+});
+console.log = origLog;
+assert.equal(lines.filter((l) => l.startsWith("[fin-row] V exists")).length, 1);
+assert.equal(lines.filter((l) => l.startsWith("[fin-row] V new")).length, 1);
+assert.equal(lines.filter((l) => l.startsWith("[fin-row] L new")).length, 1);
+assert.match(lines.find((l) => l.includes(" L new")), /"raw":"Muthoot/, "a changed lender name shows its raw text");
+assert.match(lines.at(-1), /"new":2,"exists":1,"need_check":1/);
+assert.equal("_lender_raw" in stripDebug(messy), false);
 
 console.log("fin-tracker: ok");
