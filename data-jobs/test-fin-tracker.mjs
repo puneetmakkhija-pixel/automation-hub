@@ -98,6 +98,9 @@ assert.equal(matchLender("Muthoot Fincorp BL July 2026 | DSA"), "Muthoot Fincorp
 assert.equal(matchLender("Tata Capital LAP Aug 2026"), "Tata Capital - LAP", "the longer, more specific name wins");
 assert.equal(matchLender("Tata Capital"), "Tata Capital");
 assert.equal(matchLender("Kissht"), "Kissht + Ring");
+assert.equal(matchLender("Bharat Pe July 2026 | DSA"), "BharatPe", "subject spelling with a space");
+assert.equal(matchLender("Credillio July 2026"), "Credilio", "subject spelling with a double l");
+assert.equal(matchLender("Rupee112 Bharat Loans Jul"), "Rupee112 / Bharat Loans / Loan112 / ROT", "Bharat Pe alias must not steal Bharat Loans");
 assert.equal(matchLender("SmartCoin"), "Olyv (SmartCoin)");
 assert.equal(matchLender("Poonawalla Fincorp"), null, "ambiguous between five products: unknown, not a guess");
 assert.equal(matchLender("Bajaj Finance"), null);

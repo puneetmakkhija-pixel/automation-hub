@@ -82,7 +82,16 @@ function bestMatch(raw, entries) {
   return best.length === 1 ? best[0] : null; // a tie between two names is "unknown", not a guess
 }
 
-const LENDER_ENTRIES = LENDERS.map((name) => ({ name, alts: aliasesOf(name) }));
+// Spellings seen in mail subjects that tokenise differently from the canonical name.
+const LENDER_ALIASES = {
+  BharatPe: ["Bharat Pe"],
+  Credilio: ["Credillio"],
+};
+
+const LENDER_ENTRIES = LENDERS.map((name) => ({
+  name,
+  alts: [...aliasesOf(name), ...(LENDER_ALIASES[name] ?? []).map(tokens)],
+}));
 const VENDOR_ENTRIES = VENDORS.map((v) => ({ ...v, alts: aliasesOf(v.name) }));
 
 /** Canonical lender name for a subject fragment, or null. */
