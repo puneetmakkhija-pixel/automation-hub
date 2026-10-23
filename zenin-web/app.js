@@ -167,7 +167,7 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
     const b = r.body;
     return {
       loan_id: b.loan_id, status: b.status, principal: Number(b.principal), due_date: b.due_date, outstanding: Number(b.outstanding),
-      days_overdue: b.days_overdue, apr_pct: b.apr_pct,
+      days_overdue: b.days_overdue, apr_pct: b.apr_pct, cooling_off: b.cooling_off ?? { open: false },
     };
   }
 
@@ -216,8 +216,9 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
     // ---- public
     if (method === 'GET' && sub === '/config') {
       const p = await product();
+      const lender = await gateway.lender();
       return json(200, {
-        mode: cfg.mode, brand: cfg.brand,
+        mode: cfg.mode, brand: cfg.brand, lender,
         product: { min: Number(p.min_amount), max: Number(p.max_amount), tenure_days: Number(p.tenure_days), late_charge_pct_per_day: Number(p.penalty_per_day_pct) },
         first_loan_max: Math.min(cfg.firstLoanMax, Number(p.max_amount)),
         wheel: { slices: WHEEL, odds: wheelOdds(), valid_days: REWARD_VALID_DAYS, repaid_needed: MIN_REPAID_LOANS },
@@ -379,6 +380,23 @@ export function createWebApp({ cfg, gateway, otp, now = () => Date.now(), log = 
       return fail(409, 'not_allowed', 'The money cannot be sent yet. Please sign the agreement first.');
     }
 
+    // The key facts statement for the offer the customer is looking at. Only their own application.
+    if (method === 'GET' && sub === '/kfs') {
+      const v = await view(cid, mobile);
+      if (!v.application || !['offer', 'sign', 'bank'].includes(v.next)) return fail(409, 'no_offer', 'There is no offer to show.');
+      const r = await gateway.kfs(v.application.id);
+      if (r.status !== 200) return fail(502, 'try_later', 'Something went wrong on our side. Please try again in a little while.');
+      return json(200, { kfs: r.body });
+    }
+    // The borrower changes their mind inside the cooling-off window: what it costs, then they pay that.
+    if (method === 'POST' && sub === '/loan/cooling-off') {
+      const v = await view(cid, mobile);
+      if (!v.loan) return fail(404, 'not_found', 'You have no loan.');
+      const r = await gateway.coolingOff(v.loan.loan_id);
+      if (r.status === 409) return fail(409, 'window_over', 'The cooling-off period for this loan has ended.');
+      if (r.status !== 200) return fail(502, 'try_later', 'Something went wrong on our side. Please try again in a little while.');
+      return json(200, { cooling_off: r.body });
+    }
     if (method === 'GET' && sub === '/loan') {
       const v = await view(cid, mobile);
       return json(200, { loan: v.loan ?? null });

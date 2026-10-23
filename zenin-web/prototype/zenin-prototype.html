@@ -219,11 +219,16 @@ input.code{font-family:var(--mono);letter-spacing:.4em;font-size:1.5rem;text-ali
 .cta-row.center{justify-content:center}
 noscript .pad{padding:24px}
 
-body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{font-size:11px}#protobar span{display:none}body{padding-top:40px}}
+/* lender strip (who makes the loan), key facts statement */
+.lender-strip{background:var(--paper);color:var(--ink);font:12px/1.4 var(--mono);padding:6px 14px;text-align:center;border-bottom:1px dashed var(--rule)}
+
+@media(max-width:600px){#protobar span,#protobar label{font-size:11px}#protobar span{display:none}#protobar{padding:4px 10px}}
 #protobar{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#16241f;color:#fafaf5;padding:6px 12px;font:12px/1.3 'DM Mono',monospace;border-bottom:2px solid #ffd23f}
 #protobar b{background:#ffd23f;color:#16241f;padding:2px 6px;border-radius:3px}
 #protobar select,#protobar button{font:inherit;padding:3px 6px;border-radius:3px;border:1px solid #fafaf5;background:#0e3b36;color:#fafaf5}
-#protobar span{opacity:.75}</style></head>
+#protobar span{opacity:.75}
+#protobar label{display:flex;gap:6px;align-items:center;flex:1;min-width:0}#protobar select{min-width:0;flex:1}
+.appbar{top:var(--barh,0)!important}</style></head>
 <body class="appbody" data-mode="demo"><div id="root"></div>
 <script>// Browser-only stand-in for the Zenin BFF API, so the app can be tried from one file with no server.
 // It mirrors the shapes the real server returns (zenin-web/app.js). Nothing here is real: no money, no data.
@@ -245,6 +250,7 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     declined: 'No offer: declined, try later',
     blocked: 'No offer: not available',
     kyc_pending: 'No offer: identity check pending',
+    loan_new: 'Just paid out: cooling-off exit open',
     loan: 'Open loan, due in 12 days',
     wheel2: 'Loyalty: 2 loans repaid (no spin yet)',
     wheel3: 'Loyalty: 3 loans repaid, 1 spin waiting',
@@ -273,11 +279,16 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
   if (sc === 'declined') { repeat(); hist(1); st.next = 'declined'; st.declinedUntil = iso(24); st.application = { id: 'A3', status: 'rejected', reference: 'F3E1A0C4' }; }
   if (sc === 'blocked') { repeat(); hist(1); st.next = 'blocked'; }
   if (sc === 'kyc_pending') { st.next = 'kyc_pending'; st.application = { id: 'A4', status: 'kyc_pending', reference: 'K9D2E5B7' }; }
+  if (sc === 'loan_new') { repeat(); hist(1); st.next = 'loan'; st.loan = { loan_id: 'L8', status: 'active', principal: 10000, due_date: iso(30), outstanding: 10800, days_overdue: 0, apr_pct: 155.07, fresh: true }; }
   if (sc === 'loan') { repeat(); hist(1); st.next = 'loan'; st.loan = { loan_id: 'L9', status: 'active', principal: 10000, due_date: iso(12), outstanding: 10800, days_overdue: 0, apr_pct: 97.3 }; }
   if (sc === 'wheel2') { repeat(); st.repaid = 2; st.cap = 20000; hist(2); }
   if (sc === 'wheel3') { repeat(); st.repaid = 3; st.cap = 25000; st.spins = 1; hist(3); }
   if (sc === 'reward') { repeat(); st.repaid = 3; st.cap = 25000; hist(3); st.reward = { waiver_pct: 30, expires_at: stamp(27) }; }
 
+  const LENDER = {
+    name: 'Demo Finance Ltd (demo, not a real lender)', registration: 'DEMO-0000', address: '1 Demo Road, Demo City', support_email: 'help@demo.invalid', support_phone: '1800-000-0000',
+    grievance_officer: { name: 'Demo Grievance Officer', email: 'grievance@demo.invalid', phone: '1800-000-0001' }, lending_service_provider: { name: 'BuddyLoan' }, complete: true, missing: [],
+  };
   const WHEEL = [10,20,10,30,10,20,40,10,20,50];
   const ODDS = [10, 20, 30, 40, 50].map((w) => ({ waiver: w, slices: WHEEL.filter((x) => x === w).length }));
   const waiver = () => (st.reward ? st.reward.waiver_pct : 0);
@@ -287,6 +298,27 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     return {
       amount, fee, repayment: amount + fee, tenureDays: 30, aprSimplePct: round2((fee / amount) * (365 / 30) * 100),
       aprEffectivePct: round2(((1 + fee / amount) ** (365 / 30) - 1) * 100), lateChargePctPerDay: 1, waiverPct: w, feeBeforeWaiver: w ? fullFee : null,
+    };
+  }
+  // Cooling-off: the first day after payout the borrower may exit by paying the principal and the fee for the days held.
+  function coolingOff() {
+    const l = st.loan;
+    if (!l || !l.fresh) return { open: false };
+    const fee = round2(Math.min(l.principal * 0.08, (l.principal * 0.08) / 30));
+    return { open: true, ends: iso(1), days_held: 1, principal: l.principal, fee, fee_reversed: round2(l.principal * 0.08 - fee), amount_due: round2(l.principal + fee), requested: Boolean(l.exitAsked) };
+  }
+  function kfs(amount, w) {
+    const t = terms(amount, w);
+    return {
+      version: 1, complete: true, lender: { name: LENDER.name, registration: LENDER.registration, address: LENDER.address }, lending_service_provider: LENDER.lending_service_provider,
+      part1: {
+        loan_type: 'Short-term personal loan, single repayment', sanctioned_amount: amount, loan_term_days: 30, interest_rate_pct: 0,
+        fees_payable_to_lender: [{ name: 'Loan fee', amount: t.fee, ...(w ? { before_waiver: t.feeBeforeWaiver, waiver_pct: w } : {}) }],
+        total_to_repay: t.repayment, apr_pct: t.aprEffectivePct, apr_simple_pct: t.aprSimplePct,
+        contingent_charges: [{ name: 'Late payment charge', basis: '1% of the overdue principal for each day it is overdue' }, { name: 'Foreclosure or early repayment', basis: 'No charge. You may repay early at any time.' }],
+      },
+      part2: { cooling_off: { days: 1, terms: 'You may exit the loan during this period by repaying the principal and the fee for the days you held the money. No penalty applies.' }, grievance_officer: LENDER.grievance_officer },
+      sha256: 'a3f1c9d27be04415a3f1c9d27be04415a3f1c9d27be04415a3f1c9d27be04415',
     };
   }
   function me() {
@@ -300,7 +332,7 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     if (st.profile && ['start', 'refresh'].includes(st.next)) o.profile = { ...st.profile };
     if (st.application) o.application = st.application;
     if (st.offer) { o.offer = terms(st.offer, st.offerWaiver || 0); if (st.next === 'offer') o.offer_expires = st.offerExpires; }
-    if (st.loan && st.next === 'loan') o.loan = st.loan;
+    if (st.loan && st.next === 'loan') o.loan = { ...st.loan, cooling_off: coolingOff() };
     return o;
   }
   const res = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -309,7 +341,7 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
 
   async function handle(method, path, query, body) {
     if (method === 'GET' && path === '/config') {
-      return res(200, { mode: 'demo', brand: 'Zenin Credit', product: { min: 5000, max: 50000, tenure_days: 30, late_charge_pct_per_day: 1 }, first_loan_max: 10000,
+      return res(200, { mode: 'demo', brand: 'Zenin Credit', lender: LENDER, product: { min: 5000, max: 50000, tenure_days: 30, late_charge_pct_per_day: 1 }, first_loan_max: 10000,
         wheel: { slices: WHEEL, odds: ODDS, valid_days: 30, repaid_needed: 3 }, demo: { otp: '123456', sign_code: SIGN_CODE, hint: '' } });
     }
     if (method === 'GET' && path === '/quote') {
@@ -332,6 +364,16 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
       return res(200, {});
     }
     if (method === 'POST' && path === '/consents/revoke') { st.consents = st.consents.filter((c) => c !== body.purpose); return res(200, { revoked: body.purpose }); }
+    if (method === 'GET' && path === '/kfs') {
+      if (!st.offer || !['offer', 'sign', 'bank'].includes(st.next)) return err(409, 'no_offer', 'There is no offer to show.');
+      return res(200, { kfs: kfs(st.offer, st.offerWaiver || 0) });
+    }
+    if (method === 'POST' && path === '/loan/cooling-off') {
+      const q = coolingOff();
+      if (!q.open) return err(409, 'window_over', 'The cooling-off period for this loan has ended.');
+      st.loan.exitAsked = true;
+      return res(200, { cooling_off: coolingOff() });
+    }
     if (method === 'GET' && path === '/history') return res(200, { history: st.history });
     if (method === 'POST' && path === '/limit/increase') {
       if (!(st.eligible > st.cap)) return err(409, 'no_increase', 'A higher limit is not available right now.');
@@ -370,15 +412,16 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
       if (m[2] === 'sign') { if (String(body.code) !== SIGN_CODE) return err(400, 'bad_code', 'That code is not right.'); st.next = 'bank'; return res(200, { status: 'signed' }); }
       const t = terms(st.offer, st.offerWaiver || 0);
       if (st.offerWaiver) st.reward = null;
-      st.loan = { loan_id: 'L' + Date.now(), status: 'active', principal: st.offer, due_date: iso(30), outstanding: t.repayment, days_overdue: 0, apr_pct: t.aprSimplePct };
+      st.loan = { loan_id: 'L' + Date.now(), status: 'active', principal: st.offer, due_date: iso(30), outstanding: t.repayment, days_overdue: 0, apr_pct: t.aprEffectivePct, fresh: true };
       st.next = 'loan'; st.offerWaiver = 0;
       return res(200, { status: 'paid', due_date: st.loan.due_date });
     }
     if (method === 'POST' && path === '/loan/pay') {
+      const exited = Boolean(st.loan.fresh && st.loan.exitAsked);
       st.history.push({ loan_id: st.loan.loan_id, status: 'closed', amount: st.loan.principal, disbursed_at: stamp(-30), closed_at: stamp(0) });
       st.repaid += 1; st.loan = null; st.offer = null; st.application = null; st.next = 'start';
-      st.eligible = Math.min(50000, st.cap + 5000); // eligible for more, but the limit shown moves only when the customer asks
-      if (st.repaid >= 3) st.spins += 1;
+      if (!exited) st.eligible = Math.min(50000, st.cap + 5000); // eligible for more, but the limit shown moves only when the customer asks
+      if (st.repaid >= 3 && !exited) st.spins += 1;
       if (!st.profile) st.profile = { ...JOB };
       return res(200, { status: 'paid' });
     }
@@ -399,6 +442,9 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
     bar.id = 'protobar';
     bar.innerHTML = '<b>PROTOTYPE</b><label>Scenario <select id="protosel">' + Object.entries(SCENARIOS).map(([k, v]) => `<option value="${k}"${k === scenario ? ' selected' : ''}>${v}</option>`).join('') + '</select></label><button id="protorst" type="button">Restart</button><span>Sign-in code 123456 · agreement code ' + SIGN_CODE + ' · nothing here is real</span>';
     document.body.prepend(bar);
+    // the bar is fixed; keep the app below it, whatever height it wraps to
+    const fit = () => { const h = bar.offsetHeight; document.body.style.paddingTop = `${h}px`; document.documentElement.style.setProperty('--barh', `${h}px`); };
+    fit(); new ResizeObserver(fit).observe(bar);
     document.getElementById('protosel').addEventListener('change', (e) => { location.hash = 's=' + e.target.value; location.reload(); });
     document.getElementById('protorst').addEventListener('click', () => location.reload());
   });
@@ -409,6 +455,12 @@ body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{fon
 const STRINGS = {
   en: {
     askLimit: 'You qualify for up to {amount}. Ask for the higher limit only if you want it.', askLimitBtn: 'Ask for a higher limit', limitRaised: 'Your limit is now {amount}.',
+    lenderStrip: 'The loan is made by {lender}. Offered through {lsp}.', lenderMenu: 'Lender and grievance officer', lenderSupport: 'Support',
+    readKfs: 'Read the key facts', kfsTitle: 'Key facts statement', kfsSub: 'Read this before you accept. The loan is made by {lender}.', kfsIncomplete: 'This statement is not complete yet. Please come back later.',
+    kfsLoanType: 'Loan type', kfsAmount: 'Loan amount', kfsTerm: 'Loan term', kfsDays: '{n} days, one repayment', kfsInterest: 'Interest rate', kfsNoInterest: 'None. The cost is the fee below.',
+    kfsTotal: 'Total to repay', kfsApr: 'Yearly cost (APR)', kfsCooling: 'You can change your mind: {n} day', kfsGrievance: 'Grievance officer', kfsNotSet: 'Not set yet', kfsLender: 'Lender',
+    kfsLsp: 'Introduced to you by {name}.', kfsPrint: 'Statement reference {code}. It is also sent to you after signing.', kfsRead: 'I have read it', 
+    payExitSub: 'This pays back the money and the fee for the days you held it. The loan then closes with no penalty.', coolTitle: 'Changed your mind?', coolSub: 'Until {date} you can exit this loan with no penalty. You pay back the money and the fee for the days you held it: {amount}.', coolBtn: 'Exit this loan', coolAsked: 'Pay {amount} to exit. Tap Repay now.',
     welcomeSub: 'You can borrow up to {cap}.', yourDetails: 'Your details', stillCorrect: 'Still correct? Change them if not.', seeBill: 'See my bill', changeDetails: 'Change my details',
     sumSalary: 'Monthly salary', sumEmployer: 'Employer', sumMonths: 'Months at this job', sumHome: 'Home', monthsUnit: '{n} months',
     refreshTitle: 'A quick check first', refreshSub: 'We only ask for what is out of date.', updateContinue: 'Update and continue',
@@ -505,6 +557,12 @@ const STRINGS = {
     repaidTitle: 'लोन चुका दिया गया। धन्यवाद।', repaidSub: 'समय पर चुकाने से अगली बार आपकी सीमा बढ़ सकती है।', borrowAgain: 'फिर उधार लें', done: 'हो गया',
     histTitle: 'आपके लोन', noLoans: 'अभी कोई लोन नहीं।', st_closed: 'चुकाया गया', st_written_off: 'बंद',
     askLimit: 'आप {amount} तक के पात्र हैं। ऊँची सीमा तभी माँगें जब आपको चाहिए।', askLimitBtn: 'ऊँची सीमा माँगें', limitRaised: 'आपकी सीमा अब {amount} है।',
+    lenderStrip: 'यह लोन {lender} देता है। {lsp} के ज़रिए पेश किया गया।', lenderMenu: 'लेंडर और शिकायत अधिकारी', lenderSupport: 'सहायता',
+    readKfs: 'मुख्य तथ्य पढ़ें', kfsTitle: 'मुख्य तथ्य विवरण', kfsSub: 'स्वीकार करने से पहले इसे पढ़ें। यह लोन {lender} देता है।', kfsIncomplete: 'यह विवरण अभी पूरा नहीं है। कृपया बाद में आएँ।',
+    kfsLoanType: 'लोन का प्रकार', kfsAmount: 'लोन राशि', kfsTerm: 'लोन अवधि', kfsDays: '{n} दिन, एक बार चुकाना', kfsInterest: 'ब्याज दर', kfsNoInterest: 'कोई नहीं। लागत नीचे दी गई फ़ीस है।',
+    kfsTotal: 'कुल चुकाना', kfsApr: 'सालाना लागत (APR)', kfsCooling: 'आप अपना मन बदल सकते हैं: {n} दिन', kfsGrievance: 'शिकायत अधिकारी', kfsNotSet: 'अभी तय नहीं', kfsLender: 'लेंडर',
+    kfsLsp: '{name} ने आपको यह लोन दिखाया।', kfsPrint: 'विवरण संदर्भ {code}। साइन करने के बाद यह आपको भेजा भी जाएगा।', kfsRead: 'मैंने पढ़ लिया',
+    payExitSub: 'इससे आपके पैसे और रखे हुए दिनों की फ़ीस चुक जाती है। फिर लोन बिना जुर्माने के बंद हो जाता है।', coolTitle: 'मन बदल गया?', coolSub: '{date} तक आप बिना जुर्माने के यह लोन बंद कर सकते हैं। आप पैसे और रखे हुए दिनों की फ़ीस लौटाते हैं: {amount}।', coolBtn: 'यह लोन बंद करें', coolAsked: 'बंद करने के लिए {amount} चुकाएँ। अभी चुकाएँ दबाएँ।',
     permTitle: 'आपकी अनुमतियाँ', permSub: 'आप कभी भी अनुमति वापस ले सकते हैं। इससे हम आपको नया लोन नहीं दे पाएँगे।', withdraw: 'वापस लें', none: 'कोई अनुमति दर्ज नहीं है।',
     p_kyc: 'मेरी पहचान जाँचें', p_credit_bureau: 'मेरी क्रेडिट रिपोर्ट देखें', p_terms: 'गोपनीयता सूचना और शर्तें', p_communication: 'हमारी ओर से संदेश', p_data_sharing: 'साझेदारों के साथ डेटा साझा करें', p_bank_data: 'मेरा बैंक स्टेटमेंट देखें',
     e_signed_out: 'कृपया फिर से साइन इन करें।', e_generic: 'कुछ गड़बड़ हो गई। कृपया फिर कोशिश करें।', e_check: 'कृपया चिह्नित फ़ील्ड जाँचें।',
@@ -605,6 +663,7 @@ const select = ({ id, label, options, value, error = '', prefix }) => `
     ${options.map((o) => `<option value="${o}" ${value === o ? 'selected' : ''}>${esc(t(prefix + o))}</option>`).join('')}
   </select>${error ? `<div class="err" role="alert">${esc(error)}</div>` : ''}</div>`;
 
+const dueNow = (l) => (l.cooling_off?.open && l.cooling_off.requested ? l.cooling_off.amount_due : l.outstanding);
 const kv = (rows) => `<dl class="kv panel">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
 const btn = (label, act, cls = '', extra = '') => `<button class="btn block ${cls}" type="button" data-act="${act}" ${extra} ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
 const ghost = (label, act) => `<button class="btn block ghost" type="button" data-act="${act}" ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
@@ -749,7 +808,28 @@ const SCREENS = {
         ${kv([...termsRows(o), [t('lateCharge'), esc(t('lateChargeVal', { pct: o.lateChargePctPerDay }))]])}
         ${o.waiverPct ? `<p class="fine"><b>${esc(t('waiverApplied', { pct: o.waiverPct }))}</b></p>` : ''}
         <p class="fine">${esc(t('dueRule', { days: o.tenureDays }))}${S.me.offer_expires ? ` · ${esc(t('offerValid', { date: dateFmt(S.me.offer_expires) }))}` : ''}</p>`,
-      foot: btn(t('acceptOffer'), 'accept', 'money') + ghost(t('notNow'), 'not-now'),
+      foot: (S.kfsSeen === S.me.application.id ? btn(t('acceptOffer'), 'accept', 'money') : btn(t('readKfs'), 'open-kfs', 'money')) + ghost(t('notNow'), 'not-now'),
+    };
+  },
+
+  // The key facts statement (RBI Digital Lending Directions, 2025): shown before the customer can accept.
+  kfs: () => {
+    const k = S.kfs; const p1 = k.part1; const p2 = k.part2; const g = p2.grievance_officer || {}; const fee = p1.fees_payable_to_lender[0];
+    return {
+      body: `<h1>${esc(t('kfsTitle'))}</h1>${k.complete ? '' : `<div class="err" role="alert">${esc(t('kfsIncomplete'))}</div>`}
+        <p class="muted">${esc(t('kfsSub', { lender: k.lender.name || '' }))}</p>
+        ${kv([
+          [t('kfsLoanType'), esc(p1.loan_type)], [t('kfsAmount'), inr(p1.sanctioned_amount)], [t('kfsTerm'), esc(t('kfsDays', { n: p1.loan_term_days }))],
+          [t('kfsInterest'), esc(t('kfsNoInterest'))],
+          [fee.name, fee.before_waiver ? `<s>${inr(fee.before_waiver)}</s> ${inr(fee.amount)}` : inr(fee.amount)],
+          [t('kfsTotal'), `<strong>${inr(p1.total_to_repay)}</strong>`], [t('kfsApr'), pct(p1.apr_pct)], [t('aprSimple'), pct(p1.apr_simple_pct)],
+          ...p1.contingent_charges.map((c) => [c.name, esc(c.basis)]),
+        ])}
+        <div class="panel"><b>${esc(t('kfsCooling', { n: p2.cooling_off.days }))}</b><p class="fine">${esc(p2.cooling_off.terms)}</p></div>
+        <div class="panel"><b>${esc(t('kfsGrievance'))}</b><p class="fine">${esc([g.name, g.email, g.phone].filter(Boolean).join(' · ') || t('kfsNotSet'))}</p>
+          <p class="fine">${esc(t('kfsLender'))}: ${esc(k.lender.name || '')} · ${esc(k.lender.registration || '')}<br>${esc(k.lender.address || '')}<br>${esc(t('kfsLsp', { name: k.lending_service_provider.name }))}</p></div>
+        <p class="fine">${esc(t('kfsPrint', { code: String(k.sha256).slice(0, 10) }))}</p>`,
+      foot: btn(t('kfsRead'), 'kfs-read', 'money', k.complete ? '' : 'disabled') + ghost(t('back'), 'kfs-read-back'),
     };
   },
 
@@ -821,7 +901,9 @@ const SCREENS = {
     return {
       body: `<h1>${esc(t('loanTitle'))}</h1>
         <div class="money-card"><span class="label">${esc(t('amountDue'))}</span><span class="big">${inr(l.outstanding)}</span><span class="label">${esc(t('dueOn', { date: dateFmt(l.due_date) }))}</span></div>
-        ${kv([[t('borrowed'), inr(l.principal)], [t('status'), `<span class="badge ${l.status === 'overdue' ? 'bad' : 'ok'}">${esc(t(l.status === 'overdue' ? 'st_overdue' : 'st_active'))}</span>`], [left >= 0 ? t('daysLeft', { n: left }) : t('overdueBy', { n: l.days_overdue }), '']])}`,
+        ${kv([[t('borrowed'), inr(l.principal)], [t('status'), `<span class="badge ${l.status === 'overdue' ? 'bad' : 'ok'}">${esc(t(l.status === 'overdue' ? 'st_overdue' : 'st_active'))}</span>`], [left >= 0 ? t('daysLeft', { n: left }) : t('overdueBy', { n: l.days_overdue }), '']])}
+        ${l.cooling_off?.open ? `<div class="panel"><b>${esc(t('coolTitle'))}</b><p class="fine">${esc(t('coolSub', { date: dateFmt(l.cooling_off.ends), amount: inr(l.cooling_off.amount_due) }))}</p>
+          ${l.cooling_off.requested ? `<p class="fine"><b>${esc(t('coolAsked', { amount: inr(l.cooling_off.amount_due) }))}</b></p>` : `<button class="linkbtn" type="button" data-act="cooling-exit">${esc(t('coolBtn'))}</button>`}</div>` : ''}`,
       foot: btn(t('repayNow'), 'repay', 'money'),
     };
   },
@@ -829,9 +911,9 @@ const SCREENS = {
   pay: () => {
     const l = S.me.loan;
     return {
-      body: `<h1>${esc(t('payTitle', { amount: inr(l.outstanding) }))}</h1><p class="muted">${esc(t('paySub'))}</p>
+      body: `<h1>${esc(t('payTitle', { amount: inr(dueNow(l)) }))}</h1><p class="muted">${esc(l.cooling_off?.requested && l.cooling_off?.open ? t('payExitSub') : t('paySub'))}</p>
         ${S.cfg?.mode === 'demo' ? `<p class="fine">${esc(t('payDemo'))}</p>` : ''}${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
-      foot: btn(t('payNow', { amount: inr(l.outstanding) }), 'pay-now', 'money') + ghost(t('back'), 'see-loan'),
+      foot: btn(t('payNow', { amount: inr(dueNow(l)) }), 'pay-now', 'money') + ghost(t('back'), 'see-loan'),
     };
   },
 
@@ -849,6 +931,7 @@ function sheetHtml() {
   if (S.sheet === 'menu') {
     inner = `<button class="btn block ghost" data-act="open-history">${esc(t('history'))}</button>
       <button class="btn block ghost" data-act="open-perms">${esc(t('permissions'))}</button>
+      <button class="btn block ghost" data-act="open-lender">${esc(t('lenderMenu'))}</button>
       ${S.installEvt ? `<button class="btn block ghost" data-act="install">${esc(t('install'))}</button>` : ''}
       <a class="btn block ghost" href="/privacy" target="_blank" rel="noopener">${esc(t('privacy'))}</a>
       <a class="btn block ghost" href="/contact" target="_blank" rel="noopener">${esc(t('help'))}</a>
@@ -856,6 +939,13 @@ function sheetHtml() {
   } else if (S.sheet === 'history') {
     const h = S.me?.history || [];
     inner = `<h2>${esc(t('histTitle'))}</h2>${h.length ? `<div class="list">${h.map((x) => `<div class="item"><span>${inr(x.amount)} · ${esc(x.disbursed_at ? dateFmt(x.disbursed_at) : '')}</span><span class="badge info">${esc(t('st_' + x.status))}</span></div>`).join('')}</div>` : `<p class="muted">${esc(t('noLoans'))}</p>`}
+      <button class="btn block ghost" data-act="close-sheet">${esc(t('close'))}</button>`;
+  } else if (S.sheet === 'lender') {
+    const L = S.cfg?.lender || {}; const g = L.grievance_officer || {};
+    inner = `<h2>${esc(t('lenderMenu'))}</h2>
+      <div class="list"><div class="item"><span><b>${esc(L.name || '')}</b><br><small class="muted">${esc(L.registration || '')}<br>${esc(L.address || '')}</small></span></div>
+      <div class="item"><span><b>${esc(t('kfsGrievance'))}</b><br><small class="muted">${esc([g.name, g.email, g.phone].filter(Boolean).join(' · ') || t('kfsNotSet'))}</small></span></div>
+      <div class="item"><span><b>${esc(t('lenderSupport'))}</b><br><small class="muted">${esc([L.support_email, L.support_phone].filter(Boolean).join(' · '))}</small></span></div></div>
       <button class="btn block ghost" data-act="close-sheet">${esc(t('close'))}</button>`;
   } else if (S.sheet === 'perms') {
     const c = S.me?.consents || [];
@@ -875,6 +965,7 @@ function render() {
     <header class="appbar"><a class="brand" href="/app"><svg class="mark" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="58 12" transform="rotate(-70 16 16)"/></svg><span>${esc(t('brand'))}</span></a>
       <div class="tools"><button class="chip" data-act="lang" data-lang="en" aria-pressed="${S.lang === 'en'}">EN</button><button class="chip" data-act="lang" data-lang="hi" aria-pressed="${S.lang === 'hi'}" lang="hi">हिं</button>
       ${signedIn ? `<button class="chip" data-act="open-menu" aria-label="${esc(t('menu'))}">☰</button>` : ''}</div></header>
+    ${S.cfg?.lender?.name ? `<div class="lender-strip" role="note">${esc(t('lenderStrip', { lender: S.cfg.lender.name, lsp: S.cfg.lender.lending_service_provider?.name || '' }))}</div>` : ''}
     ${S.cfg?.mode === 'demo' ? `<div class="demo-strip" role="note">${esc(t('demoStrip'))}</div>` : ''}
     ${idx >= 0 ? `<div class="stepline">${esc(t('step', { n: idx + 1, total: FLOW.length }))}</div>` : ''}
     <main class="screen" id="screen"><div class="tape">${view.body}</div></main>
@@ -934,6 +1025,11 @@ const ACTIONS = {
       showToast(t('limitRaised', { amount: inr(r.limit) }));
     });
   },
+  'open-lender'() { openSheet('lender'); },
+  'open-kfs'() { return guarded(async () => { S.kfs = (await api('/kfs')).kfs; go('kfs'); }); },
+  'kfs-read'() { S.kfsSeen = S.me.application.id; go('offer'); },
+  'kfs-read-back'() { go('offer'); },
+  'cooling-exit'() { return guarded(async () => { await api('/loan/cooling-off', { method: 'POST' }); await refreshMe(); render(); }); },
   'open-menu'() { openSheet('menu'); },
   'open-history'() { openSheet('history'); },
   'open-perms'() { openSheet('perms'); },
