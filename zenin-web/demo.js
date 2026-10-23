@@ -12,12 +12,15 @@
 //   disburse(applicationId, account)   -> { status, body }
 //   loanView(loanId)                   -> { status, body }
 //   collect(loanId, amount)            -> { status, body }
+//   lender()                           -> the lender profile (name, registration, grievance officer)
+//   kfs(applicationId)                 -> { status, body }  the key facts statement
+//   coolingOff(loanId)                 -> { status, body }  ask to exit inside the cooling-off window
 //   owns(customerId, 'application' | 'loan', id) -> boolean
 //   demo-only: signAgreement(applicationId), pay(loanId)
 import { randomBytes } from 'node:crypto';
 import { createApp } from '../payday-api/app.js';
 import {
-  createRegistry, memoryStore, recordAgreementSigned, recordPayment, getLoanSummary,
+  createRegistry, memoryStore, recordAgreementSigned, recordPayment, getLoanSummary, coolingOffQuote,
 } from '../payday-journey/index.js';
 
 export const DEMO_PRODUCT = Object.freeze({
@@ -33,7 +36,13 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
   const store = memoryStore({ products: [{ ...DEMO_PRODUCT }] });
   const key = `demo-${randomBytes(16).toString('hex')}`;
   const registry = createRegistry({ env: {} }); // every slot is a mock
-  const app = createApp({ store, registry, env: { PAYDAY_API_KEY: key, PAN_PEPPER: 'demo-pepper' } });
+  // The lender details are placeholders marked as demo. A real lender's details come from the environment of payday-api.
+  const lenderEnv = {
+    LENDER_NAME: 'Demo Finance Ltd (demo, not a real lender)', LENDER_REGISTRATION: 'DEMO-0000', REGISTERED_ADDRESS: '1 Demo Road, Demo City',
+    SUPPORT_EMAIL: 'help@demo.invalid', SUPPORT_PHONE: '1800-000-0000',
+    GRIEVANCE_OFFICER_NAME: 'Demo Grievance Officer', GRIEVANCE_OFFICER_EMAIL: 'grievance@demo.invalid', GRIEVANCE_OFFICER_PHONE: '1800-000-0001',
+  };
+  const app = createApp({ store, registry, env: { PAYDAY_API_KEY: key, PAN_PEPPER: 'demo-pepper', ...lenderEnv } });
   const call = (method, path, body, query) => app.handle({
     method, path, query, headers: { 'x-api-key': key },
     rawBody: body === undefined ? '' : JSON.stringify(body),
@@ -105,6 +114,10 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
 
     async sendAgreement(applicationId) { return call('POST', `/v1/applications/${applicationId}/agreement`, {}); },
     async disburse(applicationId, account) { return call('POST', `/v1/applications/${applicationId}/disburse`, { account }); },
+    // Who the lender is, the key facts statement for an offer, and the cooling-off exit (RBI Digital Lending Directions, 2025).
+    async lender() { return (await call('GET', '/v1/lender')).body; },
+    async kfs(applicationId) { return call('GET', `/v1/applications/${applicationId}/kfs`); },
+    async coolingOff(loanId) { return call('POST', `/v1/loans/${loanId}/cooling-off`, {}); },
     async loanView(loanId) { return call('GET', `/v1/loans/${loanId}`); },
     async collect(loanId, amount) { return call('POST', `/v1/loans/${loanId}/collect`, amount === undefined ? {} : { amount }); },
 
@@ -122,8 +135,11 @@ export function createDemoGateway({ now = () => new Date(), maxCustomers = DEMO_
       const s = await getLoanSummary({ store, loanId });
       if (!s || s.outstanding <= 0) return null;
       const product = await store.getProduct(s.loan.product_id);
+      // A borrower using the cooling-off exit pays the principal and the fee for the days held, not the full bill.
+      const quote = s.loan.cooling_off_exit_at ? await coolingOffQuote({ store, loan: s.loan, product }) : null;
+      const amount = quote?.open ? quote.amount_due : s.outstanding;
       return recordPayment({
-        store, loan: s.loan, product, amount: s.outstanding, mode: 'upi', utr: `DEMO-${loanId}`,
+        store, loan: s.loan, product, amount, mode: 'upi', utr: `DEMO-${loanId}`,
         paidAt: new Date().toISOString(), // the loan system dates the loan by the real calendar, so the simulated payment does too
       });
     },

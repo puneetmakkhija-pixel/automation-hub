@@ -214,3 +214,6 @@ input.code{font-family:var(--mono);letter-spacing:.4em;font-size:1.5rem;text-ali
 #pan,#acct_ifsc{text-transform:uppercase}
 .cta-row.center{justify-content:center}
 noscript .pad{padding:24px}
+
+/* lender strip (who makes the loan), key facts statement */
+.lender-strip{background:var(--paper);color:var(--ink);font:12px/1.4 var(--mono);padding:6px 14px;text-align:center;border-bottom:1px dashed var(--rule)}

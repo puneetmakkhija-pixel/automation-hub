@@ -678,3 +678,37 @@ test('WHEEL: the browser cannot choose the result or the waiver', async () => {
   const a = await c.call('POST', '/api/applications', { amount: 10000, use_saved: true, purpose: 'bills', waiver_pct: 100, fee_waiver_pct: 100 });
   assert.equal(a.body.offer.waiverPct, spin.body.waiver_pct, 'the waiver comes from the database, not the request');
 });
+
+// ------------------------------------------------------------------ RBI: lender, key facts, cooling-off
+test('RBI: the lender is shown, the key facts come before accepting, and the cooling-off exit costs only the days held', async () => {
+  const s = site();
+  const c = s.client();
+  const cfg = (await c.call('GET', '/api/config')).body;
+  assert.equal(cfg.lender.complete, true, 'the demo has full (marked) lender details');
+  assert.match(cfg.lender.name, /demo/i);
+  assert.equal(cfg.lender.grievance_officer.email, 'grievance@demo.invalid');
+  assert.equal(cfg.lender.lending_service_provider.name, 'BuddyLoan');
+
+  await login(c, mobile(3)); await consent(c);
+  assert.equal((await c.call('GET', '/api/kfs')).body.error, 'no_offer', 'no offer yet, no statement');
+  const a = await c.call('POST', '/api/applications', details());
+  const appId = a.body.application_id;
+  const k = (await c.call('GET', '/api/kfs')).body.kfs;
+  assert.deepEqual([k.part1.sanctioned_amount, k.part1.total_to_repay, k.part1.apr_pct, k.part2.cooling_off.days, k.part2.grievance_officer.name], [10000, 10800, 155.07, 1, 'Demo Grievance Officer']);
+  assert.match(k.sha256, /^[0-9a-f]{64}$/);
+
+  await c.call('POST', `/api/applications/${appId}/accept`);
+  await c.call('POST', `/api/applications/${appId}/sign`, { code: '246810' });
+  await c.call('POST', `/api/applications/${appId}/disburse`, { account });
+  const loan = (await c.call('GET', '/api/me')).body.loan;
+  assert.deepEqual([loan.cooling_off.open, loan.cooling_off.amount_due, loan.cooling_off.requested], [true, 10026.67, false]);
+
+  const ask = await c.call('POST', '/api/loan/cooling-off');
+  assert.deepEqual([ask.status, ask.body.cooling_off.requested, ask.body.cooling_off.amount_due], [200, true, 10026.67]);
+  assert.equal((await c.call('POST', '/api/loan/pay')).body.status, 'paid');
+  const after = (await c.call('GET', '/api/me')).body;
+  assert.deepEqual([after.next, after.cap, after.can_request_increase], ['start', 10000, false], 'the exit earns no higher limit');
+  assert.equal(after.history[0].status, 'closed');
+  assert.equal((await c.call('POST', '/api/loan/cooling-off')).status, 404, 'nothing to exit once the loan is closed');
+  assert.equal((await s.client().call('GET', '/api/kfs')).status, 401, 'signed-in customers only');
+});

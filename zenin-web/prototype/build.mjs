@@ -16,11 +16,13 @@ const app = read(join(pub, 'js', 'app.js'))
   .replace(/window\.addEventListener\('beforeinstallprompt'.*\n/, '');
 const mock = read(join(here, 'mock.js')).replace('__WHEEL__', JSON.stringify(WHEEL));
 const bar = `
-body{padding-top:46px}@media(max-width:600px){#protobar span,#protobar label{font-size:11px}#protobar span{display:none}body{padding-top:40px}}
+@media(max-width:600px){#protobar span,#protobar label{font-size:11px}#protobar span{display:none}#protobar{padding:4px 10px}}
 #protobar{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#16241f;color:#fafaf5;padding:6px 12px;font:12px/1.3 'DM Mono',monospace;border-bottom:2px solid #ffd23f}
 #protobar b{background:#ffd23f;color:#16241f;padding:2px 6px;border-radius:3px}
 #protobar select,#protobar button{font:inherit;padding:3px 6px;border-radius:3px;border:1px solid #fafaf5;background:#0e3b36;color:#fafaf5}
-#protobar span{opacity:.75}`;
+#protobar span{opacity:.75}
+#protobar label{display:flex;gap:6px;align-items:center;flex:1;min-width:0}#protobar select{min-width:0;flex:1}
+.appbar{top:var(--barh,0)!important}`;
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Zenin Credit app prototype</title>

@@ -18,6 +18,7 @@
     declined: 'No offer: declined, try later',
     blocked: 'No offer: not available',
     kyc_pending: 'No offer: identity check pending',
+    loan_new: 'Just paid out: cooling-off exit open',
     loan: 'Open loan, due in 12 days',
     wheel2: 'Loyalty: 2 loans repaid (no spin yet)',
     wheel3: 'Loyalty: 3 loans repaid, 1 spin waiting',
@@ -46,11 +47,16 @@
   if (sc === 'declined') { repeat(); hist(1); st.next = 'declined'; st.declinedUntil = iso(24); st.application = { id: 'A3', status: 'rejected', reference: 'F3E1A0C4' }; }
   if (sc === 'blocked') { repeat(); hist(1); st.next = 'blocked'; }
   if (sc === 'kyc_pending') { st.next = 'kyc_pending'; st.application = { id: 'A4', status: 'kyc_pending', reference: 'K9D2E5B7' }; }
+  if (sc === 'loan_new') { repeat(); hist(1); st.next = 'loan'; st.loan = { loan_id: 'L8', status: 'active', principal: 10000, due_date: iso(30), outstanding: 10800, days_overdue: 0, apr_pct: 155.07, fresh: true }; }
   if (sc === 'loan') { repeat(); hist(1); st.next = 'loan'; st.loan = { loan_id: 'L9', status: 'active', principal: 10000, due_date: iso(12), outstanding: 10800, days_overdue: 0, apr_pct: 97.3 }; }
   if (sc === 'wheel2') { repeat(); st.repaid = 2; st.cap = 20000; hist(2); }
   if (sc === 'wheel3') { repeat(); st.repaid = 3; st.cap = 25000; st.spins = 1; hist(3); }
   if (sc === 'reward') { repeat(); st.repaid = 3; st.cap = 25000; hist(3); st.reward = { waiver_pct: 30, expires_at: stamp(27) }; }
 
+  const LENDER = {
+    name: 'Demo Finance Ltd (demo, not a real lender)', registration: 'DEMO-0000', address: '1 Demo Road, Demo City', support_email: 'help@demo.invalid', support_phone: '1800-000-0000',
+    grievance_officer: { name: 'Demo Grievance Officer', email: 'grievance@demo.invalid', phone: '1800-000-0001' }, lending_service_provider: { name: 'BuddyLoan' }, complete: true, missing: [],
+  };
   const WHEEL = __WHEEL__;
   const ODDS = [10, 20, 30, 40, 50].map((w) => ({ waiver: w, slices: WHEEL.filter((x) => x === w).length }));
   const waiver = () => (st.reward ? st.reward.waiver_pct : 0);
@@ -60,6 +66,27 @@
     return {
       amount, fee, repayment: amount + fee, tenureDays: 30, aprSimplePct: round2((fee / amount) * (365 / 30) * 100),
       aprEffectivePct: round2(((1 + fee / amount) ** (365 / 30) - 1) * 100), lateChargePctPerDay: 1, waiverPct: w, feeBeforeWaiver: w ? fullFee : null,
+    };
+  }
+  // Cooling-off: the first day after payout the borrower may exit by paying the principal and the fee for the days held.
+  function coolingOff() {
+    const l = st.loan;
+    if (!l || !l.fresh) return { open: false };
+    const fee = round2(Math.min(l.principal * 0.08, (l.principal * 0.08) / 30));
+    return { open: true, ends: iso(1), days_held: 1, principal: l.principal, fee, fee_reversed: round2(l.principal * 0.08 - fee), amount_due: round2(l.principal + fee), requested: Boolean(l.exitAsked) };
+  }
+  function kfs(amount, w) {
+    const t = terms(amount, w);
+    return {
+      version: 1, complete: true, lender: { name: LENDER.name, registration: LENDER.registration, address: LENDER.address }, lending_service_provider: LENDER.lending_service_provider,
+      part1: {
+        loan_type: 'Short-term personal loan, single repayment', sanctioned_amount: amount, loan_term_days: 30, interest_rate_pct: 0,
+        fees_payable_to_lender: [{ name: 'Loan fee', amount: t.fee, ...(w ? { before_waiver: t.feeBeforeWaiver, waiver_pct: w } : {}) }],
+        total_to_repay: t.repayment, apr_pct: t.aprEffectivePct, apr_simple_pct: t.aprSimplePct,
+        contingent_charges: [{ name: 'Late payment charge', basis: '1% of the overdue principal for each day it is overdue' }, { name: 'Foreclosure or early repayment', basis: 'No charge. You may repay early at any time.' }],
+      },
+      part2: { cooling_off: { days: 1, terms: 'You may exit the loan during this period by repaying the principal and the fee for the days you held the money. No penalty applies.' }, grievance_officer: LENDER.grievance_officer },
+      sha256: 'a3f1c9d27be04415a3f1c9d27be04415a3f1c9d27be04415a3f1c9d27be04415',
     };
   }
   function me() {
@@ -73,7 +100,7 @@
     if (st.profile && ['start', 'refresh'].includes(st.next)) o.profile = { ...st.profile };
     if (st.application) o.application = st.application;
     if (st.offer) { o.offer = terms(st.offer, st.offerWaiver || 0); if (st.next === 'offer') o.offer_expires = st.offerExpires; }
-    if (st.loan && st.next === 'loan') o.loan = st.loan;
+    if (st.loan && st.next === 'loan') o.loan = { ...st.loan, cooling_off: coolingOff() };
     return o;
   }
   const res = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -82,7 +109,7 @@
 
   async function handle(method, path, query, body) {
     if (method === 'GET' && path === '/config') {
-      return res(200, { mode: 'demo', brand: 'Zenin Credit', product: { min: 5000, max: 50000, tenure_days: 30, late_charge_pct_per_day: 1 }, first_loan_max: 10000,
+      return res(200, { mode: 'demo', brand: 'Zenin Credit', lender: LENDER, product: { min: 5000, max: 50000, tenure_days: 30, late_charge_pct_per_day: 1 }, first_loan_max: 10000,
         wheel: { slices: WHEEL, odds: ODDS, valid_days: 30, repaid_needed: 3 }, demo: { otp: '123456', sign_code: SIGN_CODE, hint: '' } });
     }
     if (method === 'GET' && path === '/quote') {
@@ -105,6 +132,16 @@
       return res(200, {});
     }
     if (method === 'POST' && path === '/consents/revoke') { st.consents = st.consents.filter((c) => c !== body.purpose); return res(200, { revoked: body.purpose }); }
+    if (method === 'GET' && path === '/kfs') {
+      if (!st.offer || !['offer', 'sign', 'bank'].includes(st.next)) return err(409, 'no_offer', 'There is no offer to show.');
+      return res(200, { kfs: kfs(st.offer, st.offerWaiver || 0) });
+    }
+    if (method === 'POST' && path === '/loan/cooling-off') {
+      const q = coolingOff();
+      if (!q.open) return err(409, 'window_over', 'The cooling-off period for this loan has ended.');
+      st.loan.exitAsked = true;
+      return res(200, { cooling_off: coolingOff() });
+    }
     if (method === 'GET' && path === '/history') return res(200, { history: st.history });
     if (method === 'POST' && path === '/limit/increase') {
       if (!(st.eligible > st.cap)) return err(409, 'no_increase', 'A higher limit is not available right now.');
@@ -143,15 +180,16 @@
       if (m[2] === 'sign') { if (String(body.code) !== SIGN_CODE) return err(400, 'bad_code', 'That code is not right.'); st.next = 'bank'; return res(200, { status: 'signed' }); }
       const t = terms(st.offer, st.offerWaiver || 0);
       if (st.offerWaiver) st.reward = null;
-      st.loan = { loan_id: 'L' + Date.now(), status: 'active', principal: st.offer, due_date: iso(30), outstanding: t.repayment, days_overdue: 0, apr_pct: t.aprSimplePct };
+      st.loan = { loan_id: 'L' + Date.now(), status: 'active', principal: st.offer, due_date: iso(30), outstanding: t.repayment, days_overdue: 0, apr_pct: t.aprEffectivePct, fresh: true };
       st.next = 'loan'; st.offerWaiver = 0;
       return res(200, { status: 'paid', due_date: st.loan.due_date });
     }
     if (method === 'POST' && path === '/loan/pay') {
+      const exited = Boolean(st.loan.fresh && st.loan.exitAsked);
       st.history.push({ loan_id: st.loan.loan_id, status: 'closed', amount: st.loan.principal, disbursed_at: stamp(-30), closed_at: stamp(0) });
       st.repaid += 1; st.loan = null; st.offer = null; st.application = null; st.next = 'start';
-      st.eligible = Math.min(50000, st.cap + 5000); // eligible for more, but the limit shown moves only when the customer asks
-      if (st.repaid >= 3) st.spins += 1;
+      if (!exited) st.eligible = Math.min(50000, st.cap + 5000); // eligible for more, but the limit shown moves only when the customer asks
+      if (st.repaid >= 3 && !exited) st.spins += 1;
       if (!st.profile) st.profile = { ...JOB };
       return res(200, { status: 'paid' });
     }
@@ -172,6 +210,9 @@
     bar.id = 'protobar';
     bar.innerHTML = '<b>PROTOTYPE</b><label>Scenario <select id="protosel">' + Object.entries(SCENARIOS).map(([k, v]) => `<option value="${k}"${k === scenario ? ' selected' : ''}>${v}</option>`).join('') + '</select></label><button id="protorst" type="button">Restart</button><span>Sign-in code 123456 · agreement code ' + SIGN_CODE + ' · nothing here is real</span>';
     document.body.prepend(bar);
+    // the bar is fixed; keep the app below it, whatever height it wraps to
+    const fit = () => { const h = bar.offsetHeight; document.body.style.paddingTop = `${h}px`; document.documentElement.style.setProperty('--barh', `${h}px`); };
+    fit(); new ResizeObserver(fit).observe(bar);
     document.getElementById('protosel').addEventListener('change', (e) => { location.hash = 's=' + e.target.value; location.reload(); });
     document.getElementById('protorst').addEventListener('click', () => location.reload());
   });

@@ -92,6 +92,7 @@ const select = ({ id, label, options, value, error = '', prefix }) => `
     ${options.map((o) => `<option value="${o}" ${value === o ? 'selected' : ''}>${esc(t(prefix + o))}</option>`).join('')}
   </select>${error ? `<div class="err" role="alert">${esc(error)}</div>` : ''}</div>`;
 
+const dueNow = (l) => (l.cooling_off?.open && l.cooling_off.requested ? l.cooling_off.amount_due : l.outstanding);
 const kv = (rows) => `<dl class="kv panel">${rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>`;
 const btn = (label, act, cls = '', extra = '') => `<button class="btn block ${cls}" type="button" data-act="${act}" ${extra} ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
 const ghost = (label, act) => `<button class="btn block ghost" type="button" data-act="${act}" ${S.busy ? 'disabled' : ''}>${esc(label)}</button>`;
@@ -236,7 +237,28 @@ const SCREENS = {
         ${kv([...termsRows(o), [t('lateCharge'), esc(t('lateChargeVal', { pct: o.lateChargePctPerDay }))]])}
         ${o.waiverPct ? `<p class="fine"><b>${esc(t('waiverApplied', { pct: o.waiverPct }))}</b></p>` : ''}
         <p class="fine">${esc(t('dueRule', { days: o.tenureDays }))}${S.me.offer_expires ? ` · ${esc(t('offerValid', { date: dateFmt(S.me.offer_expires) }))}` : ''}</p>`,
-      foot: btn(t('acceptOffer'), 'accept', 'money') + ghost(t('notNow'), 'not-now'),
+      foot: (S.kfsSeen === S.me.application.id ? btn(t('acceptOffer'), 'accept', 'money') : btn(t('readKfs'), 'open-kfs', 'money')) + ghost(t('notNow'), 'not-now'),
+    };
+  },
+
+  // The key facts statement (RBI Digital Lending Directions, 2025): shown before the customer can accept.
+  kfs: () => {
+    const k = S.kfs; const p1 = k.part1; const p2 = k.part2; const g = p2.grievance_officer || {}; const fee = p1.fees_payable_to_lender[0];
+    return {
+      body: `<h1>${esc(t('kfsTitle'))}</h1>${k.complete ? '' : `<div class="err" role="alert">${esc(t('kfsIncomplete'))}</div>`}
+        <p class="muted">${esc(t('kfsSub', { lender: k.lender.name || '' }))}</p>
+        ${kv([
+          [t('kfsLoanType'), esc(p1.loan_type)], [t('kfsAmount'), inr(p1.sanctioned_amount)], [t('kfsTerm'), esc(t('kfsDays', { n: p1.loan_term_days }))],
+          [t('kfsInterest'), esc(t('kfsNoInterest'))],
+          [fee.name, fee.before_waiver ? `<s>${inr(fee.before_waiver)}</s> ${inr(fee.amount)}` : inr(fee.amount)],
+          [t('kfsTotal'), `<strong>${inr(p1.total_to_repay)}</strong>`], [t('kfsApr'), pct(p1.apr_pct)], [t('aprSimple'), pct(p1.apr_simple_pct)],
+          ...p1.contingent_charges.map((c) => [c.name, esc(c.basis)]),
+        ])}
+        <div class="panel"><b>${esc(t('kfsCooling', { n: p2.cooling_off.days }))}</b><p class="fine">${esc(p2.cooling_off.terms)}</p></div>
+        <div class="panel"><b>${esc(t('kfsGrievance'))}</b><p class="fine">${esc([g.name, g.email, g.phone].filter(Boolean).join(' · ') || t('kfsNotSet'))}</p>
+          <p class="fine">${esc(t('kfsLender'))}: ${esc(k.lender.name || '')} · ${esc(k.lender.registration || '')}<br>${esc(k.lender.address || '')}<br>${esc(t('kfsLsp', { name: k.lending_service_provider.name }))}</p></div>
+        <p class="fine">${esc(t('kfsPrint', { code: String(k.sha256).slice(0, 10) }))}</p>`,
+      foot: btn(t('kfsRead'), 'kfs-read', 'money', k.complete ? '' : 'disabled') + ghost(t('back'), 'kfs-read-back'),
     };
   },
 
@@ -308,7 +330,9 @@ const SCREENS = {
     return {
       body: `<h1>${esc(t('loanTitle'))}</h1>
         <div class="money-card"><span class="label">${esc(t('amountDue'))}</span><span class="big">${inr(l.outstanding)}</span><span class="label">${esc(t('dueOn', { date: dateFmt(l.due_date) }))}</span></div>
-        ${kv([[t('borrowed'), inr(l.principal)], [t('status'), `<span class="badge ${l.status === 'overdue' ? 'bad' : 'ok'}">${esc(t(l.status === 'overdue' ? 'st_overdue' : 'st_active'))}</span>`], [left >= 0 ? t('daysLeft', { n: left }) : t('overdueBy', { n: l.days_overdue }), '']])}`,
+        ${kv([[t('borrowed'), inr(l.principal)], [t('status'), `<span class="badge ${l.status === 'overdue' ? 'bad' : 'ok'}">${esc(t(l.status === 'overdue' ? 'st_overdue' : 'st_active'))}</span>`], [left >= 0 ? t('daysLeft', { n: left }) : t('overdueBy', { n: l.days_overdue }), '']])}
+        ${l.cooling_off?.open ? `<div class="panel"><b>${esc(t('coolTitle'))}</b><p class="fine">${esc(t('coolSub', { date: dateFmt(l.cooling_off.ends), amount: inr(l.cooling_off.amount_due) }))}</p>
+          ${l.cooling_off.requested ? `<p class="fine"><b>${esc(t('coolAsked', { amount: inr(l.cooling_off.amount_due) }))}</b></p>` : `<button class="linkbtn" type="button" data-act="cooling-exit">${esc(t('coolBtn'))}</button>`}</div>` : ''}`,
       foot: btn(t('repayNow'), 'repay', 'money'),
     };
   },
@@ -316,9 +340,9 @@ const SCREENS = {
   pay: () => {
     const l = S.me.loan;
     return {
-      body: `<h1>${esc(t('payTitle', { amount: inr(l.outstanding) }))}</h1><p class="muted">${esc(t('paySub'))}</p>
+      body: `<h1>${esc(t('payTitle', { amount: inr(dueNow(l)) }))}</h1><p class="muted">${esc(l.cooling_off?.requested && l.cooling_off?.open ? t('payExitSub') : t('paySub'))}</p>
         ${S.cfg?.mode === 'demo' ? `<p class="fine">${esc(t('payDemo'))}</p>` : ''}${S.formError ? `<div class="err" role="alert">${esc(S.formError)}</div>` : ''}`,
-      foot: btn(t('payNow', { amount: inr(l.outstanding) }), 'pay-now', 'money') + ghost(t('back'), 'see-loan'),
+      foot: btn(t('payNow', { amount: inr(dueNow(l)) }), 'pay-now', 'money') + ghost(t('back'), 'see-loan'),
     };
   },
 
@@ -336,6 +360,7 @@ function sheetHtml() {
   if (S.sheet === 'menu') {
     inner = `<button class="btn block ghost" data-act="open-history">${esc(t('history'))}</button>
       <button class="btn block ghost" data-act="open-perms">${esc(t('permissions'))}</button>
+      <button class="btn block ghost" data-act="open-lender">${esc(t('lenderMenu'))}</button>
       ${S.installEvt ? `<button class="btn block ghost" data-act="install">${esc(t('install'))}</button>` : ''}
       <a class="btn block ghost" href="/privacy" target="_blank" rel="noopener">${esc(t('privacy'))}</a>
       <a class="btn block ghost" href="/contact" target="_blank" rel="noopener">${esc(t('help'))}</a>
@@ -343,6 +368,13 @@ function sheetHtml() {
   } else if (S.sheet === 'history') {
     const h = S.me?.history || [];
     inner = `<h2>${esc(t('histTitle'))}</h2>${h.length ? `<div class="list">${h.map((x) => `<div class="item"><span>${inr(x.amount)} · ${esc(x.disbursed_at ? dateFmt(x.disbursed_at) : '')}</span><span class="badge info">${esc(t('st_' + x.status))}</span></div>`).join('')}</div>` : `<p class="muted">${esc(t('noLoans'))}</p>`}
+      <button class="btn block ghost" data-act="close-sheet">${esc(t('close'))}</button>`;
+  } else if (S.sheet === 'lender') {
+    const L = S.cfg?.lender || {}; const g = L.grievance_officer || {};
+    inner = `<h2>${esc(t('lenderMenu'))}</h2>
+      <div class="list"><div class="item"><span><b>${esc(L.name || '')}</b><br><small class="muted">${esc(L.registration || '')}<br>${esc(L.address || '')}</small></span></div>
+      <div class="item"><span><b>${esc(t('kfsGrievance'))}</b><br><small class="muted">${esc([g.name, g.email, g.phone].filter(Boolean).join(' · ') || t('kfsNotSet'))}</small></span></div>
+      <div class="item"><span><b>${esc(t('lenderSupport'))}</b><br><small class="muted">${esc([L.support_email, L.support_phone].filter(Boolean).join(' · '))}</small></span></div></div>
       <button class="btn block ghost" data-act="close-sheet">${esc(t('close'))}</button>`;
   } else if (S.sheet === 'perms') {
     const c = S.me?.consents || [];
@@ -362,6 +394,7 @@ function render() {
     <header class="appbar"><a class="brand" href="/app"><svg class="mark" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-dasharray="58 12" transform="rotate(-70 16 16)"/></svg><span>${esc(t('brand'))}</span></a>
       <div class="tools"><button class="chip" data-act="lang" data-lang="en" aria-pressed="${S.lang === 'en'}">EN</button><button class="chip" data-act="lang" data-lang="hi" aria-pressed="${S.lang === 'hi'}" lang="hi">हिं</button>
       ${signedIn ? `<button class="chip" data-act="open-menu" aria-label="${esc(t('menu'))}">☰</button>` : ''}</div></header>
+    ${S.cfg?.lender?.name ? `<div class="lender-strip" role="note">${esc(t('lenderStrip', { lender: S.cfg.lender.name, lsp: S.cfg.lender.lending_service_provider?.name || '' }))}</div>` : ''}
     ${S.cfg?.mode === 'demo' ? `<div class="demo-strip" role="note">${esc(t('demoStrip'))}</div>` : ''}
     ${idx >= 0 ? `<div class="stepline">${esc(t('step', { n: idx + 1, total: FLOW.length }))}</div>` : ''}
     <main class="screen" id="screen"><div class="tape">${view.body}</div></main>
@@ -421,6 +454,11 @@ const ACTIONS = {
       showToast(t('limitRaised', { amount: inr(r.limit) }));
     });
   },
+  'open-lender'() { openSheet('lender'); },
+  'open-kfs'() { return guarded(async () => { S.kfs = (await api('/kfs')).kfs; go('kfs'); }); },
+  'kfs-read'() { S.kfsSeen = S.me.application.id; go('offer'); },
+  'kfs-read-back'() { go('offer'); },
+  'cooling-exit'() { return guarded(async () => { await api('/loan/cooling-off', { method: 'POST' }); await refreshMe(); render(); }); },
   'open-menu'() { openSheet('menu'); },
   'open-history'() { openSheet('history'); },
   'open-perms'() { openSheet('perms'); },
